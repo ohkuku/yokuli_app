@@ -20,6 +20,8 @@ import '../../providers/task_provider.dart';
 import '../../providers/issue_provider.dart';
 import '../../providers/voyage_provider.dart';
 import '../../providers/lan_broadcast.dart';
+import '../signalk/signalk_auth.dart';
+import '../signalk/signalk_client.dart';
 import 'lan_sync_platform.dart'; // conditional export → native or web impl
 
 /// Coordinates LAN sync using the platform-appropriate adapter.
@@ -40,6 +42,7 @@ class LanSyncService {
     };
     _platform.onMobReceived = (alert) => onMobAlert?.call(alert);
     _platform.onKanbanSync = (data) => onKanbanSync?.call(data);
+    _platform.onSkCredentialsReceived = _onSkCredentialsReceived;
     _platform.onMobCancelReceived = () => onMobCancelReceived?.call();
     _platform.onClientConnectionChanged = (connected) {
       _conn.setLanSyncStatus(
@@ -68,8 +71,66 @@ class LanSyncService {
     _platform.onNewClientConnected = _sendFullDump;
   }
 
+  /// Broadcasts the host's Signal K credentials to all clients.
+  /// Call this after the host connects/reconnects to SK.
+  void broadcastSkCredentials() {
+    final s = _ref.read(settingsProvider);
+    if (s.signalKHost.isEmpty) return;
+    broadcastJson({
+      'type': 'sk_credentials',
+      'data': {
+        'host': s.signalKHost,
+        'port': s.signalKPort,
+        'username': s.signalKUsername,
+        'password': s.signalKPassword,
+      },
+    });
+  }
+
+  /// Called when the client receives SK credentials from the host.
+  Future<void> _onSkCredentialsReceived(Map<String, dynamic> data) async {
+    final host     = data['host']     as String? ?? '';
+    final port     = data['port']     as int?    ?? 3000;
+    final username = data['username'] as String? ?? '';
+    final password = data['password'] as String? ?? '';
+    if (host.isEmpty) return;
+
+    // Persist received credentials
+    await _ref.read(settingsProvider.notifier).update(
+      _ref.read(settingsProvider).copyWith(
+        signalKHost:     host,
+        signalKPort:     port,
+        signalKUsername: username,
+        signalKPassword: password,
+      ),
+    );
+
+    // Connect to SK fresh (independent of host)
+    final url = 'ws://$host:$port/signalk/v1/stream';
+    String? token;
+    if (username.isNotEmpty && password.isNotEmpty) {
+      try {
+        token = await SignalKAuth.login(url, username, password);
+      } catch (_) {}
+    }
+    await _ref.read(signalKClientProvider).connect(url, token: token);
+  }
+
   /// Sends all persisted module data to a newly connected client (host mode).
   void _sendFullDump(void Function(Map<String, dynamic>) sendTo) {
+    // SK credentials — client uses these to connect independently
+    final s = _ref.read(settingsProvider);
+    if (s.signalKHost.isNotEmpty) {
+      sendTo({
+        'type': 'sk_credentials',
+        'data': {
+          'host': s.signalKHost,
+          'port': s.signalKPort,
+          'username': s.signalKUsername,
+          'password': s.signalKPassword,
+        },
+      });
+    }
     // Log entries
     for (final entry in _ref.read(logProvider)) {
       sendTo({'type': 'log_append', 'data': entry.toJson()});

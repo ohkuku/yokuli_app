@@ -103,6 +103,10 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
           if (data != null) onIssueUpsert?.call(data);
         case 'voyage_upsert':
           if (data != null) onVoyageUpsert?.call(data);
+        case 'kanban_sync':
+          onKanbanSync?.call(json);
+        case 'sk_credentials':
+          if (data != null) onSkCredentialsReceived?.call(data);
       }
     } catch (_) {}
   }

@@ -30,6 +30,7 @@ class SyncClient {
   void Function(Map<String, dynamic> data)? onIssueUpsert;
   void Function(Map<String, dynamic> data)? onVoyageUpsert;
   void Function(Map<String, dynamic>)? onKanbanSync;
+  void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
 
   Future<void> connect(String wsUrl) async {
     await disconnect();
@@ -87,6 +88,8 @@ class SyncClient {
           if (data != null) onVoyageUpsert?.call(data);
         case 'kanban_sync':
           onKanbanSync?.call(json);
+        case 'sk_credentials':
+          if (data != null) onSkCredentialsReceived?.call(data);
       }
     } catch (_) {}
   }

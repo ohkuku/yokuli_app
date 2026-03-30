@@ -7,6 +7,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/services/signalk/signalk_client.dart';
 import '../../../core/services/signalk/signalk_auth.dart';
+import '../../../core/services/lan_sync/lan_sync_service.dart';
 
 class SignalKScreen extends ConsumerStatefulWidget {
   const SignalKScreen({super.key});
@@ -95,6 +96,13 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
 
     // Step 2: open WebSocket (with token if we have one)
     await ref.read(signalKClientProvider).connect(url, token: token);
+
+    // Step 3: if host, push credentials to any connected LAN clients
+    final role = ref.read(settingsProvider).deviceRole;
+    if (role == DeviceRole.host) {
+      ref.read(lanSyncServiceProvider).broadcastSkCredentials();
+    }
+
     if (mounted) setState(() => _connecting = false);
   }
 
