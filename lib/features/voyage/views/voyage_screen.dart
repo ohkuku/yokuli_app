@@ -5,8 +5,10 @@ import 'package:intl/intl.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/voyage_provider.dart';
 import '../../../core/providers/log_provider.dart';
+import '../../../core/providers/locale_provider.dart';
 import '../../../core/models/voyage.dart';
 import '../../../core/models/log_entry.dart';
+import '../../../core/l10n/strings.dart';
 
 class VoyageScreen extends ConsumerStatefulWidget {
   const VoyageScreen({super.key});
@@ -43,27 +45,27 @@ class _VoyageScreenState extends ConsumerState<VoyageScreen> {
         .startVoyage(VoyageSource.manual, position: null);
   }
 
-  Future<void> _confirmEndVoyage() async {
+  Future<void> _confirmEndVoyage(S s) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.cardBg,
-        title: const Text('End Voyage',
-            style: TextStyle(color: AppColors.textPrimary)),
-        content: const Text(
-          'Are you sure you want to end the current voyage?',
-          style: TextStyle(color: AppColors.textSecondary),
+        title: Text(s.endVoyage,
+            style: const TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          s.endVoyageConfirm,
+          style: const TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
+            child: Text(s.cancel,
+                style: const TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('End Voyage',
-                style: TextStyle(color: AppColors.danger)),
+            child: Text(s.endVoyage,
+                style: const TextStyle(color: AppColors.danger)),
           ),
         ],
       ),
@@ -73,27 +75,27 @@ class _VoyageScreenState extends ConsumerState<VoyageScreen> {
     }
   }
 
-  Future<void> _addManualNote() async {
+  Future<void> _addManualNote(S s) async {
     final voyageState = ref.read(voyageProvider);
     final controller = TextEditingController();
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.cardBg,
-        title: const Text('Add Note',
-            style: TextStyle(color: AppColors.textPrimary)),
+        title: Text(s.addNote,
+            style: const TextStyle(color: AppColors.textPrimary)),
         content: TextField(
           controller: controller,
           autofocus: true,
           style: const TextStyle(color: AppColors.textPrimary),
           maxLines: 3,
-          decoration: const InputDecoration(
-            hintText: 'Enter note…',
-            hintStyle: TextStyle(color: AppColors.textMuted),
-            enabledBorder: UnderlineInputBorder(
+          decoration: InputDecoration(
+            hintText: s.enterNote,
+            hintStyle: const TextStyle(color: AppColors.textMuted),
+            enabledBorder: const UnderlineInputBorder(
               borderSide: BorderSide(color: AppColors.border),
             ),
-            focusedBorder: UnderlineInputBorder(
+            focusedBorder: const UnderlineInputBorder(
               borderSide: BorderSide(color: AppColors.cyan),
             ),
           ),
@@ -101,8 +103,8 @@ class _VoyageScreenState extends ConsumerState<VoyageScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
+            child: Text(s.cancel,
+                style: const TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () {
@@ -111,31 +113,30 @@ class _VoyageScreenState extends ConsumerState<VoyageScreen> {
               if (text.isNotEmpty) {
                 ref.read(logProvider.notifier).log(
                       type: LogEntryType.manual,
-                      subtype: '备注',
+                      subtype: s.manual,
                       message: text,
                       voyageId: voyageState.active?.id,
                     );
               }
             },
-            child: const Text('Add',
-                style: TextStyle(color: AppColors.cyan)),
+            child: Text(s.add, style: const TextStyle(color: AppColors.cyan)),
           ),
         ],
       ),
     );
   }
 
-  void _quickLog(String label) {
+  void _quickLog(String label, S s) {
     final voyageState = ref.read(voyageProvider);
     ref.read(logProvider.notifier).log(
           type: LogEntryType.navigation,
           subtype: label,
-          message: 'Quick log: $label',
+          message: '${s.quickLog}: $label',
           voyageId: voyageState.active?.id,
         );
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Logged: $label'),
+        content: Text('$label'),
         backgroundColor: AppColors.cardBg,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
@@ -149,6 +150,7 @@ class _VoyageScreenState extends ConsumerState<VoyageScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(stringsProvider);
     final voyageState = ref.watch(voyageProvider);
     final active = voyageState.active;
     final history = [...voyageState.history]
@@ -158,8 +160,8 @@ class _VoyageScreenState extends ConsumerState<VoyageScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.background,
-        title: const Text('Voyage',
-            style: TextStyle(color: AppColors.textPrimary)),
+        title: Text(s.voyage,
+            style: const TextStyle(color: AppColors.textPrimary)),
         iconTheme: const IconThemeData(color: AppColors.textPrimary),
       ),
       body: SafeArea(
@@ -169,42 +171,43 @@ class _VoyageScreenState extends ConsumerState<VoyageScreen> {
             // ---- Active voyage card ----
             if (active != null) ...[
               _ActiveVoyageCard(
+                s: s,
                 voyage: active,
-                onEndVoyage: _confirmEndVoyage,
-                onAddNote: _addManualNote,
+                onEndVoyage: () => _confirmEndVoyage(s),
+                onAddNote: () => _addManualNote(s),
               ),
               const SizedBox(height: 16),
             ],
 
             // ---- Quick log buttons ----
-            _QuickLogSection(onLog: _quickLog),
+            _QuickLogSection(s: s, onLog: (label) => _quickLog(label, s)),
             const SizedBox(height: 16),
 
             // ---- Start voyage (only when no active voyage) ----
             if (active == null) ...[
-              _StartVoyageCard(onStart: _startVoyage),
+              _StartVoyageCard(s: s, onStart: _startVoyage),
               const SizedBox(height: 16),
             ],
 
             // ---- History section ----
-            const _SectionLabel('HISTORY'),
+            _SectionLabel(s.history),
             const SizedBox(height: 8),
             if (history.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Center(
                   child: Text(
-                    'No voyage history yet.',
+                    s.noVoyageHistory,
                     style:
-                        TextStyle(color: AppColors.textMuted, fontSize: 14),
+                        const TextStyle(color: AppColors.textMuted, fontSize: 14),
                   ),
                 ),
               )
             else
               ...history.map(
-                (s) => Padding(
+                (vs) => Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: _VoyageHistoryTile(voyage: s),
+                  child: _VoyageHistoryTile(s: s, voyage: vs),
                 ),
               ),
 
@@ -221,11 +224,13 @@ class _VoyageScreenState extends ConsumerState<VoyageScreen> {
 // ---------------------------------------------------------------------------
 
 class _ActiveVoyageCard extends StatelessWidget {
+  final S s;
   final VoyageSession voyage;
   final VoidCallback onEndVoyage;
   final VoidCallback onAddNote;
 
   const _ActiveVoyageCard({
+    required this.s,
     required this.voyage,
     required this.onEndVoyage,
     required this.onAddNote,
@@ -236,8 +241,8 @@ class _ActiveVoyageCard extends StatelessWidget {
     final dur = voyage.duration;
     final h = dur.inHours;
     final m = (dur.inMinutes % 60).toString().padLeft(2, '0');
-    final s = (dur.inSeconds % 60).toString().padLeft(2, '0');
-    final elapsedStr = '$h:$m:$s';
+    final sec = (dur.inSeconds % 60).toString().padLeft(2, '0');
+    final elapsedStr = '$h:$m:$sec';
     final startFmt =
         DateFormat('HH:mm dd/MMM').format(voyage.startTime.toLocal());
 
@@ -264,9 +269,9 @@ class _ActiveVoyageCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Text(
-                  'ACTIVE VOYAGE',
-                  style: TextStyle(
+                Text(
+                  s.activeVoyageLabel,
+                  style: const TextStyle(
                     color: AppColors.success,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -274,7 +279,7 @@ class _ActiveVoyageCard extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                _SourceBadge(source: voyage.source),
+                _SourceBadge(s: s, source: voyage.source),
               ],
             ),
           ),
@@ -291,7 +296,7 @@ class _ActiveVoyageCard extends StatelessWidget {
                         size: 14, color: AppColors.textMuted),
                     const SizedBox(width: 6),
                     Text(
-                      'Started $startFmt',
+                      startFmt,
                       style: const TextStyle(
                           color: AppColors.textSecondary, fontSize: 13),
                     ),
@@ -316,9 +321,9 @@ class _ActiveVoyageCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    const Text(
-                      'elapsed',
-                      style: TextStyle(
+                    Text(
+                      s.elapsed,
+                      style: const TextStyle(
                           color: AppColors.textMuted, fontSize: 13),
                     ),
                   ],
@@ -338,7 +343,7 @@ class _ActiveVoyageCard extends StatelessWidget {
                         ),
                         icon: const Icon(Icons.stop_circle_outlined,
                             size: 18),
-                        label: const Text('End Voyage'),
+                        label: Text(s.endVoyage),
                         onPressed: onEndVoyage,
                       ),
                     ),
@@ -353,7 +358,7 @@ class _ActiveVoyageCard extends StatelessWidget {
                               borderRadius: BorderRadius.circular(10)),
                         ),
                         icon: const Icon(Icons.edit_note_rounded, size: 18),
-                        label: const Text('Add Note'),
+                        label: Text(s.addNote),
                         onPressed: onAddNote,
                       ),
                     ),
@@ -373,8 +378,9 @@ class _ActiveVoyageCard extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _QuickLogSection extends StatelessWidget {
+  final S s;
   final void Function(String label) onLog;
-  const _QuickLogSection({required this.onLog});
+  const _QuickLogSection({required this.s, required this.onLog});
 
   static const _buttons = [
     ('起航', Icons.sailing_rounded, AppColors.cyan),
@@ -397,9 +403,9 @@ class _QuickLogSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'QUICK LOG',
-            style: TextStyle(
+          Text(
+            s.quickLog,
+            style: const TextStyle(
               color: AppColors.textMuted,
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -452,8 +458,9 @@ class _QuickLogSection extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _StartVoyageCard extends StatelessWidget {
+  final S s;
   final VoidCallback onStart;
-  const _StartVoyageCard({required this.onStart});
+  const _StartVoyageCard({required this.s, required this.onStart});
 
   @override
   Widget build(BuildContext context) {
@@ -469,21 +476,21 @@ class _StartVoyageCard extends StatelessWidget {
         children: [
           const Icon(Icons.sailing_rounded, size: 44, color: AppColors.cyan),
           const SizedBox(height: 12),
-          const Text(
-            'No active voyage',
+          Text(
+            s.noActiveVoyage,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: AppColors.textPrimary,
               fontSize: 16,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'Start a voyage to track your trip and log events.',
+          Text(
+            s.startVoyageHint,
             textAlign: TextAlign.center,
             style:
-                TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                const TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 18),
           ElevatedButton.icon(
@@ -495,10 +502,10 @@ class _StartVoyageCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10)),
             ),
             icon: const Icon(Icons.play_arrow_rounded, size: 20),
-            label: const Text(
-              'Start Voyage',
+            label: Text(
+              s.startVoyage,
               style:
-                  TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                  const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
             onPressed: onStart,
           ),
@@ -513,8 +520,9 @@ class _StartVoyageCard extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _VoyageHistoryTile extends StatelessWidget {
+  final S s;
   final VoyageSession voyage;
-  const _VoyageHistoryTile({required this.voyage});
+  const _VoyageHistoryTile({required this.s, required this.voyage});
 
   @override
   Widget build(BuildContext context) {
@@ -526,7 +534,7 @@ class _VoyageHistoryTile extends StatelessWidget {
 
     String durationStr;
     if (isActive) {
-      durationStr = 'active';
+      durationStr = s.voyageActive;
     } else {
       final dur = voyage.endTime!.difference(voyage.startTime);
       final h = dur.inHours;
@@ -572,7 +580,7 @@ class _VoyageHistoryTile extends StatelessWidget {
               ],
             ),
           ),
-          _SourceBadge(source: voyage.source),
+          _SourceBadge(s: s, source: voyage.source),
         ],
       ),
     );
@@ -584,13 +592,14 @@ class _VoyageHistoryTile extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _SourceBadge extends StatelessWidget {
+  final S s;
   final VoyageSource source;
-  const _SourceBadge({required this.source});
+  const _SourceBadge({required this.s, required this.source});
 
   @override
   Widget build(BuildContext context) {
     final isAuto = source == VoyageSource.auto;
-    final label = isAuto ? 'AUTO' : 'MANUAL';
+    final label = isAuto ? s.voyageSourceAuto : s.voyageSourceManual;
     final color = isAuto ? AppColors.teal : AppColors.inactive;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

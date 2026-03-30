@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/vessel_provider.dart';
+import '../../../core/providers/locale_provider.dart';
+import '../../../core/l10n/strings.dart';
 import '../providers/safety_provider.dart';
 
 class SafetyScreen extends ConsumerStatefulWidget {
@@ -67,7 +69,9 @@ class _SafetyScreenState extends ConsumerState<SafetyScreen> {
     final vessel = ref.watch(vesselProvider);
 
     if (safety.isMobActive) {
+      final s = ref.watch(stringsProvider);
       return _MobActiveScreen(
+        s: s,
         safety: safety,
         vessel: vessel,
         elapsed: _formatElapsed(_elapsedSeconds),
@@ -78,15 +82,17 @@ class _SafetyScreenState extends ConsumerState<SafetyScreen> {
       );
     }
 
+    final s = ref.watch(stringsProvider);
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('Safety')),
+      appBar: AppBar(title: Text(s.safetyTitle)),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             // MOB trigger
             _MobTriggerCard(
+              s: s,
               onTrigger: () {
                 ref.read(safetyProvider.notifier).triggerMob();
                 _startTimer();
@@ -146,12 +152,14 @@ class _SafetyScreenState extends ConsumerState<SafetyScreen> {
 }
 
 class _MobActiveScreen extends StatelessWidget {
+  final S s;
   final SafetyState safety;
   final vessel;
   final String elapsed;
   final VoidCallback onCancel;
 
   const _MobActiveScreen({
+    required this.s,
     required this.safety,
     required this.vessel,
     required this.elapsed,
@@ -185,12 +193,12 @@ class _MobActiveScreen extends StatelessWidget {
                   color: AppColors.danger,
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Column(
+                child: Column(
                   children: [
-                    Icon(Icons.person_off_rounded, size: 48, color: Colors.white),
-                    SizedBox(height: 8),
-                    Text('MAN OVERBOARD',
-                        style: TextStyle(
+                    const Icon(Icons.person_off_rounded, size: 48, color: Colors.white),
+                    const SizedBox(height: 8),
+                    Text(s.manOverboard,
+                        style: const TextStyle(
                             color: Colors.white,
                             fontSize: 24,
                             fontWeight: FontWeight.w800,
@@ -211,8 +219,8 @@ class _MobActiveScreen extends StatelessWidget {
                 ),
               ),
               Text(
-                'Time since alert',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                s.mobElapsed,
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
               ),
               const SizedBox(height: 20),
 
@@ -248,8 +256,8 @@ class _MobActiveScreen extends StatelessWidget {
                   onPressed: () => _confirmCancel(context),
                   icon: const Icon(Icons.check_circle_outline_rounded,
                       color: AppColors.success),
-                  label: const Text('MOB RECOVERED — Cancel Alert',
-                      style: TextStyle(color: AppColors.success)),
+                  label: Text(s.mobRecoveredBtn,
+                      style: const TextStyle(color: AppColors.success)),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: AppColors.success),
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -268,12 +276,12 @@ class _MobActiveScreen extends StatelessWidget {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppColors.dialogBg,
-        title: const Text('Cancel MOB Alert?'),
-        content: const Text('Confirm person has been recovered.'),
+        title: Text(s.cancelMobTitle),
+        content: Text(s.cancelMobBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Back'),
+            child: Text(s.back),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.success),
@@ -281,7 +289,7 @@ class _MobActiveScreen extends StatelessWidget {
               Navigator.pop(context);
               onCancel();
             },
-            child: const Text('Recovered'),
+            child: Text(s.recovered),
           ),
         ],
       ),
@@ -290,9 +298,10 @@ class _MobActiveScreen extends StatelessWidget {
 }
 
 class _MobTriggerCard extends StatelessWidget {
+  final S s;
   final VoidCallback onTrigger;
 
-  const _MobTriggerCard({required this.onTrigger});
+  const _MobTriggerCard({required this.s, required this.onTrigger});
 
   @override
   Widget build(BuildContext context) {
@@ -313,17 +322,17 @@ class _MobTriggerCard extends StatelessWidget {
           Row(children: [
             const Icon(Icons.warning_rounded, color: AppColors.danger),
             const SizedBox(width: 8),
-            const Text('MAN OVERBOARD',
-                style: TextStyle(
+            Text(s.manOverboard,
+                style: const TextStyle(
                     color: AppColors.danger,
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1)),
           ]),
           const SizedBox(height: 8),
-          const Text(
-            'Press to record current GPS position and alert all connected devices.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          Text(
+            s.mobConfirmBody.split('\n\n').last,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 16),
           SizedBox(
@@ -331,8 +340,8 @@ class _MobTriggerCard extends StatelessWidget {
             child: ElevatedButton.icon(
               onPressed: () => _confirm(context),
               icon: const Icon(Icons.person_off_rounded),
-              label: const Text('TRIGGER MOB ALERT',
-                  style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1)),
+              label: Text(s.triggerMob,
+                  style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.danger,
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -350,14 +359,13 @@ class _MobTriggerCard extends StatelessWidget {
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         backgroundColor: AppColors.dialogBg,
-        title: const Text('MAN OVERBOARD?',
-            style: TextStyle(color: AppColors.danger)),
-        content: const Text(
-            'This will record GPS position and alert all devices on the network.'),
+        title: Text('${s.manOverboard}?',
+            style: const TextStyle(color: AppColors.danger)),
+        content: Text(s.mobConfirmBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(s.cancel),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
@@ -365,7 +373,7 @@ class _MobTriggerCard extends StatelessWidget {
               Navigator.pop(context);
               onTrigger();
             },
-            child: const Text('CONFIRM MOB'),
+            child: Text(s.mobConfirm),
           ),
         ],
       ),
@@ -443,7 +451,7 @@ class _AlarmTile extends StatelessWidget {
                     color: AppColors.warning,
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Text('ALARM',
+                  child: const Text('⚠',
                       style: TextStyle(
                           color: Colors.black,
                           fontSize: 10,

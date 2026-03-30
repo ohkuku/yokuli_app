@@ -4,8 +4,10 @@ import 'package:intl/intl.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/task_provider.dart';
 import '../../../core/providers/issue_provider.dart';
+import '../../../core/providers/locale_provider.dart';
 import '../../../core/models/task.dart';
 import '../../../core/models/issue.dart';
+import '../../../core/l10n/strings.dart';
 
 class TasksScreen extends ConsumerStatefulWidget {
   const TasksScreen({super.key});
@@ -32,22 +34,23 @@ class _TasksScreenState extends ConsumerState<TasksScreen>
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(stringsProvider);
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
           backgroundColor: AppColors.background,
-          title: const Text('Tasks',
-              style: TextStyle(color: AppColors.textPrimary)),
+          title: Text(s.tasksTitle,
+              style: const TextStyle(color: AppColors.textPrimary)),
           iconTheme: const IconThemeData(color: AppColors.textPrimary),
-          bottom: const TabBar(
+          bottom: TabBar(
             labelColor: AppColors.cyan,
             unselectedLabelColor: AppColors.textSecondary,
             indicatorColor: AppColors.cyan,
             tabs: [
-              Tab(text: 'Active'),
-              Tab(text: 'Templates'),
+              Tab(text: s.tabActive),
+              Tab(text: s.tabTemplates),
             ],
           ),
         ),
@@ -71,33 +74,34 @@ class _ActiveTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     final taskState = ref.watch(taskProvider);
     final openInstances = taskState.openInstances;
 
     if (openInstances.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(32),
+          padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.task_alt_rounded,
+              const Icon(Icons.task_alt_rounded,
                   size: 60, color: AppColors.inactive),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Text(
-                'No active tasks',
-                style: TextStyle(
+                s.noActiveTasks,
+                style: const TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 17,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text(
-                'Start one from the Templates tab',
+                s.startFromTemplates,
                 textAlign: TextAlign.center,
                 style:
-                    TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                    const TextStyle(color: AppColors.textSecondary, fontSize: 14),
               ),
             ],
           ),
@@ -117,12 +121,13 @@ class _ActiveTab extends ConsumerWidget {
               (t) => t?.id == instance.templateId,
               orElse: () => null,
             );
-        final title = template?.title ?? 'Task';
+        final title = template?.title ?? s.tasksTitle;
         return _InstanceCard(
+          s: s,
           instance: instance,
           title: title,
           template: template,
-          onTap: () => _showInstanceDetail(context, instance, title, ref),
+          onTap: () => _showInstanceDetail(context, instance, title, ref, s),
         );
       },
     );
@@ -133,6 +138,7 @@ class _ActiveTab extends ConsumerWidget {
     TaskInstance instance,
     String title,
     WidgetRef ref,
+    S s,
   ) {
     Navigator.push(
       context,
@@ -151,12 +157,14 @@ class _ActiveTab extends ConsumerWidget {
 // ---------------------------------------------------------------------------
 
 class _InstanceCard extends StatelessWidget {
+  final S s;
   final TaskInstance instance;
   final String title;
   final TaskTemplate? template;
   final VoidCallback onTap;
 
   const _InstanceCard({
+    required this.s,
     required this.instance,
     required this.title,
     required this.template,
@@ -195,12 +203,12 @@ class _InstanceCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                _StatusBadge(status: instance.status),
+                _StatusBadge(s: s, status: instance.status),
               ],
             ),
             if (template != null) ...[
               const SizedBox(height: 4),
-              _CategoryBadge(category: template!.category),
+              _CategoryBadge(s: s, category: template!.category),
             ],
             const SizedBox(height: 12),
             Row(
@@ -245,6 +253,7 @@ class _InstanceDetailPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     final taskState = ref.watch(taskProvider);
     final instance = taskState.instances.cast<TaskInstance?>().firstWhere(
           (i) => i?.id == instanceId,
@@ -260,9 +269,9 @@ class _InstanceDetailPage extends ConsumerWidget {
               style: const TextStyle(color: AppColors.textPrimary)),
           iconTheme: const IconThemeData(color: AppColors.textPrimary),
         ),
-        body: const Center(
-          child: Text('Task not found.',
-              style: TextStyle(color: AppColors.textMuted)),
+        body: Center(
+          child: Text(s.taskNotFound,
+              style: const TextStyle(color: AppColors.textMuted)),
         ),
       );
     }
@@ -289,8 +298,8 @@ class _InstanceDetailPage extends ConsumerWidget {
                     .completeInstance(instanceId);
                 if (context.mounted) Navigator.pop(context);
               },
-              child: const Text('Complete',
-                  style: TextStyle(color: AppColors.cyan)),
+              child: Text(s.complete,
+                  style: const TextStyle(color: AppColors.cyan)),
             ),
         ],
       ),
@@ -332,6 +341,7 @@ class _InstanceDetailPage extends ConsumerWidget {
               itemBuilder: (context, idx) {
                 final item = instance.checklistItems[idx];
                 return _ChecklistItemRow(
+                  s: s,
                   item: item,
                   onDone: () async {
                     await ref
@@ -343,7 +353,7 @@ class _InstanceDetailPage extends ConsumerWidget {
                         );
                   },
                   onIssue: () => _handleIssue(
-                      context, ref, instanceId, item),
+                      context, ref, instanceId, item, s),
                 );
               },
             ),
@@ -358,25 +368,26 @@ class _InstanceDetailPage extends ConsumerWidget {
     WidgetRef ref,
     String instanceId,
     TaskChecklistItem item,
+    S s,
   ) async {
     final controller = TextEditingController(text: item.title);
-    final title = await showDialog<String>(
+    final issueTitle = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.cardBg,
-        title: const Text('Create Issue',
-            style: TextStyle(color: AppColors.textPrimary)),
+        title: Text(s.createIssueTitle,
+            style: const TextStyle(color: AppColors.textPrimary)),
         content: TextField(
           controller: controller,
           autofocus: true,
           style: const TextStyle(color: AppColors.textPrimary),
-          decoration: const InputDecoration(
-            labelText: 'Issue title',
-            labelStyle: TextStyle(color: AppColors.textMuted),
-            enabledBorder: UnderlineInputBorder(
+          decoration: InputDecoration(
+            labelText: s.issueTitleLabel,
+            labelStyle: const TextStyle(color: AppColors.textMuted),
+            enabledBorder: const UnderlineInputBorder(
               borderSide: BorderSide(color: AppColors.border),
             ),
-            focusedBorder: UnderlineInputBorder(
+            focusedBorder: const UnderlineInputBorder(
               borderSide: BorderSide(color: AppColors.danger),
             ),
           ),
@@ -384,22 +395,22 @@ class _InstanceDetailPage extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
+            child: Text(s.cancel,
+                style: const TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () =>
                 Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Create',
-                style: TextStyle(color: AppColors.danger)),
+            child: Text(s.createIssueTitle,
+                style: const TextStyle(color: AppColors.danger)),
           ),
         ],
       ),
     );
 
-    if (title != null && title.isNotEmpty) {
+    if (issueTitle != null && issueTitle.isNotEmpty) {
       final ticket = await ref.read(issueProvider.notifier).create(
-            title: title,
+            title: issueTitle,
             source: IssueSource.checklist,
             severity: IssueSeverity.medium,
           );
@@ -418,11 +429,13 @@ class _InstanceDetailPage extends ConsumerWidget {
 // ---------------------------------------------------------------------------
 
 class _ChecklistItemRow extends StatelessWidget {
+  final S s;
   final TaskChecklistItem item;
   final VoidCallback onDone;
   final VoidCallback onIssue;
 
   const _ChecklistItemRow({
+    required this.s,
     required this.item,
     required this.onDone,
     required this.onIssue,
@@ -492,13 +505,13 @@ class _ChecklistItemRow extends StatelessWidget {
           if (isPending) ...[
             const SizedBox(width: 8),
             _MiniButton(
-              label: 'Done',
+              label: s.doneLabel,
               color: AppColors.success,
               onTap: onDone,
             ),
             const SizedBox(width: 6),
             _MiniButton(
-              label: 'Issue',
+              label: s.issueLabel,
               color: AppColors.danger,
               onTap: onIssue,
             ),
@@ -512,9 +525,9 @@ class _ChecklistItemRow extends StatelessWidget {
                 border: Border.all(
                     color: AppColors.danger.withAlpha(80)),
               ),
-              child: const Text(
-                'ISSUE',
-                style: TextStyle(
+              child: Text(
+                s.issueBadge,
+                style: const TextStyle(
                   color: AppColors.danger,
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
@@ -573,12 +586,13 @@ class _TemplatesTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     final templates = ref.watch(taskProvider).templates;
 
     if (templates.isEmpty) {
-      return const Center(
-        child: Text('No templates available.',
-            style: TextStyle(color: AppColors.textMuted)),
+      return Center(
+        child: Text(s.noTemplates,
+            style: const TextStyle(color: AppColors.textMuted)),
       );
     }
 
@@ -589,6 +603,7 @@ class _TemplatesTab extends ConsumerWidget {
       itemBuilder: (context, index) {
         final template = templates[index];
         return _TemplateCard(
+          s: s,
           template: template,
           onStart: () async {
             await ref
@@ -596,11 +611,11 @@ class _TemplatesTab extends ConsumerWidget {
                 .createInstance(template.id);
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Task started'),
+                SnackBar(
+                  content: Text(s.taskStarted),
                   backgroundColor: AppColors.cardBg,
                   behavior: SnackBarBehavior.floating,
-                  duration: Duration(seconds: 2),
+                  duration: const Duration(seconds: 2),
                 ),
               );
             }
@@ -616,10 +631,11 @@ class _TemplatesTab extends ConsumerWidget {
 // ---------------------------------------------------------------------------
 
 class _TemplateCard extends StatelessWidget {
+  final S s;
   final TaskTemplate template;
   final VoidCallback onStart;
 
-  const _TemplateCard({required this.template, required this.onStart});
+  const _TemplateCard({required this.s, required this.template, required this.onStart});
 
   @override
   Widget build(BuildContext context) {
@@ -655,9 +671,9 @@ class _TemplateCard extends StatelessWidget {
                     border: Border.all(
                         color: AppColors.inactive.withAlpha(70)),
                   ),
-                  child: const Text(
-                    'BUILT-IN',
-                    style: TextStyle(
+                  child: Text(
+                    s.builtIn,
+                    style: const TextStyle(
                       color: AppColors.inactive,
                       fontSize: 9,
                       fontWeight: FontWeight.w700,
@@ -670,10 +686,10 @@ class _TemplateCard extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              _CategoryBadge(category: template.category),
+              _CategoryBadge(s: s, category: template.category),
               const SizedBox(width: 8),
               Text(
-                '${template.checklistItems.length} items',
+                '${template.checklistItems.length} ${s.items}',
                 style: const TextStyle(
                     color: AppColors.textMuted, fontSize: 12),
               ),
@@ -691,9 +707,9 @@ class _TemplateCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(9)),
               ),
               onPressed: onStart,
-              child: const Text(
-                'Start',
-                style: TextStyle(
+              child: Text(
+                s.start,
+                style: const TextStyle(
                     fontWeight: FontWeight.w700, fontSize: 14),
               ),
             ),
@@ -709,16 +725,9 @@ class _TemplateCard extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _CategoryBadge extends StatelessWidget {
+  final S s;
   final TaskCategory category;
-  const _CategoryBadge({required this.category});
-
-  static const _labels = {
-    TaskCategory.preDeparture: 'Pre-Departure',
-    TaskCategory.postArrival: 'Post-Arrival',
-    TaskCategory.safety: 'Safety',
-    TaskCategory.periodic: 'Periodic',
-    TaskCategory.custom: 'Custom',
-  };
+  const _CategoryBadge({required this.s, required this.category});
 
   static const _colors = {
     TaskCategory.preDeparture: AppColors.cyan,
@@ -728,9 +737,19 @@ class _CategoryBadge extends StatelessWidget {
     TaskCategory.custom: AppColors.inactive,
   };
 
+  String _label(S s) {
+    switch (category) {
+      case TaskCategory.preDeparture: return s.catPreDeparture;
+      case TaskCategory.postArrival:  return s.catPostArrival;
+      case TaskCategory.safety:       return s.catSafety;
+      case TaskCategory.periodic:     return s.catPeriodic;
+      case TaskCategory.custom:       return s.catCustom;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final label = _labels[category] ?? category.name;
+    final label = _label(s);
     final color = _colors[category] ?? AppColors.inactive;
     return Container(
       padding:
@@ -757,15 +776,9 @@ class _CategoryBadge extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _StatusBadge extends StatelessWidget {
+  final S s;
   final TaskStatus status;
-  const _StatusBadge({required this.status});
-
-  static const _labels = {
-    TaskStatus.open: 'Open',
-    TaskStatus.inProgress: 'In Progress',
-    TaskStatus.done: 'Done',
-    TaskStatus.skipped: 'Skipped',
-  };
+  const _StatusBadge({required this.s, required this.status});
 
   static const _colors = {
     TaskStatus.open: AppColors.inactive,
@@ -774,9 +787,18 @@ class _StatusBadge extends StatelessWidget {
     TaskStatus.skipped: AppColors.textMuted,
   };
 
+  String _label(S s) {
+    switch (status) {
+      case TaskStatus.open:       return s.statusOpen;
+      case TaskStatus.inProgress: return s.statusInProgress;
+      case TaskStatus.done:       return s.statusDone;
+      case TaskStatus.skipped:    return s.statusSkipped;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final label = _labels[status] ?? status.name;
+    final label = _label(s);
     final color = _colors[status] ?? AppColors.inactive;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

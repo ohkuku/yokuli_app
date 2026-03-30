@@ -72,16 +72,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
         );
     if (mounted) {
+      final s = ref.read(stringsProvider);
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Settings saved')));
+          .showSnackBar(SnackBar(content: Text(s.settingsSaved)));
     }
   }
 
   Future<void> _restartLanSync() async {
     await ref.read(lanSyncServiceProvider).restart();
     if (mounted) {
+      final s = ref.read(stringsProvider);
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('LAN sync restarted')));
+          .showSnackBar(SnackBar(content: Text(s.lanSyncRestarted)));
     }
   }
 
@@ -94,9 +96,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: Text(ref.watch(stringsProvider).settings),
         actions: [
-          TextButton(onPressed: _save, child: const Text('Save')),
+          TextButton(onPressed: _save, child: Text(ref.watch(stringsProvider).save)),
         ],
       ),
       body: SafeArea(
@@ -156,8 +158,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     const Row(children: [
                       Icon(Icons.router_rounded, size: 16, color: AppColors.cyan),
                       SizedBox(width: 6),
-                      Text('This device is hosting',
-                          style: TextStyle(
+                      Text(ref.watch(stringsProvider).hostingStatus,
+                          style: const TextStyle(
                               color: AppColors.cyan,
                               fontSize: 13,
                               fontWeight: FontWeight.w600)),
@@ -282,7 +284,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               child: OutlinedButton.icon(
                 onPressed: _restartLanSync,
                 icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Restart LAN sync'),
+                label: Text(ref.watch(stringsProvider).restartLanSync),
               ),
             ),
             const SizedBox(height: 24),
@@ -345,9 +347,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 }
 
 /// Banner shown only on web explaining platform limitations
-class _WebBanner extends StatelessWidget {
+class _WebBanner extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -355,22 +358,22 @@ class _WebBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.modWeather.withAlpha(60)),
       ),
-      child: const Row(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.public_rounded, color: AppColors.modWeather, size: 20),
-          SizedBox(width: 10),
+          const Icon(Icons.public_rounded, color: AppColors.modWeather, size: 20),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Web Mode',
-                    style: TextStyle(
+                Text(s.webModeLabel,
+                    style: const TextStyle(
                         color: AppColors.modWeather,
                         fontSize: 13,
                         fontWeight: FontWeight.w600)),
-                SizedBox(height: 4),
-                Text(
+                const SizedBox(height: 4),
+                const Text(
                   'Browsers cannot run a server. This device can only act as a '
                   'Client — connect to a Host running on a native (Android/iOS) device. '
                   'Signal K direct connection works normally.',

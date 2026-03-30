@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/issue_provider.dart';
+import '../../../core/providers/locale_provider.dart';
 import '../../../core/models/issue.dart';
+import '../../../core/l10n/strings.dart';
 
 class IssuesScreen extends ConsumerStatefulWidget {
   const IssuesScreen({super.key});
@@ -28,10 +30,11 @@ class _IssuesScreenState extends ConsumerState<IssuesScreen>
     super.dispose();
   }
 
-  void _showCreateDialog() {
+  void _showCreateDialog(S s) {
     showDialog<void>(
       context: context,
       builder: (ctx) => _CreateIssueDialog(
+        s: s,
         onCreate: (title, severity) async {
           await ref.read(issueProvider.notifier).create(
                 title: title,
@@ -45,29 +48,30 @@ class _IssuesScreenState extends ConsumerState<IssuesScreen>
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(stringsProvider);
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
           backgroundColor: AppColors.background,
-          title: const Text('Issues',
-              style: TextStyle(color: AppColors.textPrimary)),
+          title: Text(s.issuesTitle,
+              style: const TextStyle(color: AppColors.textPrimary)),
           iconTheme: const IconThemeData(color: AppColors.textPrimary),
-          bottom: const TabBar(
+          bottom: TabBar(
             labelColor: AppColors.cyan,
             unselectedLabelColor: AppColors.textSecondary,
             indicatorColor: AppColors.cyan,
             tabs: [
-              Tab(text: 'Open'),
-              Tab(text: 'Resolved'),
+              Tab(text: s.tabOpen),
+              Tab(text: s.tabResolved),
             ],
           ),
         ),
         floatingActionButton: FloatingActionButton(
           backgroundColor: AppColors.cyan,
           foregroundColor: AppColors.background,
-          onPressed: _showCreateDialog,
+          onPressed: () => _showCreateDialog(s),
           child: const Icon(Icons.add_rounded),
         ),
         body: const TabBarView(
@@ -90,6 +94,7 @@ class _OpenTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     final issues = ref
         .watch(issueProvider)
         .where((t) => t.isOpen)
@@ -97,27 +102,27 @@ class _OpenTab extends ConsumerWidget {
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
     if (issues.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(32),
+          padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.check_circle_outline_rounded,
+              const Icon(Icons.check_circle_outline_rounded,
                   size: 60, color: AppColors.success),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Text(
-                'No open issues',
-                style: TextStyle(
+                s.noOpenIssues,
+                style: const TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 17,
                     fontWeight: FontWeight.w600),
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text(
-                'All clear — tap + to log a new issue.',
+                s.noOpenIssuesHint,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                     color: AppColors.textSecondary, fontSize: 14),
               ),
             ],
@@ -133,14 +138,15 @@ class _OpenTab extends ConsumerWidget {
       itemBuilder: (context, index) {
         final issue = issues[index];
         return _IssueCard(
+          s: s,
           ticket: issue,
-          onTap: () => _showDetail(context, issue.id, ref),
+          onTap: () => _showDetail(context, issue.id, ref, s),
         );
       },
     );
   }
 
-  void _showDetail(BuildContext context, String issueId, WidgetRef ref) {
+  void _showDetail(BuildContext context, String issueId, WidgetRef ref, S s) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -159,6 +165,7 @@ class _ResolvedTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     final issues = ref
         .watch(issueProvider)
         .where((t) => !t.isOpen)
@@ -170,18 +177,18 @@ class _ResolvedTab extends ConsumerWidget {
       });
 
     if (issues.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(32),
+          padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.history_rounded,
+              const Icon(Icons.history_rounded,
                   size: 60, color: AppColors.inactive),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Text(
-                'No resolved issues yet',
-                style: TextStyle(
+                s.noResolvedIssues,
+                style: const TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 17,
                     fontWeight: FontWeight.w600),
@@ -199,6 +206,7 @@ class _ResolvedTab extends ConsumerWidget {
       itemBuilder: (context, index) {
         final issue = issues[index];
         return _IssueCard(
+          s: s,
           ticket: issue,
           onTap: () => showModalBottomSheet(
             context: context,
@@ -217,10 +225,11 @@ class _ResolvedTab extends ConsumerWidget {
 // ---------------------------------------------------------------------------
 
 class _IssueCard extends StatelessWidget {
+  final S s;
   final IssueTicket ticket;
   final VoidCallback onTap;
 
-  const _IssueCard({required this.ticket, required this.onTap});
+  const _IssueCard({required this.s, required this.ticket, required this.onTap});
 
   static const _severityColors = {
     IssueSeverity.high: AppColors.danger,
@@ -276,9 +285,9 @@ class _IssueCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      _StatusChip(status: ticket.status),
+                      _StatusChip(s: s, status: ticket.status),
                       const SizedBox(width: 8),
-                      _SourceChip(source: ticket.source),
+                      _SourceChip(s: s, source: ticket.source),
                     ],
                   ),
                 ],
@@ -313,6 +322,7 @@ class _IssueDetailSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     final ticket = ref
         .watch(issueProvider)
         .cast<IssueTicket?>()
@@ -382,9 +392,9 @@ class _IssueDetailSheet extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
               child: Row(
                 children: [
-                  _SourceChip(source: ticket.source),
+                  _SourceChip(s: s, source: ticket.source),
                   const SizedBox(width: 8),
-                  _StatusChip(status: ticket.status),
+                  _StatusChip(s: s, status: ticket.status),
                   const Spacer(),
                   Text(
                     dateFmt,
@@ -403,9 +413,9 @@ class _IssueDetailSheet extends ConsumerWidget {
                 padding: const EdgeInsets.all(20),
                 children: [
                   // Status buttons
-                  const Text(
-                    'STATUS',
-                    style: TextStyle(
+                  Text(
+                    s.statusSection,
+                    style: const TextStyle(
                       color: AppColors.textMuted,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -414,19 +424,20 @@ class _IssueDetailSheet extends ConsumerWidget {
                   ),
                   const SizedBox(height: 10),
                   _StatusButtonRow(
+                    s: s,
                     current: ticket.status,
-                    onSelect: (s) => ref
+                    onSelect: (st) => ref
                         .read(issueProvider.notifier)
-                        .updateStatus(issueId, s),
+                        .updateStatus(issueId, st),
                   ),
                   const SizedBox(height: 20),
 
                   // Notes
                   Row(
                     children: [
-                      const Text(
-                        'NOTES',
-                        style: TextStyle(
+                      Text(
+                        s.notesSection,
+                        style: const TextStyle(
                           color: AppColors.textMuted,
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -436,7 +447,7 @@ class _IssueDetailSheet extends ConsumerWidget {
                       const Spacer(),
                       GestureDetector(
                         onTap: () =>
-                            _showAddNote(context, ref, issueId),
+                            _showAddNote(context, ref, issueId, s),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 5),
@@ -446,15 +457,15 @@ class _IssueDetailSheet extends ConsumerWidget {
                             border: Border.all(
                                 color: AppColors.teal.withAlpha(80)),
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.add_rounded,
+                              const Icon(Icons.add_rounded,
                                   size: 14, color: AppColors.teal),
-                              SizedBox(width: 4),
+                              const SizedBox(width: 4),
                               Text(
-                                'Add Note',
-                                style: TextStyle(
+                                s.addNote,
+                                style: const TextStyle(
                                   color: AppColors.teal,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
@@ -468,9 +479,9 @@ class _IssueDetailSheet extends ConsumerWidget {
                   ),
                   const SizedBox(height: 10),
                   if (ticket.notes.isEmpty)
-                    const Text(
-                      'No notes yet.',
-                      style: TextStyle(
+                    Text(
+                      s.noNotes,
+                      style: const TextStyle(
                           color: AppColors.textMuted, fontSize: 13),
                     )
                   else
@@ -501,26 +512,26 @@ class _IssueDetailSheet extends ConsumerWidget {
   }
 
   Future<void> _showAddNote(
-      BuildContext context, WidgetRef ref, String issueId) async {
+      BuildContext context, WidgetRef ref, String issueId, S s) async {
     final controller = TextEditingController();
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.cardBg,
-        title: const Text('Add Note',
-            style: TextStyle(color: AppColors.textPrimary)),
+        title: Text(s.addNote,
+            style: const TextStyle(color: AppColors.textPrimary)),
         content: TextField(
           controller: controller,
           autofocus: true,
           maxLines: 3,
           style: const TextStyle(color: AppColors.textPrimary),
-          decoration: const InputDecoration(
-            hintText: 'Enter note…',
-            hintStyle: TextStyle(color: AppColors.textMuted),
-            enabledBorder: UnderlineInputBorder(
+          decoration: InputDecoration(
+            hintText: s.enterNote,
+            hintStyle: const TextStyle(color: AppColors.textMuted),
+            enabledBorder: const UnderlineInputBorder(
               borderSide: BorderSide(color: AppColors.border),
             ),
-            focusedBorder: UnderlineInputBorder(
+            focusedBorder: const UnderlineInputBorder(
               borderSide: BorderSide(color: AppColors.cyan),
             ),
           ),
@@ -528,14 +539,14 @@ class _IssueDetailSheet extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
+            child: Text(s.cancel,
+                style: const TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () =>
                 Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Add',
-                style: TextStyle(color: AppColors.cyan)),
+            child: Text(s.add,
+                style: const TextStyle(color: AppColors.cyan)),
           ),
         ],
       ),
@@ -551,27 +562,29 @@ class _IssueDetailSheet extends ConsumerWidget {
 // ---------------------------------------------------------------------------
 
 class _StatusButtonRow extends StatelessWidget {
+  final S s;
   final IssueStatus current;
   final void Function(IssueStatus) onSelect;
 
   const _StatusButtonRow({
+    required this.s,
     required this.current,
     required this.onSelect,
   });
 
-  static const _entries = [
-    (IssueStatus.open, 'Open', AppColors.inactive),
-    (IssueStatus.doing, 'In Progress', AppColors.cyan),
-    (IssueStatus.blocked, 'Blocked', AppColors.danger),
-    (IssueStatus.done, 'Resolved', AppColors.success),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final entries = [
+      (IssueStatus.open, s.issueOpen, AppColors.inactive),
+      (IssueStatus.doing, s.issueDoing, AppColors.cyan),
+      (IssueStatus.blocked, s.issueBlocked, AppColors.danger),
+      (IssueStatus.done, s.issueResolved, AppColors.success),
+    ];
+
     return Wrap(
       spacing: 8,
       runSpacing: 8,
-      children: _entries.map((entry) {
+      children: entries.map((entry) {
         final (status, label, color) = entry;
         final isSelected = current == status;
         return GestureDetector(
@@ -612,9 +625,10 @@ class _StatusButtonRow extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _CreateIssueDialog extends StatefulWidget {
+  final S s;
   final Future<void> Function(String title, IssueSeverity severity) onCreate;
 
-  const _CreateIssueDialog({required this.onCreate});
+  const _CreateIssueDialog({required this.s, required this.onCreate});
 
   @override
   State<_CreateIssueDialog> createState() => _CreateIssueDialogState();
@@ -642,10 +656,11 @@ class _CreateIssueDialogState extends State<_CreateIssueDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final s = widget.s;
     return AlertDialog(
       backgroundColor: AppColors.cardBg,
-      title: const Text('New Issue',
-          style: TextStyle(color: AppColors.textPrimary)),
+      title: Text(s.newIssue,
+          style: const TextStyle(color: AppColors.textPrimary)),
       content: Form(
         key: _formKey,
         child: Column(
@@ -656,23 +671,23 @@ class _CreateIssueDialogState extends State<_CreateIssueDialog> {
               controller: _titleController,
               autofocus: true,
               style: const TextStyle(color: AppColors.textPrimary),
-              decoration: const InputDecoration(
-                labelText: 'Issue title',
-                labelStyle: TextStyle(color: AppColors.textMuted),
-                enabledBorder: UnderlineInputBorder(
+              decoration: InputDecoration(
+                labelText: s.issueTitleLabel,
+                labelStyle: const TextStyle(color: AppColors.textMuted),
+                enabledBorder: const UnderlineInputBorder(
                   borderSide: BorderSide(color: AppColors.border),
                 ),
-                focusedBorder: UnderlineInputBorder(
+                focusedBorder: const UnderlineInputBorder(
                   borderSide: BorderSide(color: AppColors.cyan),
                 ),
               ),
               validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  (v == null || v.trim().isEmpty) ? s.required : null,
             ),
             const SizedBox(height: 16),
-            const Text(
-              'SEVERITY',
-              style: TextStyle(
+            Text(
+              s.severityLabel,
+              style: const TextStyle(
                 color: AppColors.textMuted,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
@@ -683,7 +698,7 @@ class _CreateIssueDialogState extends State<_CreateIssueDialog> {
             Row(
               children: [
                 _SeverityButton(
-                  label: 'Low',
+                  label: s.low,
                   color: AppColors.success,
                   selected: _severity == IssueSeverity.low,
                   onTap: () =>
@@ -691,7 +706,7 @@ class _CreateIssueDialogState extends State<_CreateIssueDialog> {
                 ),
                 const SizedBox(width: 8),
                 _SeverityButton(
-                  label: 'Medium',
+                  label: s.medium,
                   color: AppColors.warning,
                   selected: _severity == IssueSeverity.medium,
                   onTap: () =>
@@ -699,7 +714,7 @@ class _CreateIssueDialogState extends State<_CreateIssueDialog> {
                 ),
                 const SizedBox(width: 8),
                 _SeverityButton(
-                  label: 'High',
+                  label: s.high,
                   color: AppColors.danger,
                   selected: _severity == IssueSeverity.high,
                   onTap: () =>
@@ -713,8 +728,8 @@ class _CreateIssueDialogState extends State<_CreateIssueDialog> {
       actions: [
         TextButton(
           onPressed: _loading ? null : () => Navigator.pop(context),
-          child: const Text('Cancel',
-              style: TextStyle(color: AppColors.textSecondary)),
+          child: Text(s.cancel,
+              style: const TextStyle(color: AppColors.textSecondary)),
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
@@ -731,8 +746,8 @@ class _CreateIssueDialogState extends State<_CreateIssueDialog> {
                     color: AppColors.background,
                   ),
                 )
-              : const Text('Create',
-                  style: TextStyle(fontWeight: FontWeight.w700)),
+              : Text(s.createIssueTitle,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
         ),
       ],
     );
@@ -788,15 +803,9 @@ class _SeverityButton extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _StatusChip extends StatelessWidget {
+  final S s;
   final IssueStatus status;
-  const _StatusChip({required this.status});
-
-  static const _labels = {
-    IssueStatus.open: 'Open',
-    IssueStatus.doing: 'In Progress',
-    IssueStatus.blocked: 'Blocked',
-    IssueStatus.done: 'Resolved',
-  };
+  const _StatusChip({required this.s, required this.status});
 
   static const _colors = {
     IssueStatus.open: AppColors.inactive,
@@ -805,9 +814,18 @@ class _StatusChip extends StatelessWidget {
     IssueStatus.done: AppColors.success,
   };
 
+  String _label(S s) {
+    switch (status) {
+      case IssueStatus.open:    return s.issueOpen;
+      case IssueStatus.doing:   return s.issueDoing;
+      case IssueStatus.blocked: return s.issueBlocked;
+      case IssueStatus.done:    return s.issueResolved;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final label = _labels[status] ?? status.name;
+    final label = _label(s);
     final color = _colors[status] ?? AppColors.inactive;
     return Container(
       padding:
@@ -834,18 +852,21 @@ class _StatusChip extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _SourceChip extends StatelessWidget {
+  final S s;
   final IssueSource source;
-  const _SourceChip({required this.source});
+  const _SourceChip({required this.s, required this.source});
 
-  static const _labels = {
-    IssueSource.checklist: 'Checklist',
-    IssueSource.manual: 'Manual',
-    IssueSource.alarm: 'Alarm',
-  };
+  String _label(S s) {
+    switch (source) {
+      case IssueSource.checklist: return s.sourceChecklist;
+      case IssueSource.manual:    return s.sourceManual;
+      case IssueSource.alarm:     return s.sourceAlarm;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final label = _labels[source] ?? source.name;
+    final label = _label(s);
     return Container(
       padding:
           const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

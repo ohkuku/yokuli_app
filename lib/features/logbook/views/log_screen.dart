@@ -3,61 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/log_provider.dart';
+import '../../../core/providers/locale_provider.dart';
 import '../../../core/models/log_entry.dart';
-
-// ---------------------------------------------------------------------------
-// Filter enum mirrors LogEntryType plus an "All" sentinel
-// ---------------------------------------------------------------------------
-
-enum _LogFilter {
-  all,
-  navigation,
-  power,
-  ais,
-  manual,
-  system,
-  alarm,
-}
-
-extension _LogFilterExt on _LogFilter {
-  String get label {
-    switch (this) {
-      case _LogFilter.all:
-        return 'All';
-      case _LogFilter.navigation:
-        return 'Navigation';
-      case _LogFilter.power:
-        return 'Power';
-      case _LogFilter.ais:
-        return 'AIS';
-      case _LogFilter.manual:
-        return 'Manual';
-      case _LogFilter.system:
-        return 'System';
-      case _LogFilter.alarm:
-        return 'Alarm';
-    }
-  }
-
-  LogEntryType? get type {
-    switch (this) {
-      case _LogFilter.all:
-        return null;
-      case _LogFilter.navigation:
-        return LogEntryType.navigation;
-      case _LogFilter.power:
-        return LogEntryType.power;
-      case _LogFilter.ais:
-        return LogEntryType.ais;
-      case _LogFilter.manual:
-        return LogEntryType.manual;
-      case _LogFilter.system:
-        return LogEntryType.system;
-      case _LogFilter.alarm:
-        return LogEntryType.alarm;
-    }
-  }
-}
+import '../../../core/l10n/strings.dart';
 
 // ---------------------------------------------------------------------------
 // LogScreen
@@ -71,28 +19,28 @@ class LogScreen extends ConsumerStatefulWidget {
 }
 
 class _LogScreenState extends ConsumerState<LogScreen> {
-  _LogFilter _activeFilter = _LogFilter.all;
+  LogEntryType? _activeFilter; // null = All
 
-  void _showManualLogDialog() {
+  void _showManualLogDialog(S s) {
     final controller = TextEditingController();
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.cardBg,
-        title: const Text('Add Log Entry',
-            style: TextStyle(color: AppColors.textPrimary)),
+        title: Text(s.addLogEntry,
+            style: const TextStyle(color: AppColors.textPrimary)),
         content: TextField(
           controller: controller,
           autofocus: true,
           maxLines: 3,
           style: const TextStyle(color: AppColors.textPrimary),
-          decoration: const InputDecoration(
-            hintText: 'Enter message…',
-            hintStyle: TextStyle(color: AppColors.textMuted),
-            enabledBorder: UnderlineInputBorder(
+          decoration: InputDecoration(
+            hintText: s.enterMessage,
+            hintStyle: const TextStyle(color: AppColors.textMuted),
+            enabledBorder: const UnderlineInputBorder(
               borderSide: BorderSide(color: AppColors.border),
             ),
-            focusedBorder: UnderlineInputBorder(
+            focusedBorder: const UnderlineInputBorder(
               borderSide: BorderSide(color: AppColors.cyan),
             ),
           ),
@@ -100,8 +48,8 @@ class _LogScreenState extends ConsumerState<LogScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
+            child: Text(s.cancel,
+                style: const TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () {
@@ -114,8 +62,7 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                     );
               }
             },
-            child:
-                const Text('Add', style: TextStyle(color: AppColors.cyan)),
+            child: Text(s.add, style: const TextStyle(color: AppColors.cyan)),
           ),
         ],
       ),
@@ -124,38 +71,45 @@ class _LogScreenState extends ConsumerState<LogScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(stringsProvider);
     final allEntries = ref.watch(logProvider);
 
     // Filter + sort by timestamp desc
     final filtered = allEntries
-        .where((e) =>
-            _activeFilter == _LogFilter.all ||
-            e.type == _activeFilter.type)
+        .where((e) => _activeFilter == null || e.type == _activeFilter)
         .toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+    final filters = <(LogEntryType?, String)>[
+      (null, s.filterAll),
+      (LogEntryType.navigation, s.filterNavigation),
+      (LogEntryType.power, s.filterPower),
+      (LogEntryType.ais, s.filterAis),
+      (LogEntryType.manual, s.filterManual),
+      (LogEntryType.system, s.filterSystem),
+      (LogEntryType.alarm, s.filterAlarm),
+    ];
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.background,
-        title: const Text('Log',
-            style: TextStyle(color: AppColors.textPrimary)),
+        title: Text(s.logTitle,
+            style: const TextStyle(color: AppColors.textPrimary)),
         iconTheme: const IconThemeData(color: AppColors.textPrimary),
         actions: [
           IconButton(
             icon: const Icon(Icons.filter_list_rounded,
                 color: AppColors.textSecondary),
-            tooltip: 'Filter',
-            onPressed: () {
-              // Filter is always visible via chips — icon is decorative
-            },
+            tooltip: s.filterAll,
+            onPressed: () {},
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.teal,
         foregroundColor: AppColors.background,
-        onPressed: _showManualLogDialog,
+        onPressed: () => _showManualLogDialog(s),
         child: const Icon(Icons.edit_rounded),
       ),
       body: Column(
@@ -167,13 +121,14 @@ class _LogScreenState extends ConsumerState<LogScreen> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(
                   horizontal: 16, vertical: 8),
-              children: _LogFilter.values.map((filter) {
-                final isActive = _activeFilter == filter;
+              children: filters.map((entry) {
+                final (type, label) = entry;
+                final isActive = _activeFilter == type;
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: GestureDetector(
                     onTap: () =>
-                        setState(() => _activeFilter = filter),
+                        setState(() => _activeFilter = type),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       padding: const EdgeInsets.symmetric(
@@ -191,7 +146,7 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                         ),
                       ),
                       child: Text(
-                        filter.label,
+                        label,
                         style: TextStyle(
                           color: isActive
                               ? AppColors.cyan
@@ -213,28 +168,28 @@ class _LogScreenState extends ConsumerState<LogScreen> {
           // ---- Log entries ----
           Expanded(
             child: filtered.isEmpty
-                ? const Center(
+                ? Center(
                     child: Padding(
-                      padding: EdgeInsets.all(32),
+                      padding: const EdgeInsets.all(32),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.subject_rounded,
+                          const Icon(Icons.subject_rounded,
                               size: 56, color: AppColors.inactive),
-                          SizedBox(height: 14),
+                          const SizedBox(height: 14),
                           Text(
-                            'No log entries yet',
-                            style: TextStyle(
+                            s.noLogEntries,
+                            style: const TextStyle(
                               color: AppColors.textPrimary,
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          SizedBox(height: 6),
+                          const SizedBox(height: 6),
                           Text(
-                            'Events and manual entries will appear here.',
+                            s.noLogEntriesHint,
                             textAlign: TextAlign.center,
-                            style: TextStyle(
+                            style: const TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 13),
                           ),
