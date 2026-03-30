@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: write
+  pages: write        # needed for GitHub Pages deployment
+  id-token: write     # needed for GitHub Pages OIDC
 
 jobs:
   dev-build:
@@ -63,15 +65,20 @@ jobs:
 
           DEV_VERSION="${BASE}-dev.${SHORT_SHA}"
           TAG="dev/${BRANCH}"
+          PREVIEW_URL="https://ohkuku.github.io/yokuli_app/preview/${BRANCH}/"
 
           echo "dev_version=${DEV_VERSION}"  >> $GITHUB_OUTPUT
           echo "short_sha=${SHORT_SHA}"      >> $GITHUB_OUTPUT
           echo "branch=${BRANCH}"            >> $GITHUB_OUTPUT
           echo "tag=${TAG}"                  >> $GITHUB_OUTPUT
+          echo "preview_url=${PREVIEW_URL}"  >> $GITHUB_OUTPUT
           echo "Dev build: ${DEV_VERSION} → tag: ${TAG}"
+          echo "Web preview: ${PREVIEW_URL}"
 
       - name: Flutter pub get
         run: flutter pub get
+
+      # ── Android ────────────────────────────────────────────────────────
 
       - name: Build debug APK
         run: flutter build apk --debug
@@ -81,6 +88,25 @@ jobs:
           V="${{ steps.ver.outputs.dev_version }}"
           cp build/app/outputs/flutter-apk/app-debug.apk \
              yokuli-${V}.apk
+
+      # ── Web preview ────────────────────────────────────────────────────
+
+      - name: Build Web preview
+        run: |
+          flutter config --enable-web
+          BRANCH="${{ steps.ver.outputs.branch }}"
+          # base-href must match the GitHub Pages subdirectory
+          flutter build web --release --base-href "/yokuli_app/preview/${BRANCH}/"
+
+      - name: Deploy web preview to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: build/web
+          destination_dir: preview/${{ steps.ver.outputs.branch }}
+          keep_files: true   # preserve other branches' previews
+
+      # ── GitHub Release ─────────────────────────────────────────────────
 
       # Delete previous pre-release for this branch (keep only latest)
       - name: Delete previous pre-release for this branch
@@ -109,8 +135,14 @@ jobs:
             **Commit:** `${{ github.sha }}`
             **Version:** `${{ steps.ver.outputs.dev_version }}`
 
+            ### 🌐 Web Preview
+            **[${{ steps.ver.outputs.preview_url }}](${{ steps.ver.outputs.preview_url }})**
+            *(available ~1 min after this release, once Pages deploys)*
+
+            ### 📱 Android
+            Install the APK below (enable "Install from unknown sources").
+
             > ⚠️ Development build — not for production use.
-            > Enable "Install from unknown sources" on Android to install.
           prerelease: true
           make_latest: false
           files: |
