@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/voyage_provider.dart';
@@ -186,9 +187,11 @@ class _VoyageScreenState extends ConsumerState<VoyageScreen> {
               const SizedBox(height: 16),
             ],
 
-            // ---- Quick log buttons ----
-            _QuickLogSection(s: s, onLog: (label) => _quickLog(label, s)),
-            const SizedBox(height: 16),
+            // ---- Quick log buttons (only when voyage is active) ----
+            if (active != null) ...[
+              _QuickLogSection(s: s, onLog: (label) => _quickLog(label, s)),
+              const SizedBox(height: 16),
+            ],
 
             // ---- Voyage log entries (active voyage only) ----
             if (active != null) ...[
@@ -243,7 +246,11 @@ class _VoyageScreenState extends ConsumerState<VoyageScreen> {
               ...history.map(
                 (vs) => Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: _VoyageHistoryTile(s: s, voyage: vs),
+                  child: _VoyageHistoryTile(
+                    s: s,
+                    voyage: vs,
+                    onTap: () => context.push('/voyage/${vs.id}'),
+                  ),
                 ),
               ),
 
@@ -570,7 +577,8 @@ class _StartVoyageCard extends StatelessWidget {
 class _VoyageHistoryTile extends StatelessWidget {
   final S s;
   final VoyageSession voyage;
-  const _VoyageHistoryTile({required this.s, required this.voyage});
+  final VoidCallback onTap;
+  const _VoyageHistoryTile({required this.s, required this.voyage, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -590,46 +598,70 @@ class _VoyageHistoryTile extends StatelessWidget {
       durationStr = h > 0 ? '${h}h ${m}m' : '${m}m';
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            margin: const EdgeInsets.only(top: 2),
-            decoration:
-                BoxDecoration(color: dotColor, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  startStr,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  durationStr,
-                  style: const TextStyle(
-                      color: AppColors.textMuted, fontSize: 12),
-                ),
-              ],
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.cardBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.only(top: 2),
+              decoration:
+                  BoxDecoration(color: dotColor, shape: BoxShape.circle),
             ),
-          ),
-          _SourceBadge(s: s, source: voyage.source),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (voyage.name != null && voyage.name!.isNotEmpty) ...[
+                    Text(
+                      voyage.name!,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      startStr,
+                      style: const TextStyle(
+                          color: AppColors.textMuted, fontSize: 12),
+                    ),
+                  ] else ...[
+                    Text(
+                      startStr,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 3),
+                  Text(
+                    durationStr,
+                    style: const TextStyle(
+                        color: AppColors.textMuted, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            _SourceBadge(s: s, source: voyage.source),
+            const SizedBox(width: 4),
+            const Icon(Icons.chevron_right_rounded,
+                size: 18, color: AppColors.textMuted),
+          ],
+        ),
       ),
     );
   }

@@ -167,6 +167,49 @@ class VoyageNotifier extends Notifier<VoyageState> {
         {'type': 'voyage_upsert', 'data': ended.toJson()});
   }
 
+  // ---- Edit metadata ------------------------------------------------------
+
+  /// Set a custom name/alias for a voyage.
+  Future<void> rename(String id, String name) async {
+    final trimmed = name.trim();
+    if (state.active?.id == id) {
+      state = VoyageState(
+        active: state.active!.copyWith(name: trimmed.isEmpty ? null : trimmed),
+        history: state.history,
+      );
+    } else {
+      final idx = state.history.indexWhere((s) => s.id == id);
+      if (idx < 0) return;
+      final updated = List<VoyageSession>.from(state.history);
+      updated[idx] = updated[idx].copyWith(name: trimmed.isEmpty ? null : trimmed);
+      state = VoyageState(active: state.active, history: updated);
+    }
+    await save();
+    final session = state.active?.id == id
+        ? state.active!
+        : state.history.firstWhere((s) => s.id == id);
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'voyage_upsert', 'data': session.toJson()});
+  }
+
+  /// Update notes for a voyage.
+  Future<void> updateNotes(String id, String notes) async {
+    final trimmed = notes.trim();
+    if (state.active?.id == id) {
+      state = VoyageState(
+        active: state.active!.copyWith(notes: trimmed.isEmpty ? null : trimmed),
+        history: state.history,
+      );
+    } else {
+      final idx = state.history.indexWhere((s) => s.id == id);
+      if (idx < 0) return;
+      final updated = List<VoyageSession>.from(state.history);
+      updated[idx] = updated[idx].copyWith(notes: trimmed.isEmpty ? null : trimmed);
+      state = VoyageState(active: state.active, history: updated);
+    }
+    await save();
+  }
+
   // ---- Remote sync --------------------------------------------------------
 
   /// Upsert a [VoyageSession] received from a remote device (LAN sync).
@@ -222,6 +265,19 @@ final voyageProvider =
 final activeVoyageIdProvider = Provider<String?>(
   (ref) => ref.watch(voyageProvider).active?.id,
 );
+
+/// Map of voyage ID → display title for quick lookup in log screen.
+final voyageNameMapProvider = Provider<Map<String, String>>((ref) {
+  final state = ref.watch(voyageProvider);
+  final map = <String, String>{};
+  if (state.active != null) {
+    map[state.active!.id] = state.active!.displayTitle;
+  }
+  for (final v in state.history) {
+    map[v.id] = v.displayTitle;
+  }
+  return map;
+});
 
 /// Auto-voyage detection: listens to SOG and calls [handleSog].
 /// Wire this up in your app's root widget or service layer:

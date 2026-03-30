@@ -7,9 +7,15 @@ class LogContext {
   final double? sog;
   final double? cog;
   final double? heading;
-  final double? depth;
-  final double? batteryVoltage;
+  final double? depth;           // depthBelowKeel
+  final double? depthBelowSurface;
+  final double? batteryVoltage;  // first battery voltage (summary)
+  final Map<String, double> allBatteryVoltages; // all battery voltages keyed by id
   final double? solarPower;
+  final double? trueWindSpeed;
+  final double? trueWindDirection;
+  final double? apparentWindSpeed;
+  final double? apparentWindAngle;
   final List<String> activeAlarmIds;
   final String? aisTargetId;
 
@@ -19,8 +25,14 @@ class LogContext {
     this.cog,
     this.heading,
     this.depth,
+    this.depthBelowSurface,
     this.batteryVoltage,
+    this.allBatteryVoltages = const {},
     this.solarPower,
+    this.trueWindSpeed,
+    this.trueWindDirection,
+    this.apparentWindSpeed,
+    this.apparentWindAngle,
     required this.activeAlarmIds,
     this.aisTargetId,
   });
@@ -31,8 +43,14 @@ class LogContext {
         if (cog != null) 'cog': cog,
         if (heading != null) 'hdg': heading,
         if (depth != null) 'dep': depth,
+        if (depthBelowSurface != null) 'dbs': depthBelowSurface,
         if (batteryVoltage != null) 'bv': batteryVoltage,
+        if (allBatteryVoltages.isNotEmpty) 'abv': allBatteryVoltages,
         if (solarPower != null) 'sp': solarPower,
+        if (trueWindSpeed != null) 'tws': trueWindSpeed,
+        if (trueWindDirection != null) 'twd': trueWindDirection,
+        if (apparentWindSpeed != null) 'aws': apparentWindSpeed,
+        if (apparentWindAngle != null) 'awa': apparentWindAngle,
         'aal': activeAlarmIds,
         if (aisTargetId != null) 'ais': aisTargetId,
       };
@@ -47,10 +65,25 @@ class LogContext {
             json['hdg'] != null ? (json['hdg'] as num).toDouble() : null,
         depth:
             json['dep'] != null ? (json['dep'] as num).toDouble() : null,
+        depthBelowSurface:
+            json['dbs'] != null ? (json['dbs'] as num).toDouble() : null,
         batteryVoltage:
             json['bv'] != null ? (json['bv'] as num).toDouble() : null,
+        allBatteryVoltages: json['abv'] != null
+            ? Map<String, double>.from(
+                (json['abv'] as Map<String, dynamic>).map(
+                    (k, v) => MapEntry(k, (v as num).toDouble())))
+            : const {},
         solarPower:
             json['sp'] != null ? (json['sp'] as num).toDouble() : null,
+        trueWindSpeed:
+            json['tws'] != null ? (json['tws'] as num).toDouble() : null,
+        trueWindDirection:
+            json['twd'] != null ? (json['twd'] as num).toDouble() : null,
+        apparentWindSpeed:
+            json['aws'] != null ? (json['aws'] as num).toDouble() : null,
+        apparentWindAngle:
+            json['awa'] != null ? (json['awa'] as num).toDouble() : null,
         activeAlarmIds: (json['aal'] as List<dynamic>).cast<String>(),
         aisTargetId: json['ais'] as String?,
       );

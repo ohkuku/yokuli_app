@@ -1,8 +1,13 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:latlong2/latlong.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/log_provider.dart';
+import '../../../core/providers/voyage_provider.dart';
 import '../../../core/providers/locale_provider.dart';
 import '../../../core/models/log_entry.dart';
 import '../../../core/l10n/strings.dart';
@@ -20,6 +25,18 @@ class LogScreen extends ConsumerStatefulWidget {
 
 class _LogScreenState extends ConsumerState<LogScreen> {
   LogEntryType? _activeFilter; // null = All
+
+  void _showLogDetail(BuildContext context, LogEntry entry) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _LogDetailSheet(entry: entry),
+    );
+  }
 
   void _showManualLogDialog(S s) {
     final controller = TextEditingController();
@@ -203,7 +220,18 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                     separatorBuilder: (_, __) =>
                         const SizedBox(height: 6),
                     itemBuilder: (context, index) {
-                      return _LogEntryRow(entry: filtered[index]);
+                      final entry = filtered[index];
+                      final voyageNames = ref.watch(voyageNameMapProvider);
+                      return _LogEntryRow(
+                        entry: entry,
+                        voyageName: entry.voyageId != null
+                            ? voyageNames[entry.voyageId]
+                            : null,
+                        onTap: () => _showLogDetail(context, entry),
+                        onVoyageTap: entry.voyageId != null
+                            ? () => context.push('/voyage/${entry.voyageId}')
+                            : null,
+                      );
                     },
                   ),
           ),
@@ -219,7 +247,16 @@ class _LogScreenState extends ConsumerState<LogScreen> {
 
 class _LogEntryRow extends StatelessWidget {
   final LogEntry entry;
-  const _LogEntryRow({required this.entry});
+  final String? voyageName;
+  final VoidCallback onTap;
+  final VoidCallback? onVoyageTap;
+
+  const _LogEntryRow({
+    required this.entry,
+    this.voyageName,
+    required this.onTap,
+    this.onVoyageTap,
+  });
 
   static const _typeConfig = <LogEntryType, ({IconData icon, Color color})>{
     LogEntryType.system: (
@@ -276,69 +313,335 @@ class _LogEntryRow extends StatelessWidget {
     final timeFmt =
         DateFormat('HH:mm dd/MM').format(entry.timestamp.toLocal());
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: _bgColor(entry.type),
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Icon
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: cfg.color.withAlpha(25),
-              borderRadius: BorderRadius.circular(8),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: _bgColor(entry.type),
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Icon
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: cfg.color.withAlpha(25),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(cfg.icon, size: 17, color: cfg.color),
             ),
-            child: Icon(cfg.icon, size: 17, color: cfg.color),
-          ),
-          const SizedBox(width: 12),
-          // Message + subtype
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  entry.message,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (entry.subtype != null && entry.subtype!.isNotEmpty) ...[
-                  const SizedBox(height: 2),
+            const SizedBox(width: 12),
+            // Message + subtype + voyage chip
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Text(
-                    entry.subtype!,
-                    style: TextStyle(
-                      color: cfg.color,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                    entry.message,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (entry.subtype != null && entry.subtype!.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      entry.subtype!,
+                      style: TextStyle(
+                        color: cfg.color,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                  if (voyageName != null) ...[
+                    const SizedBox(height: 3),
+                    GestureDetector(
+                      onTap: onVoyageTap,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.teal.withAlpha(28),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                              color: AppColors.teal.withAlpha(80)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.sailing_rounded,
+                                size: 10, color: AppColors.teal),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                voyageName!,
+                                style: const TextStyle(
+                                  color: AppColors.teal,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Timestamp
+            Text(
+              timeFmt,
+              style: const TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 11,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Log Detail Sheet — full snapshot + optional map pin
+// ---------------------------------------------------------------------------
+
+class _LogDetailSheet extends StatelessWidget {
+  final LogEntry entry;
+  const _LogDetailSheet({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final ctx = entry.context;
+    final timeFmt =
+        DateFormat('dd MMM yyyy  HH:mm:ss').format(entry.timestamp.toLocal());
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.65,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (_, scrollController) => ListView(
+        controller: scrollController,
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: AppColors.inactive,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Text(entry.message,
+              style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(timeFmt,
+              style: const TextStyle(
+                  color: AppColors.textMuted, fontSize: 12)),
+          const SizedBox(height: 14),
+
+          // ---- Map pin (if we have a position) ----
+          if (ctx?.position != null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(
+                height: 180,
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter: LatLng(ctx!.position!.latitude,
+                        ctx.position!.longitude),
+                    initialZoom: 14,
+                    interactionOptions: const InteractionOptions(
+                      flags: InteractiveFlag.none,
                     ),
                   ),
-                ],
-              ],
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'app.yokuli',
+                    ),
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: LatLng(ctx.position!.latitude,
+                              ctx.position!.longitude),
+                          width: 24,
+                          height: 24,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.cyan,
+                              shape: BoxShape.circle,
+                              border:
+                                  Border.all(color: Colors.white, width: 2.5),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          // Timestamp
-          Text(
-            timeFmt,
-            style: const TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 11,
-              fontFeatures: [FontFeature.tabularFigures()],
+            const SizedBox(height: 14),
+          ],
+
+          if (ctx != null) ...[
+            const Divider(color: AppColors.border),
+            const SizedBox(height: 10),
+            _SheetSection('导航'),
+            if (ctx.position != null)
+              _DetailRow(
+                icon: Icons.location_on_rounded,
+                label: '坐标',
+                value:
+                    '${ctx.position!.latitude.toStringAsFixed(5)}°, '
+                    '${ctx.position!.longitude.toStringAsFixed(5)}°',
+              ),
+            if (ctx.sog != null)
+              _DetailRow(
+                  icon: Icons.speed_rounded,
+                  label: 'SOG',
+                  value: '${ctx.sog!.toStringAsFixed(1)} kn'),
+            if (ctx.cog != null)
+              _DetailRow(
+                  icon: Icons.explore_rounded,
+                  label: 'COG',
+                  value: '${ctx.cog!.toStringAsFixed(0)}°'),
+            if (ctx.heading != null)
+              _DetailRow(
+                  icon: Icons.navigation_rounded,
+                  label: 'HDG',
+                  value: '${ctx.heading!.toStringAsFixed(0)}°'),
+            if (ctx.depth != null)
+              _DetailRow(
+                  icon: Icons.water_rounded,
+                  label: '龙骨下水深',
+                  value: '${ctx.depth!.toStringAsFixed(1)} m'),
+            if (ctx.depthBelowSurface != null)
+              _DetailRow(
+                  icon: Icons.water_rounded,
+                  label: '水面水深',
+                  value: '${ctx.depthBelowSurface!.toStringAsFixed(1)} m'),
+            if (ctx.trueWindSpeed != null ||
+                ctx.trueWindDirection != null ||
+                ctx.apparentWindSpeed != null) ...[
+              const SizedBox(height: 6),
+              _SheetSection('风'),
+            ],
+            if (ctx.trueWindSpeed != null)
+              _DetailRow(
+                  icon: Icons.air_rounded,
+                  label: '真风速',
+                  value: '${ctx.trueWindSpeed!.toStringAsFixed(1)} kn'),
+            if (ctx.trueWindDirection != null)
+              _DetailRow(
+                  icon: Icons.air_rounded,
+                  label: '真风向',
+                  value: '${ctx.trueWindDirection!.toStringAsFixed(0)}°'),
+            if (ctx.apparentWindSpeed != null)
+              _DetailRow(
+                  icon: Icons.air_rounded,
+                  label: '表风速',
+                  value: '${ctx.apparentWindSpeed!.toStringAsFixed(1)} kn'),
+            if (ctx.apparentWindAngle != null)
+              _DetailRow(
+                  icon: Icons.air_rounded,
+                  label: '表风角',
+                  value: '${ctx.apparentWindAngle!.toStringAsFixed(0)}°'),
+            if (ctx.allBatteryVoltages.isNotEmpty ||
+                ctx.solarPower != null) ...[
+              const SizedBox(height: 6),
+              _SheetSection('电力'),
+            ],
+            ...ctx.allBatteryVoltages.entries.map(
+              (e) => _DetailRow(
+                  icon: Icons.battery_full_rounded,
+                  label: e.key,
+                  value: '${e.value.toStringAsFixed(2)} V'),
             ),
-          ),
+            if (ctx.solarPower != null)
+              _DetailRow(
+                  icon: Icons.wb_sunny_rounded,
+                  label: '太阳能',
+                  value: '${ctx.solarPower!.toStringAsFixed(0)} W'),
+          ],
         ],
       ),
     );
   }
+}
+
+class _SheetSection extends StatelessWidget {
+  final String text;
+  const _SheetSection(this.text);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.0,
+          ),
+        ),
+      );
+}
+
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  const _DetailRow(
+      {required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 14, color: AppColors.textMuted),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 70,
+              child: Text('$label:',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 13)),
+            ),
+            Expanded(
+              child: Text(value,
+                  style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500)),
+            ),
+          ],
+        ),
+      );
 }

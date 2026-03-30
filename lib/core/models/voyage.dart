@@ -12,6 +12,8 @@ class VoyageSession {
   final GpsPosition? endPosition;
   final VoyageStatus status;
   final VoyageSource source;
+  final String? name;   // custom alias/title set by user
+  final String? notes;  // free-text voyage notes
 
   const VoyageSession({
     required this.id,
@@ -21,9 +23,16 @@ class VoyageSession {
     this.endPosition,
     required this.status,
     required this.source,
+    this.name,
+    this.notes,
   });
 
   bool get isActive => status == VoyageStatus.active;
+
+  /// Display title: custom name if set, otherwise formatted start time.
+  String get displayTitle => name != null && name!.isNotEmpty
+      ? name!
+      : '航行 ${startTime.toLocal().toString().substring(0, 16)}';
 
   Duration get duration =>
       endTime?.difference(startTime) ?? DateTime.now().difference(startTime);
@@ -36,6 +45,8 @@ class VoyageSession {
     Object? endPosition = _sentinel,
     VoyageStatus? status,
     VoyageSource? source,
+    Object? name = _sentinel,
+    Object? notes = _sentinel,
   }) {
     return VoyageSession(
       id: id ?? this.id,
@@ -49,6 +60,8 @@ class VoyageSession {
           : endPosition as GpsPosition?,
       status: status ?? this.status,
       source: source ?? this.source,
+      name: name == _sentinel ? this.name : name as String?,
+      notes: notes == _sentinel ? this.notes : notes as String?,
     );
   }
 
@@ -60,6 +73,8 @@ class VoyageSession {
         if (endPosition != null) 'ep': endPosition!.toJson(),
         'vs': status.index,
         'src': source.index,
+        if (name != null) 'nm': name,
+        if (notes != null) 'nts': notes,
       };
 
   factory VoyageSession.fromJson(Map<String, dynamic> json) {
@@ -75,6 +90,8 @@ class VoyageSession {
           : null,
       status: VoyageStatus.values[json['vs'] as int],
       source: VoyageSource.values[json['src'] as int],
+      name: json['nm'] as String?,
+      notes: json['nts'] as String?,
     );
   }
 }

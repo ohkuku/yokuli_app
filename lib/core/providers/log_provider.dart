@@ -96,25 +96,19 @@ class LogNotifier extends Notifier<List<LogEntry>> {
   }) async {
     final vessel = ref.read(vesselProvider);
 
-    // Pull the first battery's voltage as a summary value (if available).
-    double? batteryVoltage;
-    for (final b in vessel.batteries.values) {
-      if (b.voltage != null) {
-        batteryVoltage = b.voltage;
-        break;
+    // Collect all battery voltages (keyed by battery id).
+    final allBatteryVoltages = <String, double>{};
+    double? firstBatteryVoltage;
+    for (final entry in vessel.batteries.entries) {
+      final v = entry.value.voltage;
+      if (v != null) {
+        allBatteryVoltages[entry.key] = v;
+        firstBatteryVoltage ??= v;
       }
     }
 
-    // Attempt to read solar total power from the extended VesselState spec.
-    double? solarPower;
-    try {
-      final dynamic v = vessel;
-      final dynamic raw = (v as dynamic).powerSummary;
-      if (raw != null) {
-        final dynamic sp = (raw as dynamic).solarInputPowerTotal;
-        if (sp is double) solarPower = sp;
-      }
-    } catch (_) {}
+    // Solar total input power from PowerSummaryState (if available).
+    final solarPower = vessel.powerSummary?.solarInputPowerTotal;
 
     final context = LogContext(
       position: vessel.position,
@@ -122,8 +116,14 @@ class LogNotifier extends Notifier<List<LogEntry>> {
       cog: vessel.courseOverGround,
       heading: vessel.heading,
       depth: vessel.depthBelowKeel,
-      batteryVoltage: batteryVoltage,
+      depthBelowSurface: vessel.depthBelowSurface,
+      batteryVoltage: firstBatteryVoltage,
+      allBatteryVoltages: allBatteryVoltages,
       solarPower: solarPower,
+      trueWindSpeed: vessel.trueWindSpeed,
+      trueWindDirection: vessel.trueWindDirection,
+      apparentWindSpeed: vessel.apparentWindSpeed,
+      apparentWindAngle: vessel.apparentWindAngle,
       activeAlarmIds: activeAlarmIds,
       aisTargetId: aisTargetId,
     );
