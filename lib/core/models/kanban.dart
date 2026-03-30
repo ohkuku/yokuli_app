@@ -2,23 +2,44 @@ class KanbanColumn {
   final String id;
   final String title;
   final int order;
+  // LWW sync fields
+  final DateTime updatedAt;
+  final bool deleted;
 
-  const KanbanColumn({
+  KanbanColumn({
     required this.id,
     required this.title,
     required this.order,
-  });
+    DateTime? updatedAt,
+    this.deleted = false,
+  }) : updatedAt = updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
 
-  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'order': order};
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'order': order,
+        'ua': updatedAt.toIso8601String(),
+        if (deleted) 'del': true,
+      };
 
   factory KanbanColumn.fromJson(Map<String, dynamic> j) => KanbanColumn(
         id: j['id'] as String,
         title: j['title'] as String,
         order: (j['order'] as num).toInt(),
+        updatedAt: j['ua'] != null
+            ? DateTime.parse(j['ua'] as String)
+            : DateTime.fromMillisecondsSinceEpoch(0),
+        deleted: j['del'] as bool? ?? false,
       );
 
-  KanbanColumn copyWith({String? title, int? order}) =>
-      KanbanColumn(id: id, title: title ?? this.title, order: order ?? this.order);
+  KanbanColumn copyWith({String? title, int? order, DateTime? updatedAt, bool? deleted}) =>
+      KanbanColumn(
+        id: id,
+        title: title ?? this.title,
+        order: order ?? this.order,
+        updatedAt: updatedAt ?? this.updatedAt,
+        deleted: deleted ?? this.deleted,
+      );
 }
 
 enum KanbanPriority { low, medium, high }
@@ -27,7 +48,7 @@ const kKanbanDefaultCategories = <String>[
   '发动机', '电气', '船体', '帆具', '索具', '安全', '其他',
 ];
 
-const kKanbanDefaultColumns = <KanbanColumn>[
+final kKanbanDefaultColumns = <KanbanColumn>[
   KanbanColumn(id: 'backlog', title: '待办', order: 0),
   KanbanColumn(id: 'inprogress', title: '进行中', order: 1),
   KanbanColumn(id: 'done', title: '已完成', order: 2),
@@ -41,10 +62,12 @@ class KanbanCard {
   final String category;
   final KanbanPriority priority;
   final DateTime createdAt;
-  final DateTime? updatedAt;
+  final DateTime updatedAt;
   final bool archived;
+  // LWW sync fields
+  final bool deleted;
 
-  const KanbanCard({
+  KanbanCard({
     required this.id,
     required this.columnId,
     required this.title,
@@ -52,9 +75,10 @@ class KanbanCard {
     this.category = '其他',
     this.priority = KanbanPriority.medium,
     required this.createdAt,
-    this.updatedAt,
+    DateTime? updatedAt,
     this.archived = false,
-  });
+    this.deleted = false,
+  }) : updatedAt = updatedAt ?? createdAt;
 
   KanbanCard copyWith({
     String? columnId,
@@ -64,6 +88,7 @@ class KanbanCard {
     KanbanPriority? priority,
     DateTime? updatedAt,
     bool? archived,
+    bool? deleted,
   }) =>
       KanbanCard(
         id: id,
@@ -75,6 +100,7 @@ class KanbanCard {
         createdAt: createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
         archived: archived ?? this.archived,
+        deleted: deleted ?? this.deleted,
       );
 
   Map<String, dynamic> toJson() => {
@@ -85,21 +111,26 @@ class KanbanCard {
         'cat': category,
         'pri': priority.index,
         'ca': createdAt.toIso8601String(),
-        if (updatedAt != null) 'ua': updatedAt!.toIso8601String(),
+        'ua': updatedAt.toIso8601String(),
         if (archived) 'arc': true,
+        if (deleted) 'del': true,
       };
 
-  factory KanbanCard.fromJson(Map<String, dynamic> j) => KanbanCard(
-        id: j['id'] as String,
-        columnId: j['col'] as String,
-        title: j['title'] as String,
-        description: j['desc'] as String?,
-        category: j['cat'] as String? ?? '其他',
-        priority: KanbanPriority.values[(j['pri'] as num?)?.toInt() ?? 1],
-        createdAt: DateTime.parse(j['ca'] as String),
-        updatedAt: j['ua'] != null ? DateTime.parse(j['ua'] as String) : null,
-        archived: j['arc'] as bool? ?? false,
-      );
+  factory KanbanCard.fromJson(Map<String, dynamic> j) {
+    final createdAt = DateTime.parse(j['ca'] as String);
+    return KanbanCard(
+      id: j['id'] as String,
+      columnId: j['col'] as String,
+      title: j['title'] as String,
+      description: j['desc'] as String?,
+      category: j['cat'] as String? ?? '其他',
+      priority: KanbanPriority.values[(j['pri'] as num?)?.toInt() ?? 1],
+      createdAt: createdAt,
+      updatedAt: j['ua'] != null ? DateTime.parse(j['ua'] as String) : createdAt,
+      archived: j['arc'] as bool? ?? false,
+      deleted: j['del'] as bool? ?? false,
+    );
+  }
 }
 
 class KanbanState {
@@ -116,12 +147,12 @@ class KanbanState {
           .where((c) =>
               c.columnId == columnId &&
               !c.archived &&
+              !c.deleted &&
               (category == null || c.category == category))
           .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
   List<KanbanCard> get archivedCards =>
-      cards.where((c) => c.archived).toList()
-        ..sort((a, b) => (b.updatedAt ?? b.createdAt)
-            .compareTo(a.updatedAt ?? a.createdAt));
+      cards.where((c) => c.archived && !c.deleted).toList()
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 }

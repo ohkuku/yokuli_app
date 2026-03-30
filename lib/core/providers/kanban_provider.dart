@@ -98,9 +98,12 @@ class KanbanNotifier extends Notifier<KanbanState> {
   }
 
   Future<void> deleteCard(String id) async {
-    state = KanbanState(
-        columns: state.columns,
-        cards: state.cards.where((c) => c.id != id).toList());
+    final now = DateTime.now();
+    final updated = state.cards.map((c) {
+      if (c.id != id) return c;
+      return c.copyWith(deleted: true, updatedAt: now);
+    }).toList();
+    state = KanbanState(columns: state.columns, cards: updated);
     await _save();
     _broadcast();
     _bump();
@@ -140,13 +143,15 @@ class KanbanNotifier extends Notifier<KanbanState> {
   }
 
   Future<void> addColumn(String title) async {
+    final now = DateTime.now();
     final newOrder = state.columns.isEmpty
         ? 0
         : state.columns.map((c) => c.order).reduce((a, b) => a > b ? a : b) + 1;
     final col = KanbanColumn(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: now.millisecondsSinceEpoch.toString(),
       title: title,
       order: newOrder,
+      updatedAt: now,
     );
     state = KanbanState(columns: [...state.columns, col], cards: state.cards);
     await _save();
@@ -155,15 +160,18 @@ class KanbanNotifier extends Notifier<KanbanState> {
   }
 
   Future<void> deleteColumn(String columnId) async {
-    // Move orphaned cards to backlog
+    final now = DateTime.now();
+    // Move orphaned cards to backlog and bump their updatedAt.
     final updatedCards = state.cards.map((c) {
-      if (c.columnId != columnId) return c;
-      return c.copyWith(columnId: 'backlog');
+      if (c.columnId != columnId || c.deleted) return c;
+      return c.copyWith(columnId: 'backlog', updatedAt: now);
     }).toList();
-    state = KanbanState(
-      columns: state.columns.where((c) => c.id != columnId).toList(),
-      cards: updatedCards,
-    );
+    // Soft-delete the column.
+    final updatedColumns = state.columns.map((c) {
+      if (c.id != columnId) return c;
+      return c.copyWith(deleted: true, updatedAt: now);
+    }).toList();
+    state = KanbanState(columns: updatedColumns, cards: updatedCards);
     await _save();
     _broadcast();
     _bump();
@@ -182,20 +190,48 @@ class KanbanNotifier extends Notifier<KanbanState> {
     await _save();
   }
 
+  /// Merge incoming kanban state using per-record LWW (updatedAt comparison).
   void applySync(Map<String, dynamic> data) {
     try {
-      final cols = (data['columns'] as List<dynamic>? ?? [])
+      final incomingCols = (data['columns'] as List<dynamic>? ?? [])
           .map((c) => KanbanColumn.fromJson(c as Map<String, dynamic>))
-          .toList()
-        ..sort((a, b) => a.order.compareTo(b.order));
-      final cards = (data['cards'] as List<dynamic>? ?? [])
+          .toList();
+      final incomingCards = (data['cards'] as List<dynamic>? ?? [])
           .map((c) => KanbanCard.fromJson(c as Map<String, dynamic>))
           .toList();
+
+      // Merge columns: LWW per ID.
+      final colsById = <String, KanbanColumn>{
+        for (final c in state.columns) c.id: c,
+      };
+      for (final inc in incomingCols) {
+        final existing = colsById[inc.id];
+        if (existing == null || inc.updatedAt.isAfter(existing.updatedAt)) {
+          colsById[inc.id] = inc;
+        }
+      }
+      final mergedCols = colsById.values
+          .where((c) => !c.deleted)
+          .toList()
+        ..sort((a, b) => a.order.compareTo(b.order));
+
+      // Merge cards: LWW per ID.
+      final cardsById = <String, KanbanCard>{
+        for (final c in state.cards) c.id: c,
+      };
+      for (final inc in incomingCards) {
+        final existing = cardsById[inc.id];
+        if (existing == null || inc.updatedAt.isAfter(existing.updatedAt)) {
+          cardsById[inc.id] = inc;
+        }
+      }
+      final mergedCards = cardsById.values.toList();
+
       state = KanbanState(
-        columns: cols.isEmpty ? state.columns : cols,
-        cards: cards,
+        columns: mergedCols.isEmpty ? state.columns : mergedCols,
+        cards: mergedCards,
       );
-      _save(); // persist received state locally
+      _save();
     } catch (_) {}
   }
 }

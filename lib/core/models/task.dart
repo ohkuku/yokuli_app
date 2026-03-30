@@ -191,8 +191,11 @@ class TaskInstance {
   final DateTime createdAt;
   final DateTime? completedAt;
   final String? sourceDeviceId;
+  // LWW sync fields
+  final DateTime updatedAt;
+  final bool deleted;
 
-  const TaskInstance({
+  TaskInstance({
     required this.id,
     required this.templateId,
     this.voyageId,
@@ -201,7 +204,9 @@ class TaskInstance {
     required this.createdAt,
     this.completedAt,
     this.sourceDeviceId,
-  });
+    DateTime? updatedAt,
+    this.deleted = false,
+  }) : updatedAt = updatedAt ?? createdAt;
 
   double get progress {
     if (checklistItems.isEmpty) return 0.0;
@@ -219,6 +224,8 @@ class TaskInstance {
     DateTime? createdAt,
     Object? completedAt = _sentinel,
     Object? sourceDeviceId = _sentinel,
+    DateTime? updatedAt,
+    bool? deleted,
   }) {
     return TaskInstance(
       id: id ?? this.id,
@@ -232,6 +239,8 @@ class TaskInstance {
       sourceDeviceId: sourceDeviceId == _sentinel
           ? this.sourceDeviceId
           : sourceDeviceId as String?,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deleted: deleted ?? this.deleted,
     );
   }
 
@@ -244,9 +253,12 @@ class TaskInstance {
         'ca': createdAt.toIso8601String(),
         if (completedAt != null) 'coa': completedAt!.toIso8601String(),
         if (sourceDeviceId != null) 'sd': sourceDeviceId,
+        'ua': updatedAt.toIso8601String(),
+        if (deleted) 'del': true,
       };
 
   factory TaskInstance.fromJson(Map<String, dynamic> json) {
+    final createdAt = DateTime.parse(json['ca'] as String);
     return TaskInstance(
       id: json['id'] as String,
       templateId: json['tid'] as String,
@@ -255,11 +267,15 @@ class TaskInstance {
       checklistItems: (json['cl'] as List<dynamic>)
           .map((e) => TaskChecklistItem.fromJson(e as Map<String, dynamic>))
           .toList(),
-      createdAt: DateTime.parse(json['ca'] as String),
+      createdAt: createdAt,
       completedAt: json['coa'] != null
           ? DateTime.parse(json['coa'] as String)
           : null,
       sourceDeviceId: json['sd'] as String?,
+      updatedAt: json['ua'] != null
+          ? DateTime.parse(json['ua'] as String)
+          : createdAt,
+      deleted: json['del'] as bool? ?? false,
     );
   }
 }

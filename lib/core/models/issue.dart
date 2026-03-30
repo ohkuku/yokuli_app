@@ -15,8 +15,11 @@ class IssueTicket {
   final List<String> notes;
   final List<String> linkedLogIds;
   final String? linkedVoyageId;
+  // LWW sync fields
+  final DateTime updatedAt;
+  final bool deleted;
 
-  const IssueTicket({
+  IssueTicket({
     required this.id,
     required this.title,
     required this.source,
@@ -27,7 +30,9 @@ class IssueTicket {
     required this.notes,
     required this.linkedLogIds,
     this.linkedVoyageId,
-  });
+    DateTime? updatedAt,
+    this.deleted = false,
+  }) : updatedAt = updatedAt ?? createdAt;
 
   bool get isOpen => status != IssueStatus.done;
 
@@ -42,6 +47,8 @@ class IssueTicket {
     List<String>? notes,
     List<String>? linkedLogIds,
     Object? linkedVoyageId = _sentinel,
+    DateTime? updatedAt,
+    bool? deleted,
   }) {
     return IssueTicket(
       id: id ?? this.id,
@@ -57,6 +64,8 @@ class IssueTicket {
       linkedVoyageId: linkedVoyageId == _sentinel
           ? this.linkedVoyageId
           : linkedVoyageId as String?,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deleted: deleted ?? this.deleted,
     );
   }
 
@@ -71,21 +80,28 @@ class IssueTicket {
         'n': notes,
         'll': linkedLogIds,
         if (linkedVoyageId != null) 'lv': linkedVoyageId,
+        'ua': updatedAt.toIso8601String(),
+        if (deleted) 'del': true,
       };
 
   factory IssueTicket.fromJson(Map<String, dynamic> json) {
+    final createdAt = DateTime.parse(json['ca'] as String);
     return IssueTicket(
       id: json['id'] as String,
       title: json['t'] as String,
       source: IssueSource.values[json['src'] as int],
       severity: IssueSeverity.values[json['sev'] as int],
       status: IssueStatus.values[json['s'] as int],
-      createdAt: DateTime.parse(json['ca'] as String),
+      createdAt: createdAt,
       resolvedAt:
           json['ra'] != null ? DateTime.parse(json['ra'] as String) : null,
       notes: (json['n'] as List<dynamic>).cast<String>(),
       linkedLogIds: (json['ll'] as List<dynamic>).cast<String>(),
       linkedVoyageId: json['lv'] as String?,
+      updatedAt: json['ua'] != null
+          ? DateTime.parse(json['ua'] as String)
+          : createdAt,
+      deleted: json['del'] as bool? ?? false,
     );
   }
 }

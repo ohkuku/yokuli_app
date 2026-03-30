@@ -144,7 +144,7 @@ class _VoyageDetailScreenState extends ConsumerState<VoyageDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final voyageState = ref.watch(voyageProvider);
-    final allLogs = ref.watch(logProvider);
+    final allLogs = ref.watch(logProvider).where((e) => !e.deleted).toList();
 
     // Find the voyage (active or history)
     VoyageSession? voyage = voyageState.active?.id == widget.voyageId

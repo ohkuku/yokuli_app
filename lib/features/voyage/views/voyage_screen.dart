@@ -155,11 +155,11 @@ class _VoyageScreenState extends ConsumerState<VoyageScreen> {
     final s = ref.watch(stringsProvider);
     final voyageState = ref.watch(voyageProvider);
     final active = voyageState.active;
-    final history = [...voyageState.history]
+    final history = [...voyageState.history.where((v) => !v.deleted)]
       ..sort((a, b) => b.startTime.compareTo(a.startTime));
 
-    // Log entries for the active voyage
-    final allLogs = ref.watch(logProvider);
+    // Log entries for the active voyage (exclude soft-deleted entries)
+    final allLogs = ref.watch(logProvider).where((e) => !e.deleted);
     final voyageLogs = active != null
         ? allLogs.where((e) => e.voyageId == active.id).toList()
         : <LogEntry>[];

@@ -49,10 +49,10 @@ class TaskState {
     required this.instances,
   });
 
-  /// Instances that are neither done nor skipped.
+  /// Instances that are neither done nor skipped, and not deleted.
   List<TaskInstance> get openInstances =>
       instances.where((i) => i.status != TaskStatus.done &&
-          i.status != TaskStatus.skipped).toList();
+          i.status != TaskStatus.skipped && !i.deleted).toList();
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +141,7 @@ class TaskNotifier extends Notifier<TaskState> {
               ))
           .toList(),
       createdAt: now,
+      updatedAt: now,
     );
 
     state = TaskState(
@@ -161,6 +162,7 @@ class TaskNotifier extends Notifier<TaskState> {
     String? note,
     String? issueId,
   }) async {
+    final now = DateTime.now();
     final instances = state.instances.map((inst) {
       if (inst.id != instanceId) return inst;
 
@@ -181,6 +183,7 @@ class TaskNotifier extends Notifier<TaskState> {
       return inst.copyWith(
         checklistItems: updatedItems,
         status: newStatus,
+        updatedAt: now,
       );
     }).toList();
 
@@ -199,6 +202,7 @@ class TaskNotifier extends Notifier<TaskState> {
       return inst.copyWith(
         status: TaskStatus.done,
         completedAt: now,
+        updatedAt: now,
       );
     }).toList();
 
@@ -211,9 +215,10 @@ class TaskNotifier extends Notifier<TaskState> {
 
   /// Mark an instance as skipped.
   Future<void> skipInstance(String instanceId) async {
+    final now = DateTime.now();
     final instances = state.instances.map((inst) {
       if (inst.id != instanceId) return inst;
-      return inst.copyWith(status: TaskStatus.skipped);
+      return inst.copyWith(status: TaskStatus.skipped, updatedAt: now);
     }).toList();
 
     state = TaskState(templates: state.templates, instances: instances);
@@ -224,12 +229,14 @@ class TaskNotifier extends Notifier<TaskState> {
   }
 
   /// Upsert a [TaskInstance] received from a remote device (LAN sync).
+  /// Per-record LWW: only overwrites if incoming updatedAt is strictly newer.
   Future<void> upsertInstanceRemote(Map<String, dynamic> data) async {
     try {
       final instance = TaskInstance.fromJson(data);
       final idx = state.instances.indexWhere((i) => i.id == instance.id);
       final List<TaskInstance> updated;
       if (idx >= 0) {
+        if (!instance.updatedAt.isAfter(state.instances[idx].updatedAt)) return;
         updated = List<TaskInstance>.from(state.instances);
         updated[idx] = instance;
       } else {

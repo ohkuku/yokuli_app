@@ -14,8 +14,11 @@ class VoyageSession {
   final VoyageSource source;
   final String? name;   // custom alias/title set by user
   final String? notes;  // free-text voyage notes
+  // LWW sync fields
+  final DateTime updatedAt;
+  final bool deleted;
 
-  const VoyageSession({
+  VoyageSession({
     required this.id,
     required this.startTime,
     this.endTime,
@@ -25,7 +28,9 @@ class VoyageSession {
     required this.source,
     this.name,
     this.notes,
-  });
+    DateTime? updatedAt,
+    this.deleted = false,
+  }) : updatedAt = updatedAt ?? startTime;
 
   bool get isActive => status == VoyageStatus.active;
 
@@ -47,6 +52,8 @@ class VoyageSession {
     VoyageSource? source,
     Object? name = _sentinel,
     Object? notes = _sentinel,
+    DateTime? updatedAt,
+    bool? deleted,
   }) {
     return VoyageSession(
       id: id ?? this.id,
@@ -62,6 +69,8 @@ class VoyageSession {
       source: source ?? this.source,
       name: name == _sentinel ? this.name : name as String?,
       notes: notes == _sentinel ? this.notes : notes as String?,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deleted: deleted ?? this.deleted,
     );
   }
 
@@ -75,12 +84,15 @@ class VoyageSession {
         'src': source.index,
         if (name != null) 'nm': name,
         if (notes != null) 'nts': notes,
+        'ua': updatedAt.toIso8601String(),
+        if (deleted) 'del': true,
       };
 
   factory VoyageSession.fromJson(Map<String, dynamic> json) {
+    final startTime = DateTime.parse(json['st'] as String);
     return VoyageSession(
       id: json['id'] as String,
-      startTime: DateTime.parse(json['st'] as String),
+      startTime: startTime,
       endTime: json['et'] != null ? DateTime.parse(json['et'] as String) : null,
       startPosition: json['sp'] != null
           ? GpsPosition.fromJson(json['sp'] as Map<String, dynamic>)
@@ -92,6 +104,10 @@ class VoyageSession {
       source: VoyageSource.values[json['src'] as int],
       name: json['nm'] as String?,
       notes: json['nts'] as String?,
+      updatedAt: json['ua'] != null
+          ? DateTime.parse(json['ua'] as String)
+          : startTime,
+      deleted: json['del'] as bool? ?? false,
     );
   }
 }

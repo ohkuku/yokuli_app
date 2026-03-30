@@ -78,7 +78,7 @@ class NotificationsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final alarms = ref.watch(alarmProvider);
+    final alarms = ref.watch(alarmProvider).where((a) => !a.deleted).toList();
     final activeCount = alarms
         .where((a) =>
             a.status == AlarmStatus.active || a.status == AlarmStatus.snoozed)

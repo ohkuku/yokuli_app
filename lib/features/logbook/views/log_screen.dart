@@ -178,7 +178,7 @@ class _LogScreenState extends ConsumerState<LogScreen>
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(stringsProvider);
-    final allEntries = ref.watch(logProvider);
+    final allEntries = ref.watch(logProvider).where((e) => !e.deleted).toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,

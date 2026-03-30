@@ -17,8 +17,11 @@ class Alarm {
   final String? linkedLogId;
   final String? message;
   final DateTime? snoozedUntil;
+  // LWW sync fields
+  final DateTime updatedAt;
+  final bool deleted;
 
-  const Alarm({
+  Alarm({
     required this.id,
     required this.type,
     required this.level,
@@ -29,7 +32,9 @@ class Alarm {
     this.linkedLogId,
     this.message,
     this.snoozedUntil,
-  });
+    DateTime? updatedAt,
+    this.deleted = false,
+  }) : updatedAt = updatedAt ?? triggeredAt;
 
   bool get isActive => status == AlarmStatus.active;
   bool get isSnoozed => status == AlarmStatus.snoozed;
@@ -45,6 +50,8 @@ class Alarm {
     Object? linkedLogId = _sentinel,
     Object? message = _sentinel,
     Object? snoozedUntil = _sentinel,
+    DateTime? updatedAt,
+    bool? deleted,
   }) {
     return Alarm(
       id: id ?? this.id,
@@ -64,6 +71,8 @@ class Alarm {
       snoozedUntil: snoozedUntil == _sentinel
           ? this.snoozedUntil
           : snoozedUntil as DateTime?,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deleted: deleted ?? this.deleted,
     );
   }
 
@@ -78,15 +87,18 @@ class Alarm {
         if (linkedLogId != null) 'll': linkedLogId,
         if (message != null) 'msg': message,
         if (snoozedUntil != null) 'su': snoozedUntil!.toIso8601String(),
+        'ua': updatedAt.toIso8601String(),
+        if (deleted) 'del': true,
       };
 
   factory Alarm.fromJson(Map<String, dynamic> json) {
+    final triggeredAt = DateTime.parse(json['ta'] as String);
     return Alarm(
       id: json['id'] as String,
       type: AlarmType.values[json['tp'] as int],
       level: AlarmLevel.values[json['lv'] as int],
       status: AlarmStatus.values[json['s'] as int],
-      triggeredAt: DateTime.parse(json['ta'] as String),
+      triggeredAt: triggeredAt,
       acknowledgedBy: json['ab'] as String?,
       clearedAt:
           json['ca'] != null ? DateTime.parse(json['ca'] as String) : null,
@@ -94,6 +106,10 @@ class Alarm {
       message: json['msg'] as String?,
       snoozedUntil:
           json['su'] != null ? DateTime.parse(json['su'] as String) : null,
+      updatedAt: json['ua'] != null
+          ? DateTime.parse(json['ua'] as String)
+          : triggeredAt,
+      deleted: json['del'] as bool? ?? false,
     );
   }
 }

@@ -145,30 +145,45 @@ class LogNotifier extends Notifier<List<LogEntry>> {
 
   // ---- Accessors ----------------------------------------------------------
 
-  /// The 100 most recent log entries (state is already newest-first).
-  List<LogEntry> get recent => state.take(100).toList();
+  /// The 100 most recent log entries (state is already newest-first), excluding deleted.
+  List<LogEntry> get recent =>
+      state.where((e) => !e.deleted).take(100).toList();
 
-  /// Filter entries by voyage ID.
+  /// Filter entries by voyage ID, excluding deleted.
   List<LogEntry> byVoyage(String voyageId) =>
-      state.where((e) => e.voyageId == voyageId).toList();
+      state.where((e) => e.voyageId == voyageId && !e.deleted).toList();
 
-  /// Filter entries by type.
+  /// Filter entries by type, excluding deleted.
   List<LogEntry> byType(LogEntryType type) =>
-      state.where((e) => e.type == type).toList();
+      state.where((e) => e.type == type && !e.deleted).toList();
 
-  /// Remove a log entry by ID and persist.
+  /// Soft-delete a log entry by ID: marks deleted=true and propagates.
   Future<void> delete(String id) async {
-    state = state.where((e) => e.id != id).toList();
+    final now = DateTime.now();
+    state = state.map((e) {
+      if (e.id != id) return e;
+      return e.copyWith(deleted: true, updatedAt: now);
+    }).toList();
     await save();
+    final tombstone = state.firstWhere((e) => e.id == id, orElse: () => state.first);
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'log_append', 'data': tombstone.toJson()});
   }
 
   /// Upsert a [LogEntry] received from a remote device (LAN sync).
-  /// If an entry with the same ID already exists it is ignored (idempotent).
+  /// Per-record LWW: only overwrites if incoming updatedAt is strictly newer.
   Future<void> appendRemote(Map<String, dynamic> data) async {
     try {
       final entry = LogEntry.fromJson(data);
-      if (state.any((e) => e.id == entry.id)) return;
-      state = [entry, ...state];
+      final idx = state.indexWhere((e) => e.id == entry.id);
+      if (idx >= 0) {
+        if (!entry.updatedAt.isAfter(state[idx].updatedAt)) return;
+        final updated = List<LogEntry>.from(state);
+        updated[idx] = entry;
+        state = updated;
+      } else {
+        state = [entry, ...state];
+      }
       await save();
     } catch (_) {}
   }

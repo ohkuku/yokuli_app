@@ -69,6 +69,11 @@ class LanSyncService {
       _conn.setLanSyncStatus(
         connected ? ConnectionStatus.connected : ConnectionStatus.connecting,
       );
+      // Bidirectional sync: when we successfully connect as a client to a peer,
+      // also push our own records to the server so they get our offline edits.
+      if (connected) {
+        _sendFullDump(_platform.sendJson);
+      }
     };
     _platform.onPeerCountChanged = (count) => _conn.setPeerCount(count);
     _platform.onLogAppend = (data) {
@@ -167,23 +172,23 @@ class LanSyncService {
         },
       },
     });
-    // Log entries
+    // Log entries — send ALL (including soft-deleted tombstones).
     for (final entry in _ref.read(logProvider)) {
       sendTo({'type': 'log_append', 'data': entry.toJson()});
     }
-    // Alarms
+    // Alarms — send ALL (including tombstones).
     for (final alarm in _ref.read(alarmProvider)) {
       sendTo({'type': 'alarm', 'data': alarm.toJson()});
     }
-    // Task instances
+    // Task instances — send ALL.
     for (final instance in _ref.read(taskProvider).instances) {
       sendTo({'type': 'task_upsert', 'data': instance.toJson()});
     }
-    // Issues
+    // Issues — send ALL.
     for (final issue in _ref.read(issueProvider)) {
       sendTo({'type': 'issue_upsert', 'data': issue.toJson()});
     }
-    // Voyages
+    // Voyages — send ALL (active + full history, including tombstones).
     final voyageState = _ref.read(voyageProvider);
     if (voyageState.active != null) {
       sendTo({'type': 'voyage_upsert', 'data': voyageState.active!.toJson()});
@@ -191,7 +196,7 @@ class LanSyncService {
     for (final vs in voyageState.history) {
       sendTo({'type': 'voyage_upsert', 'data': vs.toJson()});
     }
-    // Kanban
+    // Kanban — send ALL cards and columns (including tombstones).
     final kanban = _ref.read(kanbanProvider);
     sendTo({
       'type': 'kanban_sync',

@@ -139,6 +139,7 @@ class VoyageNotifier extends Notifier<VoyageState> {
       startPosition: position,
       status: VoyageStatus.active,
       source: source,
+      updatedAt: now,
     );
 
     state = VoyageState(
@@ -161,10 +162,12 @@ class VoyageNotifier extends Notifier<VoyageState> {
     final current = state.active;
     if (current == null) return;
 
+    final now = DateTime.now();
     final ended = current.copyWith(
-      endTime: DateTime.now(),
+      endTime: now,
       endPosition: position,
       status: VoyageStatus.ended,
+      updatedAt: now,
     );
 
     final newHistory = [ended, ...state.history];
@@ -183,17 +186,24 @@ class VoyageNotifier extends Notifier<VoyageState> {
 
   // ---- Delete -------------------------------------------------------------
 
-  /// Permanently delete a voyage by ID.
+  /// Soft-delete a voyage by ID: marks deleted=true and propagates tombstone.
   Future<void> delete(String id) async {
+    final now = DateTime.now();
+    VoyageSession? tombstone;
     if (state.active?.id == id) {
-      state = VoyageState(active: null, history: state.history);
+      tombstone = state.active!.copyWith(deleted: true, updatedAt: now);
+      state = VoyageState(active: null, history: [...state.history, tombstone]);
     } else {
-      state = VoyageState(
-        active: state.active,
-        history: state.history.where((v) => v.id != id).toList(),
-      );
+      final idx = state.history.indexWhere((v) => v.id == id);
+      if (idx < 0) return;
+      final updated = List<VoyageSession>.from(state.history);
+      tombstone = updated[idx].copyWith(deleted: true, updatedAt: now);
+      updated[idx] = tombstone;
+      state = VoyageState(active: state.active, history: updated);
     }
     await save();
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'voyage_upsert', 'data': tombstone.toJson()});
   }
 
   // ---- Edit metadata ------------------------------------------------------
@@ -201,16 +211,17 @@ class VoyageNotifier extends Notifier<VoyageState> {
   /// Set a custom name/alias for a voyage.
   Future<void> rename(String id, String name) async {
     final trimmed = name.trim();
+    final now = DateTime.now();
     if (state.active?.id == id) {
       state = VoyageState(
-        active: state.active!.copyWith(name: trimmed.isEmpty ? null : trimmed),
+        active: state.active!.copyWith(name: trimmed.isEmpty ? null : trimmed, updatedAt: now),
         history: state.history,
       );
     } else {
       final idx = state.history.indexWhere((s) => s.id == id);
       if (idx < 0) return;
       final updated = List<VoyageSession>.from(state.history);
-      updated[idx] = updated[idx].copyWith(name: trimmed.isEmpty ? null : trimmed);
+      updated[idx] = updated[idx].copyWith(name: trimmed.isEmpty ? null : trimmed, updatedAt: now);
       state = VoyageState(active: state.active, history: updated);
     }
     await save();
@@ -224,16 +235,17 @@ class VoyageNotifier extends Notifier<VoyageState> {
   /// Update notes for a voyage.
   Future<void> updateNotes(String id, String notes) async {
     final trimmed = notes.trim();
+    final now = DateTime.now();
     if (state.active?.id == id) {
       state = VoyageState(
-        active: state.active!.copyWith(notes: trimmed.isEmpty ? null : trimmed),
+        active: state.active!.copyWith(notes: trimmed.isEmpty ? null : trimmed, updatedAt: now),
         history: state.history,
       );
     } else {
       final idx = state.history.indexWhere((s) => s.id == id);
       if (idx < 0) return;
       final updated = List<VoyageSession>.from(state.history);
-      updated[idx] = updated[idx].copyWith(notes: trimmed.isEmpty ? null : trimmed);
+      updated[idx] = updated[idx].copyWith(notes: trimmed.isEmpty ? null : trimmed, updatedAt: now);
       state = VoyageState(active: state.active, history: updated);
     }
     await save();
@@ -242,24 +254,40 @@ class VoyageNotifier extends Notifier<VoyageState> {
   // ---- Remote sync --------------------------------------------------------
 
   /// Upsert a [VoyageSession] received from a remote device (LAN sync).
+  /// Per-record LWW: only overwrites if incoming updatedAt is strictly newer.
   Future<void> upsertRemote(Map<String, dynamic> data) async {
     try {
       final session = VoyageSession.fromJson(data);
-      if (session.isActive) {
-        // Remote device started/updated active voyage
-        state = VoyageState(active: session, history: state.history);
-      } else {
-        // Completed voyage — upsert in history
-        final idx = state.history.indexWhere((s) => s.id == session.id);
-        final List<VoyageSession> updated;
-        if (idx >= 0) {
-          updated = List<VoyageSession>.from(state.history);
-          updated[idx] = session;
+
+      // Check against any existing record with this ID.
+      final existingActive = state.active?.id == session.id ? state.active : null;
+      final existingHistoryIdx = state.history.indexWhere((s) => s.id == session.id);
+      final existing = existingActive ??
+          (existingHistoryIdx >= 0 ? state.history[existingHistoryIdx] : null);
+
+      if (existing != null && !session.updatedAt.isAfter(existing.updatedAt)) return;
+
+      if (session.deleted) {
+        // Tombstone: remove from active/history but keep tombstone in history.
+        final history = List<VoyageSession>.from(state.history);
+        if (existingHistoryIdx >= 0) {
+          history[existingHistoryIdx] = session;
         } else {
-          updated = [session, ...state.history];
+          history.add(session);
         }
         final active = state.active?.id == session.id ? null : state.active;
-        state = VoyageState(active: active, history: updated);
+        state = VoyageState(active: active, history: history);
+      } else if (session.isActive) {
+        state = VoyageState(active: session, history: state.history);
+      } else {
+        final history = List<VoyageSession>.from(state.history);
+        if (existingHistoryIdx >= 0) {
+          history[existingHistoryIdx] = session;
+        } else {
+          history.insert(0, session);
+        }
+        final active = state.active?.id == session.id ? null : state.active;
+        state = VoyageState(active: active, history: history);
       }
       await save();
     } catch (_) {}
@@ -295,6 +323,11 @@ final activeVoyageIdProvider = Provider<String?>(
   (ref) => ref.watch(voyageProvider).active?.id,
 );
 
+/// Voyage history with soft-deleted tombstones filtered out.
+final voyageHistoryProvider = Provider<List<VoyageSession>>(
+  (ref) => ref.watch(voyageProvider).history.where((v) => !v.deleted).toList(),
+);
+
 /// Map of voyage ID → display title for quick lookup in log screen.
 final voyageNameMapProvider = Provider<Map<String, String>>((ref) {
   final state = ref.watch(voyageProvider);
@@ -302,7 +335,7 @@ final voyageNameMapProvider = Provider<Map<String, String>>((ref) {
   if (state.active != null) {
     map[state.active!.id] = state.active!.displayTitle;
   }
-  for (final v in state.history) {
+  for (final v in state.history.where((v) => !v.deleted)) {
     map[v.id] = v.displayTitle;
   }
   return map;

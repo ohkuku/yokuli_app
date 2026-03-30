@@ -98,8 +98,11 @@ class LogEntry {
   final String message;
   final LogContext? context;
   final String? sourceDeviceId;
+  // LWW sync fields
+  final DateTime updatedAt;
+  final bool deleted;
 
-  const LogEntry({
+  LogEntry({
     required this.id,
     required this.type,
     this.subtype,
@@ -108,7 +111,27 @@ class LogEntry {
     required this.message,
     this.context,
     this.sourceDeviceId,
-  });
+    DateTime? updatedAt,
+    this.deleted = false,
+  }) : updatedAt = updatedAt ?? timestamp;
+
+  LogEntry copyWith({
+    String? voyageId,
+    String? message,
+    DateTime? updatedAt,
+    bool? deleted,
+  }) => LogEntry(
+        id: id,
+        type: type,
+        subtype: subtype,
+        timestamp: timestamp,
+        voyageId: voyageId ?? this.voyageId,
+        message: message ?? this.message,
+        context: context,
+        sourceDeviceId: sourceDeviceId,
+        updatedAt: updatedAt ?? this.updatedAt,
+        deleted: deleted ?? this.deleted,
+      );
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -119,18 +142,27 @@ class LogEntry {
         'msg': message,
         if (context != null) 'ctx': context!.toJson(),
         if (sourceDeviceId != null) 'src': sourceDeviceId,
+        'ua': updatedAt.toIso8601String(),
+        if (deleted) 'del': true,
       };
 
-  factory LogEntry.fromJson(Map<String, dynamic> json) => LogEntry(
-        id: json['id'] as String,
-        type: LogEntryType.values[json['tp'] as int],
-        subtype: json['sub'] as String?,
-        timestamp: DateTime.parse(json['ts'] as String),
-        voyageId: json['vid'] as String?,
-        message: json['msg'] as String,
-        context: json['ctx'] != null
-            ? LogContext.fromJson(json['ctx'] as Map<String, dynamic>)
-            : null,
-        sourceDeviceId: json['src'] as String?,
-      );
+  factory LogEntry.fromJson(Map<String, dynamic> json) {
+    final timestamp = DateTime.parse(json['ts'] as String);
+    return LogEntry(
+      id: json['id'] as String,
+      type: LogEntryType.values[json['tp'] as int],
+      subtype: json['sub'] as String?,
+      timestamp: timestamp,
+      voyageId: json['vid'] as String?,
+      message: json['msg'] as String,
+      context: json['ctx'] != null
+          ? LogContext.fromJson(json['ctx'] as Map<String, dynamic>)
+          : null,
+      sourceDeviceId: json['src'] as String?,
+      updatedAt: json['ua'] != null
+          ? DateTime.parse(json['ua'] as String)
+          : timestamp,
+      deleted: json['del'] as bool? ?? false,
+    );
+  }
 }

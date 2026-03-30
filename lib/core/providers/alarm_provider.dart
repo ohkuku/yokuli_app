@@ -95,14 +95,16 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
       return existing.first.id;
     }
 
+    final now = DateTime.now();
     final alarm = Alarm(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: now.millisecondsSinceEpoch.toString(),
       type: type,
       level: level,
       status: AlarmStatus.active,
-      triggeredAt: DateTime.now(),
+      triggeredAt: now,
       message: message,
       linkedLogId: linkedLogId,
+      updatedAt: now,
     );
 
     state = [...state, alarm];
@@ -114,11 +116,13 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
 
   /// Acknowledge an active alarm (moves it to acknowledged state).
   void acknowledge(String id, {String? by}) {
+    final now = DateTime.now();
     state = state.map((a) {
       if (a.id != id || a.status != AlarmStatus.active) return a;
       return a.copyWith(
         status: AlarmStatus.acknowledged,
         acknowledgedBy: by,
+        updatedAt: now,
       );
     }).toList();
     save();
@@ -129,12 +133,14 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
 
   /// Clear an alarm (moves it to cleared state and records the time).
   void clear(String id) {
+    final now = DateTime.now();
     state = state.map((a) {
       if (a.id != id) return a;
       if (a.status == AlarmStatus.cleared) return a;
       return a.copyWith(
         status: AlarmStatus.cleared,
-        clearedAt: DateTime.now(),
+        clearedAt: now,
+        updatedAt: now,
       );
     }).toList();
     save();
@@ -193,12 +199,14 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
 
   /// Snooze an alarm for [mins] minutes.
   void snooze(String id, int mins) {
+    final now = DateTime.now();
     state = state.map((a) {
       if (a.id != id) return a;
       if (a.status == AlarmStatus.cleared) return a;
       return a.copyWith(
         status: AlarmStatus.snoozed,
-        snoozedUntil: DateTime.now().add(Duration(minutes: mins)),
+        snoozedUntil: now.add(Duration(minutes: mins)),
+        updatedAt: now,
       );
     }).toList();
     save();
@@ -209,11 +217,13 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
 
   /// Reactivate a snoozed alarm (snooze period expired).
   void reactivate(String id) {
+    final now = DateTime.now();
     state = state.map((a) {
       if (a.id != id || a.status != AlarmStatus.snoozed) return a;
       return a.copyWith(
         status: AlarmStatus.active,
         snoozedUntil: null,
+        updatedAt: now,
       );
     }).toList();
     save();
@@ -231,26 +241,28 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
 
   /// All alarms currently in the [AlarmStatus.active] state.
   List<Alarm> get active =>
-      state.where((a) => a.status == AlarmStatus.active).toList();
+      state.where((a) => a.status == AlarmStatus.active && !a.deleted).toList();
 
   /// All alarms currently in the [AlarmStatus.acknowledged] state.
   List<Alarm> get acknowledged =>
-      state.where((a) => a.status == AlarmStatus.acknowledged).toList();
+      state.where((a) => a.status == AlarmStatus.acknowledged && !a.deleted).toList();
 
   /// All alarms currently in the [AlarmStatus.snoozed] state.
   List<Alarm> get snoozed =>
-      state.where((a) => a.status == AlarmStatus.snoozed).toList();
+      state.where((a) => a.status == AlarmStatus.snoozed && !a.deleted).toList();
 
   /// Active + snoozed + acknowledged alarms (i.e. not yet cleared).
   List<Alarm> get uncleared =>
-      state.where((a) => a.status != AlarmStatus.cleared).toList();
+      state.where((a) => a.status != AlarmStatus.cleared && !a.deleted).toList();
 
   /// Upsert an [Alarm] received from a remote device (LAN sync).
+  /// Per-record LWW: only overwrites if incoming updatedAt is strictly newer.
   Future<void> upsertRemote(Map<String, dynamic> data) async {
     try {
       final alarm = Alarm.fromJson(data);
       final idx = state.indexWhere((a) => a.id == alarm.id);
       if (idx >= 0) {
+        if (!alarm.updatedAt.isAfter(state[idx].updatedAt)) return;
         final updated = List<Alarm>.from(state);
         updated[idx] = alarm;
         state = updated;
@@ -284,6 +296,7 @@ final activeAlarmCountProvider = Provider<int>(
   (ref) => ref
       .watch(alarmProvider)
       .where((a) =>
-          a.status == AlarmStatus.active || a.status == AlarmStatus.snoozed)
+          !a.deleted &&
+          (a.status == AlarmStatus.active || a.status == AlarmStatus.snoozed))
       .length,
 );

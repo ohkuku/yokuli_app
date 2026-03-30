@@ -73,16 +73,18 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
     String? voyageId,
     String? linkedLogId,
   }) async {
+    final now = DateTime.now();
     final ticket = IssueTicket(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: now.millisecondsSinceEpoch.toString(),
       title: title,
       source: source,
       severity: severity,
       status: IssueStatus.open,
-      createdAt: DateTime.now(),
+      createdAt: now,
       notes: const [],
       linkedLogIds: linkedLogId != null ? [linkedLogId] : const [],
       linkedVoyageId: voyageId,
+      updatedAt: now,
     );
 
     state = [...state, ticket];
@@ -94,11 +96,12 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
 
   /// Update the status of an issue. Sets resolvedAt when transitioning to done.
   Future<void> updateStatus(String id, IssueStatus status) async {
+    final now = DateTime.now();
     state = state.map((ticket) {
       if (ticket.id != id) return ticket;
       final resolvedAt =
-          status == IssueStatus.done ? DateTime.now() : ticket.resolvedAt;
-      return ticket.copyWith(status: status, resolvedAt: resolvedAt);
+          status == IssueStatus.done ? now : ticket.resolvedAt;
+      return ticket.copyWith(status: status, resolvedAt: resolvedAt, updatedAt: now);
     }).toList();
     await save();
     final updated = state.firstWhere((t) => t.id == id);
@@ -108,9 +111,10 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
 
   /// Append a free-text note to an issue.
   Future<void> addNote(String id, String note) async {
+    final now = DateTime.now();
     state = state.map((ticket) {
       if (ticket.id != id) return ticket;
-      return ticket.copyWith(notes: [...ticket.notes, note]);
+      return ticket.copyWith(notes: [...ticket.notes, note], updatedAt: now);
     }).toList();
     await save();
     final updated = state.firstWhere((t) => t.id == id);
@@ -130,11 +134,13 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
   }
 
   /// Upsert an [IssueTicket] received from a remote device (LAN sync).
+  /// Per-record LWW: only overwrites if incoming updatedAt is strictly newer.
   Future<void> upsertRemote(Map<String, dynamic> data) async {
     try {
       final ticket = IssueTicket.fromJson(data);
       final idx = state.indexWhere((i) => i.id == ticket.id);
       if (idx >= 0) {
+        if (!ticket.updatedAt.isAfter(state[idx].updatedAt)) return;
         final updated = List<IssueTicket>.from(state);
         updated[idx] = ticket;
         state = updated;
@@ -153,9 +159,9 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
 final issueProvider =
     NotifierProvider<IssueNotifier, List<IssueTicket>>(IssueNotifier.new);
 
-/// All issues that are not yet resolved (status != done).
+/// All issues that are not yet resolved (status != done) and not deleted.
 final openIssuesProvider = Provider<List<IssueTicket>>(
-  (ref) => ref.watch(issueProvider).where((i) => i.isOpen).toList(),
+  (ref) => ref.watch(issueProvider).where((i) => i.isOpen && !i.deleted).toList(),
 );
 
 /// High-severity open issues only.
