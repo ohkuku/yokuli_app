@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/vessel_state.dart';
+import '../models/ais_state.dart';
+import '../models/solar_state.dart';
 
 /// Central vessel state — updated by SignalK client or LAN sync client
 class VesselStateNotifier extends Notifier<VesselState> {
