@@ -47,23 +47,75 @@ class _KanbanScreenState extends ConsumerState<KanbanScreen> {
           ? const Center(
               child: Text('暂无列', style: TextStyle(color: AppColors.textMuted)),
             )
-          : SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: kanban.columns.map((col) {
-                  final cards = kanban.cardsForColumn(col.id);
-                  return _KanbanColumnWidget(
-                    column: col,
-                    cards: cards,
-                    allColumns: kanban.columns,
-                    onAddCard: () => _showCardSheet(context, null, col.id),
-                    onCardTap: (card) => _showCardSheet(context, card, null),
-                    onDeleteColumn: () => _confirmDeleteColumn(context, col),
-                  );
-                }).toList(),
-              ),
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (kanban.columns.length > 1)
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    child: Row(
+                      children: [
+                        _FilterChip(
+                          label: '全部',
+                          selected: _filterColumnId == null,
+                          onTap: () =>
+                              setState(() => _filterColumnId = null),
+                        ),
+                        ...kanban.columns.map((col) => Padding(
+                              padding: const EdgeInsets.only(left: 6),
+                              child: _FilterChip(
+                                label: col.title,
+                                selected: _filterColumnId == col.id,
+                                onTap: () => setState(() => _filterColumnId =
+                                    _filterColumnId == col.id
+                                        ? null
+                                        : col.id),
+                              ),
+                            )),
+                      ],
+                    ),
+                  ),
+                Expanded(
+                  child: ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(context).copyWith(
+                      dragDevices: {
+                        PointerDeviceKind.touch,
+                        PointerDeviceKind.mouse,
+                      },
+                    ),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.all(12),
+                      child: Builder(builder: (context) {
+                        final columns = _filterColumnId != null
+                            ? kanban.columns
+                                .where((c) => c.id == _filterColumnId)
+                                .toList()
+                            : kanban.columns;
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: columns.map((col) {
+                            final cards = kanban.cardsForColumn(col.id);
+                            return _KanbanColumnWidget(
+                              column: col,
+                              cards: cards,
+                              allColumns: kanban.columns,
+                              onAddCard: () =>
+                                  _showCardSheet(context, null, col.id),
+                              onCardTap: (card) =>
+                                  _showCardSheet(context, card, null),
+                              onDeleteColumn: () =>
+                                  _confirmDeleteColumn(context, col),
+                            );
+                          }).toList(),
+                        );
+                      }),
+                    ),
+                  ),
+                ),
+              ],
             ),
     );
   }
@@ -716,4 +768,41 @@ class _DropdownContainer extends StatelessWidget {
         ),
         child: child,
       );
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _FilterChip(
+      {required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.cyan.withOpacity(0.2)
+              : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: selected ? AppColors.cyan : AppColors.border),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color:
+                selected ? AppColors.cyan : AppColors.textSecondary,
+            fontSize: 12,
+            fontWeight:
+                selected ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
 }
