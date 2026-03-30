@@ -4,8 +4,8 @@ import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as ws_status;
 
-import '../../../models/mob_alert.dart';
-import '../../../models/vessel_state.dart';
+import '../../models/mob_alert.dart';
+import '../../models/vessel_state.dart';
 import 'lan_sync_platform_base.dart';
 
 /// Web browser implementation.
