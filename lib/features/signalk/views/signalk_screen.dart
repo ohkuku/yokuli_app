@@ -21,9 +21,8 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
   late final TextEditingController _passCtrl;
 
   bool _connecting  = false;
-  bool _loggingIn   = false;
   bool _obscurePass = true;
-  String? _loginError;
+  String? _connectError;
 
   @override
   void initState() {
@@ -42,65 +41,65 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
     super.dispose();
   }
 
-  // ── Auth ──────────────────────────────────────────────────────────────────
+  // ── Connect (auto-auth if credentials filled) ─────────────────────────────
 
-  Future<void> _login() async {
+  Future<void> _connect() async {
     final url  = _urlCtrl.text.trim();
     final user = _userCtrl.text.trim();
     final pass = _passCtrl.text;
-
-    if (url.isEmpty || user.isEmpty || pass.isEmpty) return;
-    setState(() { _loggingIn = true; _loginError = null; });
-
-    try {
-      final token = await SignalKAuth.login(url, user, pass);
-      await ref.read(settingsProvider.notifier).update(
-        ref.read(settingsProvider).copyWith(
-          signalKUrl:      url,
-          signalKUsername: user,
-          signalKToken:    token,
-        ),
-      );
-      _passCtrl.clear();
-      if (mounted) setState(() { _loggingIn = false; });
-    } on SignalKAuthException catch (e) {
-      if (mounted) setState(() { _loggingIn = false; _loginError = e.message; });
-    } catch (e) {
-      if (mounted) setState(() { _loggingIn = false; _loginError = e.toString(); });
-    }
-  }
-
-  Future<void> _logout() async {
-    await ref.read(settingsProvider.notifier).update(
-      ref.read(settingsProvider).copyWith(
-        signalKUsername: '',
-        signalKToken:    '',
-      ),
-    );
-  }
-
-  // ── Connect ───────────────────────────────────────────────────────────────
-
-  Future<void> _connect() async {
-    final url = _urlCtrl.text.trim();
     if (url.isEmpty) return;
 
-    final settings = ref.read(settingsProvider);
-    await ref.read(settingsProvider.notifier).update(
-      settings.copyWith(signalKUrl: url),
-    );
+    setState(() { _connecting = true; _connectError = null; });
 
-    setState(() => _connecting = true);
-    await ref.read(signalKClientProvider).connect(
-      url,
-      token: settings.hasToken ? settings.signalKToken : null,
-    );
+    String? token;
+
+    // Step 1: login if credentials are provided
+    if (user.isNotEmpty && pass.isNotEmpty) {
+      try {
+        token = await SignalKAuth.login(url, user, pass);
+        // Persist username + token; password is NOT stored
+        await ref.read(settingsProvider.notifier).update(
+          ref.read(settingsProvider).copyWith(
+            signalKUrl:      url,
+            signalKUsername: user,
+            signalKToken:    token,
+          ),
+        );
+        _passCtrl.clear();
+      } on SignalKAuthException catch (e) {
+        if (mounted) setState(() { _connecting = false; _connectError = e.message; });
+        return;
+      } catch (e) {
+        if (mounted) setState(() { _connecting = false; _connectError = e.toString(); });
+        return;
+      }
+    } else {
+      // No credentials entered — use saved token if available
+      final saved = ref.read(settingsProvider);
+      token = saved.hasToken ? saved.signalKToken : null;
+      await ref.read(settingsProvider.notifier).update(
+        saved.copyWith(signalKUrl: url),
+      );
+    }
+
+    // Step 2: open WebSocket (with token if we have one)
+    await ref.read(signalKClientProvider).connect(url, token: token);
     if (mounted) setState(() => _connecting = false);
   }
 
   Future<void> _disconnect() async {
     await ref.read(signalKClientProvider).disconnect();
     ref.read(vesselProvider.notifier).reset();
+  }
+
+  Future<void> _forgetCredentials() async {
+    await ref.read(settingsProvider.notifier).update(
+      ref.read(settingsProvider).copyWith(
+        signalKUsername: '',
+        signalKToken:    '',
+      ),
+    );
+    _userCtrl.clear();
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -111,7 +110,7 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
     final vessel   = ref.watch(vesselProvider);
     final settings = ref.watch(settingsProvider);
     final skStatus = conn.signalK;
-    final loggedIn = settings.hasToken;
+    final connected = skStatus == ConnectionStatus.connected;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -129,7 +128,7 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
             const SizedBox(height: 8),
             TextField(
               controller: _urlCtrl,
-              enabled: skStatus != ConnectionStatus.connected,
+              enabled: !connected,
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontFeatures: [FontFeature.tabularFigures()],
@@ -141,80 +140,49 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
               ),
               keyboardType: TextInputType.url,
               autocorrect: false,
-              onSubmitted: (_) => _connect(),
             ),
             const SizedBox(height: 16),
 
-            // Connect / disconnect button
-            if (skStatus == ConnectionStatus.connected)
-              OutlinedButton.icon(
-                onPressed: _disconnect,
-                icon: const Icon(Icons.link_off_rounded, color: AppColors.danger),
-                label: const Text('Disconnect',
-                    style: TextStyle(color: AppColors.danger)),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.danger),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              )
-            else
-              ElevatedButton.icon(
-                onPressed: _connecting ? null : _connect,
-                icon: _connecting
-                    ? const SizedBox(
-                        width: 16, height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: AppColors.background))
-                    : const Icon(Icons.link_rounded),
-                label: Text(_connecting ? 'Connecting…' : 'Connect'),
-                style: ElevatedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48)),
-              ),
-
-            const SizedBox(height: 28),
-
-            // ── Authentication ────────────────────────────────────────
-            _SectionHeader('AUTHENTICATION'),
+            // ── Authentication (optional) ─────────────────────────────
+            _SectionHeader('AUTHENTICATION  (leave blank if not required)'),
             const SizedBox(height: 8),
 
-            if (loggedIn)
-              // Logged-in state
+            if (settings.hasToken && !connected)
+              // Saved token banner — show who is logged in
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: AppColors.success.withAlpha(18),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.success.withAlpha(60)),
+                  color: AppColors.cyan.withAlpha(15),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.cyan.withAlpha(50)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.verified_user_rounded,
-                        color: AppColors.success, size: 22),
-                    const SizedBox(width: 12),
+                    const Icon(Icons.key_rounded,
+                        color: AppColors.cyan, size: 16),
+                    const SizedBox(width: 8),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Logged in',
-                              style: TextStyle(
-                                  color: AppColors.success,
-                                  fontWeight: FontWeight.w600)),
-                          Text(settings.signalKUsername,
-                              style: const TextStyle(
-                                  color: AppColors.textMuted, fontSize: 12)),
-                        ],
+                      child: Text(
+                        'Saved token for ${settings.signalKUsername}',
+                        style: const TextStyle(
+                            color: AppColors.cyan, fontSize: 12),
                       ),
                     ),
                     TextButton(
-                      onPressed: _logout,
-                      child: const Text('Log out',
-                          style: TextStyle(color: AppColors.danger)),
+                      onPressed: _forgetCredentials,
+                      style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(0, 0)),
+                      child: const Text('Forget',
+                          style: TextStyle(
+                              color: AppColors.textMuted, fontSize: 12)),
                     ),
                   ],
                 ),
-              )
-            else ...[
-              // Login form
+              ),
+
+            if (!connected) ...[
               TextField(
                 controller: _userCtrl,
                 decoration: const InputDecoration(
@@ -240,52 +208,73 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
                         setState(() => _obscurePass = !_obscurePass),
                   ),
                 ),
-                onSubmitted: (_) => _login(),
-              ),
-              if (_loginError != null) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.error_outline_rounded,
-                        size: 14, color: AppColors.danger),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        _loginError!,
-                        style: const TextStyle(
-                            color: AppColors.danger, fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _loggingIn ? null : _login,
-                icon: _loggingIn
-                    ? const SizedBox(
-                        width: 14, height: 14,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: AppColors.cyan))
-                    : const Icon(Icons.login_rounded),
-                label: Text(_loggingIn ? 'Logging in…' : 'Log in to server'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.cyan,
-                  side: const BorderSide(color: AppColors.cyan),
-                  minimumSize: const Size.fromHeight(48),
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Leave blank if your server has no authentication enabled.',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+                onSubmitted: (_) => _connect(),
               ),
             ],
+
+            if (connected && settings.signalKUsername.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.verified_user_rounded,
+                        color: AppColors.success, size: 14),
+                    const SizedBox(width: 6),
+                    Text('Authenticated as ${settings.signalKUsername}',
+                        style: const TextStyle(
+                            color: AppColors.success, fontSize: 12)),
+                  ],
+                ),
+              ),
+
+            if (_connectError != null) ...[
+              const SizedBox(height: 8),
+              Row(children: [
+                const Icon(Icons.error_outline_rounded,
+                    size: 14, color: AppColors.danger),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(_connectError!,
+                      style: const TextStyle(
+                          color: AppColors.danger, fontSize: 12)),
+                ),
+              ]),
+            ],
+
+            const SizedBox(height: 16),
+
+            // ── Single Connect / Disconnect button ────────────────────
+            if (connected)
+              OutlinedButton.icon(
+                onPressed: _disconnect,
+                icon: const Icon(Icons.link_off_rounded,
+                    color: AppColors.danger),
+                label: const Text('Disconnect',
+                    style: TextStyle(color: AppColors.danger)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppColors.danger),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              )
+            else
+              ElevatedButton.icon(
+                onPressed: _connecting ? null : _connect,
+                icon: _connecting
+                    ? const SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.background))
+                    : const Icon(Icons.link_rounded),
+                label: Text(_connecting ? 'Connecting…' : 'Connect'),
+                style: ElevatedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48)),
+              ),
 
             const SizedBox(height: 28),
 
             // ── Live data (when connected) ────────────────────────────
-            if (skStatus == ConnectionStatus.connected) ...[
+            if (connected) ...[
               _SectionHeader('LIVE DATA'),
               const SizedBox(height: 8),
               _DataTable(vessel: vessel),
@@ -297,10 +286,12 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
             const SizedBox(height: 8),
             _ToggleTile(
               title: 'Auto-connect on start',
-              subtitle: 'Connect to Signal K automatically when app launches',
+              subtitle:
+                  'Connect to Signal K automatically when app launches',
               value: settings.autoConnectSignalK,
-              onChanged: (v) => ref.read(settingsProvider.notifier).update(
-                    settings.copyWith(autoConnectSignalK: v)),
+              onChanged: (v) => ref
+                  .read(settingsProvider.notifier)
+                  .update(settings.copyWith(autoConnectSignalK: v)),
             ),
           ],
         ),
@@ -319,10 +310,14 @@ class _StatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (color, icon, label) = switch (status) {
-      ConnectionStatus.connected    => (AppColors.success, Icons.check_circle_rounded,       'Connected'),
-      ConnectionStatus.connecting   => (AppColors.warning, Icons.sync_rounded,               'Connecting…'),
-      ConnectionStatus.error        => (AppColors.danger,  Icons.error_rounded,              'Error'),
-      ConnectionStatus.disconnected => (AppColors.inactive, Icons.radio_button_unchecked,    'Disconnected'),
+      ConnectionStatus.connected =>
+        (AppColors.success, Icons.check_circle_rounded, 'Connected'),
+      ConnectionStatus.connecting =>
+        (AppColors.warning, Icons.sync_rounded, 'Connecting…'),
+      ConnectionStatus.error =>
+        (AppColors.danger, Icons.error_rounded, 'Error'),
+      ConnectionStatus.disconnected =>
+        (AppColors.inactive, Icons.radio_button_unchecked, 'Disconnected'),
     };
     return Container(
       padding: const EdgeInsets.all(16),
@@ -340,7 +335,9 @@ class _StatusCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label,
-                    style: TextStyle(color: color, fontSize: 15,
+                    style: TextStyle(
+                        color: color,
+                        fontSize: 15,
                         fontWeight: FontWeight.w600)),
                 if (error != null)
                   Text(error!,
@@ -373,7 +370,6 @@ class _DataTable extends StatelessWidget {
       ('LAT', vessel.position?.latitude.toStringAsFixed(6), ''),
       ('LON', vessel.position?.longitude.toStringAsFixed(6), ''),
     ];
-
     return Container(
       decoration: BoxDecoration(
         color: AppColors.cardBg,
@@ -381,14 +377,15 @@ class _DataTable extends StatelessWidget {
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
-        children: rows.asMap().entries.map((entry) {
-          final i = entry.key;
-          final (label, value, unit) = entry.value;
+        children: rows.asMap().entries.map((e) {
+          final (label, value, unit) = e.value;
           return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: i < rows.length - 1
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: e.key < rows.length - 1
                 ? const BoxDecoration(
-                    border: Border(bottom: BorderSide(color: AppColors.divider)))
+                    border: Border(
+                        bottom: BorderSide(color: AppColors.divider)))
                 : null,
             child: Row(
               children: [
@@ -396,8 +393,10 @@ class _DataTable extends StatelessWidget {
                   width: 44,
                   child: Text(label,
                       style: const TextStyle(
-                          color: AppColors.textMuted, fontSize: 12,
-                          fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+                          color: AppColors.textMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5)),
                 ),
                 Expanded(
                   child: Text(
@@ -426,8 +425,11 @@ class _SectionHeader extends StatelessWidget {
   const _SectionHeader(this.text);
   @override
   Widget build(BuildContext context) => Text(text,
-      style: const TextStyle(color: AppColors.textMuted, fontSize: 11,
-          fontWeight: FontWeight.w700, letterSpacing: 1.5));
+      style: const TextStyle(
+          color: AppColors.textMuted,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.5));
 }
 
 class _ToggleTile extends StatelessWidget {
@@ -435,8 +437,11 @@ class _ToggleTile extends StatelessWidget {
   final String subtitle;
   final bool value;
   final ValueChanged<bool> onChanged;
-  const _ToggleTile({required this.title, required this.subtitle,
-      required this.value, required this.onChanged});
+  const _ToggleTile(
+      {required this.title,
+      required this.subtitle,
+      required this.value,
+      required this.onChanged});
 
   @override
   Widget build(BuildContext context) => Container(
