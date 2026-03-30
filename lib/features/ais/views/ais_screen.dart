@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/ais_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
@@ -79,7 +79,7 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
   }
 
   Widget _buildMapView(dynamic ownPos, List<AisTargetState> targets) {
-    final center = LatLng(ownPos.latitude as double, ownPos.longitude as double);
+    final center = ll.LatLng(ownPos.latitude as double, ownPos.longitude as double);
 
     final markers = <Marker>[
       // Own ship
@@ -100,7 +100,7 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
       for (final t in targets)
         if (t.position != null)
           Marker(
-            point: LatLng(t.position!.latitude, t.position!.longitude),
+            point: ll.LatLng(t.position!.latitude, t.position!.longitude),
             width: 70,
             height: 38,
             child: _AisMapMarker(target: t),
