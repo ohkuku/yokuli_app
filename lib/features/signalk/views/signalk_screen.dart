@@ -66,7 +66,7 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
     final pass = _passCtrl.text;
     if (host.isEmpty) return;
 
-    final url = 'ws://$host:$port/signalk/v1/stream';
+    final url = 'ws://$host:$port/signalk/v1/stream?subscribe=all';
     setState(() { _connecting = true; _connectError = null; });
 
     String? token;
@@ -178,8 +178,8 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
                       fontFeatures: [FontFeature.tabularFigures()],
                     ),
                     decoration: const InputDecoration(
-                      labelText: 'Host IP',
-                      hintText: '192.168.1.10',
+                      labelText: 'Host / Address',
+                      hintText: '192.168.1.10 or signalk.local',
                       prefixIcon: Icon(Icons.dns_rounded),
                     ),
                     keyboardType: TextInputType.url,

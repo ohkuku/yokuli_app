@@ -7,7 +7,7 @@ enum DeviceRole { standalone, host, client }
 class AppSettings {
   final String vesselName;
   final String signalKUrl; // legacy; use signalKHost+signalKPort for new setups
-  final String signalKHost; // e.g. 192.168.1.10
+  final String signalKHost; // e.g. 192.168.1.10 or signalk.local
   final int signalKPort;    // default 3000
   final String signalKUsername;
   final String signalKPassword; // stored in plain text (no security requirement)
@@ -42,7 +42,7 @@ class AppSettings {
   /// Prefers host+port if signalKHost is set, otherwise falls back to signalKUrl.
   String get effectiveSignalKUrl {
     if (signalKHost.isNotEmpty) {
-      return 'ws://$signalKHost:$signalKPort/signalk/v1/stream';
+      return 'ws://$signalKHost:$signalKPort/signalk/v1/stream?subscribe=all';
     }
     return signalKUrl;
   }
