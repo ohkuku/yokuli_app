@@ -70,7 +70,8 @@ jobs:
 
           DEV_VERSION="${BASE}-dev.${SHORT_SHA}"
           TAG="dev/${BRANCH}"
-          PREVIEW_URL="https://ohkuku.github.io/yokuli_app/preview/${BRANCH}/"
+          # Unique path per commit — no CDN/browser cache collisions
+          PREVIEW_URL="https://ohkuku.github.io/yokuli_app/preview/${BRANCH}/${SHORT_SHA}/"
 
           echo "dev_version=${DEV_VERSION}"  >> $GITHUB_OUTPUT
           echo "short_sha=${SHORT_SHA}"      >> $GITHUB_OUTPUT
@@ -100,24 +101,49 @@ jobs:
         run: |
           flutter config --enable-web
           BRANCH="${{ steps.ver.outputs.branch }}"
-          # base-href must match the GitHub Pages subdirectory
-          flutter build web --release --base-href "/yokuli_app/preview/${BRANCH}/"
-
-      - name: Cache-bust web assets
-        run: |
           SHA="${{ steps.ver.outputs.short_sha }}"
-          # Append ?v=SHA to bootstrap and service-worker references in index.html
-          # so browsers always fetch fresh JS even when index.html is CDN-cached.
-          sed -i "s/flutter_bootstrap\.js\b/flutter_bootstrap.js?v=${SHA}/g" build/web/index.html
-          sed -i "s/flutter_service_worker\.js\b/flutter_service_worker.js?v=${SHA}/g" build/web/index.html
+          # base-href matches the unique per-commit GitHub Pages subdirectory
+          flutter build web --release \
+            --base-href "/yokuli_app/preview/${BRANCH}/${SHA}/"
 
       - name: Deploy web preview to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: build/web
-          destination_dir: docs/preview/${{ steps.ver.outputs.branch }}
-          keep_files: true   # preserve other branches' previews
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ steps.ver.outputs.branch }}"
+          SHA="${{ steps.ver.outputs.short_sha }}"
+          DEST="docs/preview/${BRANCH}/${SHA}"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Use token-authenticated remote for push
+          git remote set-url origin \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+
+          # Check out gh-pages branch into a worktree (create orphan if first run)
+          if git fetch origin gh-pages; then
+            git worktree add /tmp/gh-pages origin/gh-pages
+          else
+            git worktree add --orphan -b gh-pages /tmp/gh-pages
+          fi
+
+          # ── Clean: remove ALL previous SHA subdirs for this branch ──
+          rm -rf "/tmp/gh-pages/docs/preview/${BRANCH}"
+
+          # ── Deploy: copy fresh build into the new unique path ──
+          mkdir -p "/tmp/gh-pages/${DEST}"
+          cp -r build/web/. "/tmp/gh-pages/${DEST}/"
+
+          # Ensure GitHub Pages doesn't run Jekyll
+          touch /tmp/gh-pages/.nojekyll
+
+          # Commit and push (skip if nothing changed)
+          cd /tmp/gh-pages
+          git add -A
+          git diff --cached --quiet || \
+            git commit -m "preview: ${BRANCH}/${SHA}"
+          git push origin HEAD:gh-pages
 
       # ── GitHub Release ─────────────────────────────────────────────────
 
