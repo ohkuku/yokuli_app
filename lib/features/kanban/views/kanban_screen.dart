@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,6 +14,8 @@ class KanbanScreen extends ConsumerStatefulWidget {
 }
 
 class _KanbanScreenState extends ConsumerState<KanbanScreen> {
+  String? _filterColumnId;
+
   @override
   Widget build(BuildContext context) {
     final kanban = ref.watch(kanbanProvider);

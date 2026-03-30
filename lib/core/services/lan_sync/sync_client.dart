@@ -29,6 +29,7 @@ class SyncClient {
   void Function(Map<String, dynamic> data)? onTaskUpsert;
   void Function(Map<String, dynamic> data)? onIssueUpsert;
   void Function(Map<String, dynamic> data)? onVoyageUpsert;
+  void Function(Map<String, dynamic>)? onKanbanSync;
 
   Future<void> connect(String wsUrl) async {
     await disconnect();
@@ -84,6 +85,8 @@ class SyncClient {
           if (data != null) onIssueUpsert?.call(data);
         case 'voyage_upsert':
           if (data != null) onVoyageUpsert?.call(data);
+        case 'kanban_sync':
+          onKanbanSync?.call(json);
       }
     } catch (_) {}
   }

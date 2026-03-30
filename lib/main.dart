@@ -13,6 +13,7 @@ import 'core/providers/log_provider.dart';
 import 'core/providers/alarm_provider.dart';
 import 'core/services/signalk/signalk_client.dart';
 import 'core/services/lan_sync/lan_sync_service.dart';
+import 'core/providers/kanban_provider.dart';
 import 'features/safety/providers/safety_provider.dart';
 
 void main() async {
@@ -95,6 +96,8 @@ class _AppInitState extends ConsumerState<_AppInit> {
     lanSync.onMobCancelReceived = () {
       ref.read(safetyProvider.notifier).receiveMobCancel();
     };
+    lanSync.onKanbanSync = (data) =>
+        ref.read(kanbanProvider.notifier).applySync(data);
   }
 
   @override

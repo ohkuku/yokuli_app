@@ -12,6 +12,7 @@ import '../../../core/providers/vessel_provider.dart';
 import '../../../core/providers/locale_provider.dart';
 import '../../../core/providers/alarm_provider.dart';
 import '../../../core/providers/kanban_provider.dart';
+import '../../../features/safety/providers/safety_provider.dart';
 import '../../../core/services/update/update_dialog.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../widgets/app_tile.dart';
@@ -104,10 +105,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ],
             ),
           ),
+
+          // ── Draggable MOB FAB ──────────────────────────────────────
+          const _DraggableMobFab(),
         ],
       ),
-      floatingActionButton: _MobFab(),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 
@@ -510,141 +512,97 @@ class _ArrangeSheetState extends ConsumerState<_ArrangeSheet> {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _MobFab extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final s = ref.watch(stringsProvider);
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.danger.withOpacity(0.45),
-            blurRadius: 20,
-            spreadRadius: -4,
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.danger.withOpacity(0.85),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18)),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              elevation: 0,
-            ),
-            onPressed: () => _confirmMob(context, ref, s),
-            icon: const Icon(Icons.person_off_rounded, size: 20),
-            label: Text(
-              s.mob,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w800, letterSpacing: 1.5),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+class _DraggableMobFab extends ConsumerStatefulWidget {
+  const _DraggableMobFab();
 
-  void _confirmMob(BuildContext context, WidgetRef ref, s) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _MobDialog(s: s),
-    );
-  }
+  @override
+  ConsumerState<_DraggableMobFab> createState() => _DraggableMobFabState();
 }
 
-class _MobDialog extends StatelessWidget {
-  final dynamic s;
-  const _MobDialog({required this.s});
+class _DraggableMobFabState extends ConsumerState<_DraggableMobFab> {
+  Offset? _pos; // null = use default bottom-right
 
   @override
   Widget build(BuildContext context) {
-    return BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-      child: AlertDialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        content: GlassCard(
-          tint: AppColors.danger,
-          opacity: 0.08,
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.danger.withOpacity(0.18),
-                  border: Border.all(
-                      color: AppColors.danger.withOpacity(0.4), width: 1),
-                ),
-                child: const Icon(Icons.warning_rounded,
-                    color: AppColors.danger, size: 28),
+    final size = MediaQuery.of(context).size;
+    final s = ref.watch(stringsProvider);
+    final isMobActive = ref.watch(safetyProvider).isMobActive;
+
+    // Default position: bottom-right
+    final pos = _pos ?? Offset(size.width - 100, size.height - 160);
+
+    // Clamp to screen bounds (leave 80px margin)
+    final clamped = Offset(
+      pos.dx.clamp(0, size.width - 80),
+      pos.dy.clamp(0, size.height - 60),
+    );
+
+    if (isMobActive) return const SizedBox.shrink(); // hide when MOB active
+
+    return Positioned(
+      left: clamped.dx,
+      top: clamped.dy,
+      child: GestureDetector(
+        onPanUpdate: (d) => setState(() => _pos = Offset(
+              (clamped.dx + d.delta.dx),
+              (clamped.dy + d.delta.dy),
+            )),
+        child: _MobButton(label: s.mob, onTap: () => _triggerMob(context)),
+      ),
+    );
+  }
+
+  void _triggerMob(BuildContext context) {
+    ref.read(safetyProvider.notifier).triggerMob();
+    // Navigate to safety screen to show active MOB
+    context.push('/safety');
+  }
+}
+
+class _MobButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _MobButton({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+                color: AppColors.danger.withOpacity(0.45),
+                blurRadius: 20,
+                spreadRadius: -4)
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              decoration: BoxDecoration(
+                color: AppColors.danger.withOpacity(0.85),
+                borderRadius: BorderRadius.circular(18),
               ),
-              const SizedBox(height: 16),
-              Text(
-                s.manOverboard,
-                style: const TextStyle(
-                  color: AppColors.danger,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                s.mobConfirmBody,
-                style:
-                    TextStyle(color: Colors.white.withOpacity(0.7), height: 1.5),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              Row(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white.withOpacity(0.6),
-                        side: BorderSide(color: Colors.white.withOpacity(0.2)),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                      child: Text(s.cancel),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.danger,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        elevation: 0,
-                      ),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        context.push('/safety');
-                      },
-                      child: Text(s.mobConfirm,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w700, fontSize: 12)),
-                    ),
-                  ),
+                  const Icon(Icons.person_off_rounded,
+                      size: 20, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Text(label,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.5)),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),

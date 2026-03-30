@@ -44,7 +44,7 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
     _hostCtrl = TextEditingController(text: initialHost);
     _portCtrl = TextEditingController(text: initialPort.toString());
     _userCtrl = TextEditingController(text: s.signalKUsername);
-    _passCtrl = TextEditingController();
+    _passCtrl = TextEditingController(text: s.signalKPassword);
   }
 
   @override
@@ -74,16 +74,15 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
     if (user.isNotEmpty && pass.isNotEmpty) {
       try {
         token = await SignalKAuth.login(url, user, pass);
-        // Persist host, port, username + token; password is NOT stored
         await ref.read(settingsProvider.notifier).update(
           ref.read(settingsProvider).copyWith(
             signalKHost:     host,
             signalKPort:     port,
             signalKUsername: user,
+            signalKPassword: pass,
             signalKToken:    token,
           ),
         );
-        _passCtrl.clear();
       } on SignalKAuthException catch (e) {
         if (mounted) setState(() { _connecting = false; _connectError = e.message; });
         return;
@@ -129,6 +128,36 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
     final settings = ref.watch(settingsProvider);
     final skStatus = conn.signalK;
     final connected = skStatus == ConnectionStatus.connected;
+
+    // Client role: data comes from LAN host, direct SK config not needed
+    if (settings.deviceRole == DeviceRole.client) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(title: const Text('Signal K Hub')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.wifi_rounded, size: 48, color: AppColors.teal),
+                SizedBox(height: 16),
+                Text(
+                  '客户端模式',
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  '当前设备为从端，Signal K 数据由主机通过局域网同步。\n如需直连 Signal K，请在设置中切换为独立或主机模式。',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,

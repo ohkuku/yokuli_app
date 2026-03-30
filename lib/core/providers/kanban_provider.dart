@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/kanban.dart';
+import 'lan_broadcast.dart';
 
 class _Store {
   static Future<File> _file(String name) async {
@@ -67,15 +68,25 @@ class KanbanNotifier extends Notifier<KanbanState> {
     });
   }
 
+  void _broadcast() {
+    ref.read(lanBroadcastProvider)?.call({
+      'type': 'kanban_sync',
+      'columns': state.columns.map((c) => c.toJson()).toList(),
+      'cards': state.cards.map((c) => c.toJson()).toList(),
+    });
+  }
+
   Future<void> addCard(KanbanCard card) async {
     state = KanbanState(columns: state.columns, cards: [...state.cards, card]);
     await _save();
+    _broadcast();
   }
 
   Future<void> updateCard(KanbanCard card) async {
     final updated = state.cards.map((c) => c.id == card.id ? card : c).toList();
     state = KanbanState(columns: state.columns, cards: updated);
     await _save();
+    _broadcast();
   }
 
   Future<void> deleteCard(String id) async {
@@ -83,6 +94,7 @@ class KanbanNotifier extends Notifier<KanbanState> {
         columns: state.columns,
         cards: state.cards.where((c) => c.id != id).toList());
     await _save();
+    _broadcast();
   }
 
   Future<void> moveCard(String cardId, String toColumnId) async {
@@ -92,6 +104,7 @@ class KanbanNotifier extends Notifier<KanbanState> {
     }).toList();
     state = KanbanState(columns: state.columns, cards: updated);
     await _save();
+    _broadcast();
   }
 
   Future<void> addColumn(String title) async {
@@ -105,6 +118,7 @@ class KanbanNotifier extends Notifier<KanbanState> {
     );
     state = KanbanState(columns: [...state.columns, col], cards: state.cards);
     await _save();
+    _broadcast();
   }
 
   Future<void> deleteColumn(String columnId) async {
@@ -118,6 +132,24 @@ class KanbanNotifier extends Notifier<KanbanState> {
       cards: updatedCards,
     );
     await _save();
+    _broadcast();
+  }
+
+  void applySync(Map<String, dynamic> data) {
+    try {
+      final cols = (data['columns'] as List<dynamic>? ?? [])
+          .map((c) => KanbanColumn.fromJson(c as Map<String, dynamic>))
+          .toList()
+        ..sort((a, b) => a.order.compareTo(b.order));
+      final cards = (data['cards'] as List<dynamic>? ?? [])
+          .map((c) => KanbanCard.fromJson(c as Map<String, dynamic>))
+          .toList();
+      state = KanbanState(
+        columns: cols.isEmpty ? state.columns : cols,
+        cards: cards,
+      );
+      _save(); // persist received state locally
+    } catch (_) {}
   }
 }
 

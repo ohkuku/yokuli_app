@@ -111,7 +111,7 @@ class _SafetyScreenState extends ConsumerState<SafetyScreen> {
               triggered: safety.depthAlarmTriggered,
               threshold: safety.depthAlarmThreshold,
               unit: 'm',
-              minThreshold: 0.5,
+              minThreshold: 0,
               maxThreshold: 20,
               onToggle: (v) => ref
                   .read(safetyProvider.notifier)
@@ -134,7 +134,7 @@ class _SafetyScreenState extends ConsumerState<SafetyScreen> {
               triggered: safety.speedAlarmTriggered,
               threshold: safety.speedAlarmThreshold,
               unit: 'kn',
-              minThreshold: 1,
+              minThreshold: 0,
               maxThreshold: 30,
               onToggle: (v) => ref
                   .read(safetyProvider.notifier)

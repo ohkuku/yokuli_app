@@ -34,6 +34,7 @@ class SyncHost {
   void Function(Map<String, dynamic> data)? onTaskUpsert;
   void Function(Map<String, dynamic> data)? onIssueUpsert;
   void Function(Map<String, dynamic> data)? onVoyageUpsert;
+  void Function(Map<String, dynamic>)? onKanbanSync;
   /// Called when a new client connects; receives a function that sends a
   /// JSON message directly to that specific client only (for initial full dump).
   void Function(void Function(Map<String, dynamic>))? onNewClientConnected;
@@ -171,6 +172,11 @@ class SyncHost {
             onVoyageUpsert?.call(data);
             broadcastJson(json);
           }
+        case 'kanban_sync':
+          // Re-broadcast to all peers (host relays it)
+          broadcastJson(json);
+          // Also apply locally via callback
+          onKanbanSync?.call(json);
       }
     } catch (_) {}
   }

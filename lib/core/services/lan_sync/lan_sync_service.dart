@@ -32,12 +32,14 @@ class LanSyncService {
 
   void Function(MobAlert alert)? onMobAlert;
   void Function()? onMobCancelReceived;
+  void Function(Map<String, dynamic>)? onKanbanSync;
 
   LanSyncService(this._ref) {
     _platform.onStateReceived = (state) {
       _ref.read(vesselProvider.notifier).update(state);
     };
     _platform.onMobReceived = (alert) => onMobAlert?.call(alert);
+    _platform.onKanbanSync = (data) => onKanbanSync?.call(data);
     _platform.onMobCancelReceived = () => onMobCancelReceived?.call();
     _platform.onClientConnectionChanged = (connected) {
       _conn.setLanSyncStatus(

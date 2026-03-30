@@ -28,6 +28,7 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _host.onTaskUpsert = (data) => onTaskUpsert?.call(data);
     _host.onIssueUpsert = (data) => onIssueUpsert?.call(data);
     _host.onVoyageUpsert = (data) => onVoyageUpsert?.call(data);
+    _host.onKanbanSync = (data) => onKanbanSync?.call(data);
     _host.onNewClientConnected = (sendTo) => onNewClientConnected?.call(sendTo);
     await _host.start(port: port, vesselName: vesselName);
   }
@@ -61,6 +62,7 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _client.onTaskUpsert = (data) => onTaskUpsert?.call(data);
     _client.onIssueUpsert = (data) => onIssueUpsert?.call(data);
     _client.onVoyageUpsert = (data) => onVoyageUpsert?.call(data);
+    _client.onKanbanSync = (data) => onKanbanSync?.call(data);
     await _client.connect(wsUrl);
   }
 

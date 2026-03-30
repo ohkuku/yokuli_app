@@ -10,6 +10,7 @@ class AppSettings {
   final String signalKHost; // e.g. 192.168.1.10
   final int signalKPort;    // default 3000
   final String signalKUsername; // optional; empty = no auth
+  final String signalKPassword; // stored for convenience (no secrets on device)
   final String signalKToken;    // JWT; empty = not logged in
   final DeviceRole deviceRole;
   final String hostIp; // when role == client
@@ -25,6 +26,7 @@ class AppSettings {
     this.signalKHost = '',
     this.signalKPort = 3000,
     this.signalKUsername = '',
+    this.signalKPassword = '',
     this.signalKToken = '',
     this.deviceRole = DeviceRole.standalone,
     this.hostIp = '',
@@ -52,6 +54,7 @@ class AppSettings {
     String? signalKHost,
     int? signalKPort,
     String? signalKUsername,
+    String? signalKPassword,
     String? signalKToken,
     DeviceRole? deviceRole,
     String? hostIp,
@@ -67,6 +70,7 @@ class AppSettings {
         signalKHost: signalKHost ?? this.signalKHost,
         signalKPort: signalKPort ?? this.signalKPort,
         signalKUsername: signalKUsername ?? this.signalKUsername,
+        signalKPassword: signalKPassword ?? this.signalKPassword,
         signalKToken: signalKToken ?? this.signalKToken,
         deviceRole: deviceRole ?? this.deviceRole,
         hostIp: hostIp ?? this.hostIp,
@@ -84,6 +88,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
   static const _keySignalKHost   = 'signalk_host';
   static const _keySignalKPort2  = 'signalk_port2'; // port2 to avoid clash
   static const _keySignalKUser   = 'signalk_username';
+  static const _keySignalKPass   = 'signalk_password';
   static const _keySignalKToken  = 'signalk_token';
   static const _keyDeviceRole    = 'device_role';
   static const _keyHostIp        = 'host_ip';
@@ -108,6 +113,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       signalKHost:     prefs.getString(_keySignalKHost)  ?? '',
       signalKPort:     prefs.getInt(_keySignalKPort2)    ?? 3000,
       signalKUsername: prefs.getString(_keySignalKUser)  ?? '',
+      signalKPassword: prefs.getString(_keySignalKPass)  ?? '',
       signalKToken:    prefs.getString(_keySignalKToken) ?? '',
       deviceRole: DeviceRole.values.firstWhere(
         (e) => e.name == prefs.getString(_keyDeviceRole),
@@ -132,6 +138,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
     await prefs.setString(_keySignalKHost,  updated.signalKHost);
     await prefs.setInt(_keySignalKPort2,    updated.signalKPort);
     await prefs.setString(_keySignalKUser,  updated.signalKUsername);
+    await prefs.setString(_keySignalKPass,  updated.signalKPassword);
     await prefs.setString(_keySignalKToken, updated.signalKToken);
     await prefs.setString(_keyDeviceRole, updated.deviceRole.name);
     await prefs.setString(_keyHostIp, updated.hostIp);

@@ -496,26 +496,13 @@ class _SolarControllerCard extends StatelessWidget {
               ),
               const SizedBox(height: 12),
 
-              // Stats grid row
+              // Stats grid row — only show output/charging values
               Row(
                 children: [
-                  _Stat(
-                      label: 'PV VOLTAGE',
-                      value: controller.inputVoltage?.toStringAsFixed(1),
-                      unit: 'V'),
-                  _Stat(
-                      label: 'PV CURRENT',
-                      value: controller.inputCurrent?.toStringAsFixed(1),
-                      unit: 'A'),
                   _Stat(
                       label: 'PV POWER',
                       value: controller.effectiveInputPower?.toStringAsFixed(0),
                       unit: 'W'),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
                   _Stat(
                       label: 'CHG VOLTAGE',
                       value: controller.outputVoltage?.toStringAsFixed(2),
@@ -524,7 +511,6 @@ class _SolarControllerCard extends StatelessWidget {
                       label: 'CHG CURRENT',
                       value: controller.outputCurrent?.toStringAsFixed(1),
                       unit: 'A'),
-                  const Expanded(child: SizedBox()),
                 ],
               ),
 
