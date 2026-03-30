@@ -1,0 +1,145 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/workflows/dev-build.yml'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Force version bump type (overrides auto patch/minor logic)'
+        required: true
+        default: 'auto'
+        type: choice
+        options: [auto, minor, major]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Skip if this commit is the bot's version bump
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0           # full history for tag counting
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Accept Android licences
+        run: yes | flutter doctor --android-licenses || true
+
+      - name: Compute new version
+        id: ver
+        run: |
+          # ── Read current version from pubspec.yaml ──────────────────────
+          RAW=$(grep '^version:' pubspec.yaml | sed 's/version:[[:space:]]*//' | cut -d'+' -f1 | tr -d '[:space:]')
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$RAW"
+
+          BUMP="${{ github.event.inputs.bump }}"
+          BUMP="${BUMP:-auto}"
+
+          if [ "$BUMP" = "major" ]; then
+            MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0
+          elif [ "$BUMP" = "minor" ]; then
+            MINOR=$((MINOR + 1)); PATCH=0
+          else
+            # Auto: count existing patch releases for this major.minor
+            # Tags matching vX.Y.Z (no pre-release suffix)
+            PATCH_COUNT=$(git tag -l "v${MAJOR}.${MINOR}.[0-9]*" \
+              | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+$" \
+              | wc -l | tr -d ' ')
+            echo "Patch releases so far for ${MAJOR}.${MINOR}: ${PATCH_COUNT}"
+            if [ "$PATCH_COUNT" -ge 20 ]; then
+              echo "→ Auto-bumping MINOR (reached 20 patches)"
+              MINOR=$((MINOR + 1)); PATCH=0
+            else
+              PATCH=$((PATCH + 1))
+            fi
+          fi
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          BUILD_NUM=$(git rev-list --count HEAD)
+
+          echo "version=${NEW_VERSION}"      >> $GITHUB_OUTPUT
+          echo "build_number=${BUILD_NUM}"   >> $GITHUB_OUTPUT
+          echo "tag=v${NEW_VERSION}"         >> $GITHUB_OUTPUT
+          echo "New version: ${NEW_VERSION}+${BUILD_NUM}"
+
+      - name: Update pubspec.yaml
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          B="${{ steps.ver.outputs.build_number }}"
+          sed -i "s/^version: .*/version: ${V}+${B}/" pubspec.yaml
+          grep '^version:' pubspec.yaml
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      # ── Build ──────────────────────────────────────────────────────────
+
+      - name: Build release APK
+        run: flutter build apk --release
+        # Note: add signing config here when KEYSTORE secrets are available.
+        # See: https://docs.flutter.dev/deployment/android#signing-the-app
+
+      - name: Rename APK
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             yokuli-${V}.apk
+
+      - name: Build Web
+        run: |
+          flutter config --enable-web
+          flutter build web --release --base-href /
+
+      - name: Zip web build
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          cd build/web && zip -r ../../yokuli-web-${V}.zip . && cd ../..
+
+      # ── Commit version bump ────────────────────────────────────────────
+
+      - name: Commit & push version bump
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pubspec.yaml
+          git commit -m "chore: bump version to ${{ steps.ver.outputs.version }} [skip ci]"
+          git push origin main
+
+      - name: Create & push tag
+        run: |
+          git tag ${{ steps.ver.outputs.tag }}
+          git push origin ${{ steps.ver.outputs.tag }}
+
+      # ── GitHub Release ─────────────────────────────────────────────────
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: "Yokuli ${{ steps.ver.outputs.tag }}"
+          generate_release_notes: true   # auto-generates from PRs / commits
+          make_latest: true
+          files: |
+            yokuli-${{ steps.ver.outputs.version }}.apk
+            yokuli-web-${{ steps.ver.outputs.version }}.zip
