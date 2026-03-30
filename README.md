@@ -4,7 +4,7 @@
 
 **船控平台 · Vessel Control Platform**
 
-*Flutter · Android · iOS*
+*Flutter · Android · iOS · Web*
 
 <br/>
 
@@ -22,7 +22,9 @@
 
 ### 简介
 
-Yokuli 是一款基于 Flutter 的海洋船控 App，面向 Android 和 iOS 双平台。界面风格类似「船载操作系统」—— 以 launcher 方式组织各功能模块，接入 Signal K 服务器实时数据，支持多设备局域网数据共享。
+Yokuli 是一款基于 Flutter 的海洋船控 App，面向 Android、iOS 和 **Web** 三端。界面风格类似「船载操作系统」—— 以 launcher 方式组织各功能模块，接入 Signal K 服务器实时数据，支持多设备局域网数据共享。
+
+**Web 端限制：** 浏览器无法运行服务器，因此 Web 版只能作为 Client 连接到原生设备（Android/iOS）的 Host。Signal K 直连功能正常。
 
 ### 当前状态
 
@@ -72,8 +74,8 @@ Signal K WS ──► VesselState              │
 
 **设备角色（设置页面选择）：**
 - **独立模式 (Standalone)** — 直连 Signal K，不参与局域网同步
-- **主机 (Host/Master)** — 汇聚 Signal K 数据，通过 WebSocket 向局域网客户端广播
-- **客户端 (Client)** — 从主机接收所有数据，无需独立连接 Signal K
+- **主机 (Host/Master)** — 汇聚 Signal K 数据，通过 WebSocket 向局域网客户端广播（仅原生端支持）
+- **客户端 (Client)** — 从主机接收所有数据，无需独立连接 Signal K（Web 端固定为此模式）
 
 ---
 
@@ -173,7 +175,9 @@ Signal K 默认端口为 **3000**。开启「启动时自动连接」后，App �
 
 ### Overview
 
-Yokuli is a Flutter-based marine vessel control app for Android and iOS. Designed to feel like a "Marine OS" — a launcher-style interface with modular panels for Signal K data, instruments, power management, safety, logbook, and maintenance. Supports real-time multi-device data sharing over LAN.
+Yokuli is a Flutter-based marine vessel control app for Android, iOS, and **Web**. Designed to feel like a "Marine OS" — a launcher-style interface with modular panels for Signal K data, instruments, power management, safety, logbook, and maintenance. Supports real-time multi-device data sharing over LAN.
+
+**Web limitations:** Browsers cannot run a server, so the web version acts only as a Client — connect to a Host running on a native (Android/iOS) device. Signal K direct connection works normally.
 
 ### Status
 
@@ -223,8 +227,8 @@ Discovery: UDP broadcast on port 43215 (auto) + manual IP entry (fallback)
 
 **Device roles (Settings screen):**
 - **Standalone** — direct Signal K connection only, no LAN sync
-- **Host (Master)** — collects Signal K data, serves LAN peers via WebSocket
-- **Client** — receives all data from host, no Signal K connection needed
+- **Host (Master)** — collects Signal K data, serves LAN peers via WebSocket (native only)
+- **Client** — receives all data from host, no Signal K connection needed (Web is always Client)
 
 ---
 

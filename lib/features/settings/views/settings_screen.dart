@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,8 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/connection_provider.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
-import '../../../core/services/lan_sync/sync_client.dart';
-import '../../../core/services/lan_sync/sync_host.dart';
+import '../../../core/services/lan_sync/lan_sync_platform_base.dart' show DiscoveredHost;
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -31,7 +31,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _nameCtrl = TextEditingController(text: s.vesselName);
     _hostIpCtrl = TextEditingController(text: s.hostIp);
     _hostPortCtrl = TextEditingController(text: s.hostPort.toString());
-    _loadLocalIp();
+    if (!kIsWeb) _loadLocalIp();
   }
 
   @override
@@ -43,7 +43,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _loadLocalIp() async {
-    final ip = await SyncHost.getLocalIp();
+    final ip = await ref.read(lanSyncServiceProvider).getLocalIp();
     if (mounted) setState(() => _localIp = ip);
   }
 
@@ -54,7 +54,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _discoveredHosts = [];
     });
     final subnet = _localIp!.substring(0, _localIp!.lastIndexOf('.'));
-    final hosts = await HostDiscovery.scanSubnet(subnet: subnet);
+    final hosts = await ref.read(lanSyncServiceProvider).scanForHosts(subnet);
     if (mounted) setState(() {
       _discoveredHosts = hosts;
       _scanning = false;
@@ -88,6 +88,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final conn = ref.watch(connectionProvider);
+    final lanService = ref.watch(lanSyncServiceProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -101,6 +102,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // Web platform banner
+            if (kIsWeb) ...[
+              _WebBanner(),
+              const SizedBox(height: 16),
+            ],
+
             // --- Vessel ---
             _SectionHeader('VESSEL'),
             const SizedBox(height: 8),
@@ -117,17 +124,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _SectionHeader('LAN SYNC'),
             const SizedBox(height: 8),
 
-            // Role selector
+            // Role selector — web only shows Standalone / Client
             _RoleSelector(
               current: settings.deviceRole,
+              canBeHost: lanService.canBeHost,
               onChanged: (role) => ref
                   .read(settingsProvider.notifier)
                   .update(settings.copyWith(deviceRole: role)),
             ),
             const SizedBox(height: 12),
 
-            // Host info (when role=host)
-            if (settings.deviceRole == DeviceRole.host) ...[
+            // Host info card (native + host role only)
+            if (!kIsWeb && settings.deviceRole == DeviceRole.host) ...[
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -174,7 +182,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ],
 
-            // Client config (when role=client)
+            // Client config
             if (settings.deviceRole == DeviceRole.client) ...[
               TextField(
                 controller: _hostIpCtrl,
@@ -195,43 +203,65 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 keyboardType: TextInputType.number,
               ),
-              const SizedBox(height: 10),
-
-              // Scan button
-              Row(children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _scanning ? null : _scanForHosts,
-                    icon: _scanning
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.search_rounded),
-                    label: Text(_scanning ? 'Scanning…' : 'Scan for hosts'),
+              // Scan button (native only)
+              if (!kIsWeb) ...[
+                const SizedBox(height: 10),
+                Row(children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _scanning ? null : _scanForHosts,
+                      icon: _scanning
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.search_rounded),
+                      label: Text(_scanning ? 'Scanning…' : 'Scan for hosts'),
+                    ),
                   ),
-                ),
-              ]),
-
-              if (_discoveredHosts.isNotEmpty) ...[
+                ]),
+                if (_discoveredHosts.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ...(_discoveredHosts.map((h) => ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.device_hub_rounded,
+                            color: AppColors.cyan),
+                        title: Text(h.name),
+                        subtitle: Text(h.ws),
+                        onTap: () {
+                          _hostIpCtrl.text = h.host;
+                          _hostPortCtrl.text = h.port.toString();
+                        },
+                      ))),
+                ],
+              ] else ...[
+                // Web: manual IP only, no scan
                 const SizedBox(height: 8),
-                ...(_discoveredHosts.map((h) => ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.device_hub_rounded,
-                          color: AppColors.cyan),
-                      title: Text(h.name),
-                      subtitle: Text(h.ws),
-                      onTap: () {
-                        _hostIpCtrl.text = h.host;
-                        _hostPortCtrl.text = h.port.toString();
-                      },
-                    ))),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(children: [
+                    Icon(Icons.info_outline_rounded,
+                        size: 14, color: AppColors.textMuted),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Enter the IP of the Host device manually. '
+                        'Auto-discovery is not available in browsers.',
+                        style: TextStyle(
+                            color: AppColors.textMuted, fontSize: 12),
+                      ),
+                    ),
+                  ]),
+                ),
               ],
             ],
 
             const SizedBox(height: 12),
 
-            // Auto-connect LAN
             _ToggleTile(
               title: 'Auto-start LAN sync on launch',
               value: settings.autoConnectLan,
@@ -284,8 +314,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   const Text('Vessel Control Platform',
                       style: TextStyle(color: AppColors.textSecondary)),
                   const SizedBox(height: 8),
-                  Text('v1.0.0',
-                      style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                  Row(children: [
+                    const Text('v1.0.0  ·  ',
+                        style:
+                            TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                    Text(
+                      kIsWeb ? 'Web' : 'Native',
+                      style: TextStyle(
+                        color: kIsWeb ? AppColors.modWeather : AppColors.cyan,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ]),
                 ],
               ),
             ),
@@ -296,14 +337,66 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 }
 
+/// Banner shown only on web explaining platform limitations
+class _WebBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.modWeather.withAlpha(20),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.modWeather.withAlpha(60)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.public_rounded, color: AppColors.modWeather, size: 20),
+          SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Web Mode',
+                    style: TextStyle(
+                        color: AppColors.modWeather,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
+                SizedBox(height: 4),
+                Text(
+                  'Browsers cannot run a server. This device can only act as a '
+                  'Client — connect to a Host running on a native (Android/iOS) device. '
+                  'Signal K direct connection works normally.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _RoleSelector extends StatelessWidget {
   final DeviceRole current;
+  final bool canBeHost;
   final ValueChanged<DeviceRole> onChanged;
 
-  const _RoleSelector({required this.current, required this.onChanged});
+  const _RoleSelector({
+    required this.current,
+    required this.canBeHost,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final roles = DeviceRole.values.where((r) {
+      // Hide Host option on web
+      if (!canBeHost && r == DeviceRole.host) return false;
+      return true;
+    }).toList();
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.cardBg,
@@ -311,25 +404,26 @@ class _RoleSelector extends StatelessWidget {
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
-        children: DeviceRole.values.map((role) {
+        children: roles.asMap().entries.map((entry) {
+          final isLast = entry.key == roles.length - 1;
+          final role = entry.value;
           final (icon, title, desc) = switch (role) {
             DeviceRole.standalone => (
                 Icons.smartphone_rounded,
                 'Standalone',
-                'Direct Signal K connection, no sync'
+                'Direct Signal K connection, no LAN sync',
               ),
             DeviceRole.host => (
                 Icons.router_rounded,
                 'Host (Master)',
-                'Aggregates data, serves peers on LAN'
+                'Aggregates data, serves peers on LAN',
               ),
             DeviceRole.client => (
                 Icons.tablet_rounded,
                 'Client',
-                'Receives data from host device'
+                'Receives all data from a Host device',
               ),
           };
-          final isLast = role == DeviceRole.values.last;
           return InkWell(
             onTap: () => onChanged(role),
             borderRadius: BorderRadius.circular(12),
@@ -338,11 +432,14 @@ class _RoleSelector extends StatelessWidget {
               decoration: BoxDecoration(
                 border: isLast
                     ? null
-                    : const Border(bottom: BorderSide(color: AppColors.divider)),
+                    : const Border(
+                        bottom: BorderSide(color: AppColors.divider)),
               ),
               child: Row(children: [
                 Icon(icon,
-                    color: current == role ? AppColors.cyan : AppColors.textMuted,
+                    color: current == role
+                        ? AppColors.cyan
+                        : AppColors.textMuted,
                     size: 20),
                 const SizedBox(width: 12),
                 Expanded(
@@ -362,7 +459,8 @@ class _RoleSelector extends StatelessWidget {
                   ),
                 ),
                 if (current == role)
-                  const Icon(Icons.check_rounded, color: AppColors.cyan, size: 18),
+                  const Icon(Icons.check_rounded,
+                      color: AppColors.cyan, size: 18),
               ]),
             ),
           );

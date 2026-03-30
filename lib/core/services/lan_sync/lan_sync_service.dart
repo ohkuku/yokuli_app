@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/mob_alert.dart';
@@ -8,75 +9,73 @@ import '../../providers/connection_provider.dart'
     show ConnectionNotifier, ConnectionStatus, connectionProvider;
 import '../../providers/settings_provider.dart' show DeviceRole, settingsProvider;
 import '../../providers/vessel_provider.dart';
-import 'sync_client.dart';
-import 'sync_host.dart';
+import 'lan_sync_platform.dart'; // conditional export → native or web impl
 
-/// Coordinates between SyncHost (when role=host) and SyncClient (when role=client).
-/// Watches vesselProvider for state changes and forwards them to clients.
+/// Coordinates LAN sync using the platform-appropriate adapter.
+/// - Native: can be Host (shelf WS server + UDP) or Client
+/// - Web:    Client only (no server, no UDP discovery)
 class LanSyncService {
   final Ref _ref;
-  final SyncHost _host = SyncHost();
-  final SyncClient _client = SyncClient();
-  final HostDiscovery _discovery = HostDiscovery();
-  StreamSubscription? _vesselSub;
+  final LanSyncPlatformImpl _platform = LanSyncPlatformImpl();
+  Timer? _stateTimer;
 
-  // MOB callback for the app
   void Function(MobAlert alert)? onMobAlert;
 
-  LanSyncService(this._ref);
-
-  ConnectionNotifier get _conn => _ref.read(connectionProvider.notifier);
-
-  Future<void> start() async {
-    final settings = _ref.read(settingsProvider);
-    switch (settings.deviceRole) {
-      case DeviceRole.host:
-        await _startHost(settings.hostPort, settings.vesselName);
-      case DeviceRole.client:
-        await _startClient('ws://${settings.hostIp}:${settings.hostPort}');
-      case DeviceRole.standalone:
-        // Nothing to do
-        break;
-    }
-  }
-
-  Future<void> _startHost(int port, String vesselName) async {
-    _host.onClientCountChanged = (count) {
-      _conn.setLanSyncStatus(
-        count > 0 ? ConnectionStatus.connected : ConnectionStatus.connecting,
-      );
-    };
-    _host.onMobReceived = (alert) => onMobAlert?.call(alert);
-
-    await _host.start(port: port, vesselName: vesselName);
-    _conn.setLanSyncStatus(ConnectionStatus.connecting); // waiting for clients
-
-    // Push vessel state updates to connected clients
-    _vesselSub = Stream.periodic(const Duration(milliseconds: 500)).listen((_) {
-      if (_host.isRunning) {
-        _host.updateState(_ref.read(vesselProvider));
-      }
-    });
-  }
-
-  Future<void> _startClient(String wsUrl) async {
-    _client.onStateReceived = (state) {
+  LanSyncService(this._ref) {
+    _platform.onStateReceived = (state) {
       _ref.read(vesselProvider.notifier).update(state);
     };
-    _client.onMobReceived = (alert) => onMobAlert?.call(alert);
-    _client.onConnectionChanged = (connected) {
+    _platform.onMobReceived = (alert) => onMobAlert?.call(alert);
+    _platform.onClientConnectionChanged = (connected) {
       _conn.setLanSyncStatus(
         connected ? ConnectionStatus.connected : ConnectionStatus.connecting,
       );
     };
-    await _client.connect(wsUrl);
+    _platform.onPeerCountChanged = (count) {
+      _conn.setLanSyncStatus(
+        count > 0 ? ConnectionStatus.connected : ConnectionStatus.connecting,
+      );
+    };
+  }
+
+  ConnectionNotifier get _conn => _ref.read(connectionProvider.notifier);
+
+  bool get canBeHost => _platform.canBeHost;
+  bool get supportsAutoDiscovery => _platform.supportsAutoDiscovery;
+
+  Future<void> start() async {
+    final settings = _ref.read(settingsProvider);
+    // On web, force client mode regardless of saved role
+    final role = kIsWeb ? DeviceRole.client : settings.deviceRole;
+
+    switch (role) {
+      case DeviceRole.host:
+        _conn.setLanSyncStatus(ConnectionStatus.connecting);
+        await _platform.startHost(settings.hostPort, settings.vesselName);
+        // Push VesselState to connected clients at 2 Hz
+        _stateTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+          if (_platform.isHostRunning) {
+            _platform.updateHostState(_ref.read(vesselProvider));
+          }
+        });
+
+      case DeviceRole.client:
+        if (settings.hostIp.isNotEmpty) {
+          _conn.setLanSyncStatus(ConnectionStatus.connecting);
+          await _platform.connectAsClient(
+            'ws://${settings.hostIp}:${settings.hostPort}',
+          );
+        }
+
+      case DeviceRole.standalone:
+        break;
+    }
   }
 
   Future<void> stop() async {
-    await _vesselSub?.cancel();
-    await _host.stop();
-    await _client.disconnect();
-    _discovery.stop();
+    _stateTimer?.cancel();
+    await _platform.stopHost();
+    await _platform.disconnectClient();
     _conn.setLanSyncStatus(ConnectionStatus.disconnected);
   }
 
@@ -85,22 +84,23 @@ class LanSyncService {
     await start();
   }
 
-  /// Trigger MOB alert — works on both host and client
   void triggerMob(MobAlert alert) {
-    final role = _ref.read(settingsProvider).deviceRole;
+    final settings = _ref.read(settingsProvider);
+    final role = kIsWeb ? DeviceRole.client : settings.deviceRole;
     if (role == DeviceRole.host) {
-      _host.broadcastMob(alert);
-    } else if (role == DeviceRole.client) {
-      _client.sendMob(alert);
+      _platform.broadcastMob(alert);
+    } else {
+      _platform.sendMob(alert);
     }
     onMobAlert?.call(alert);
   }
 
-  SyncHost get host => _host;
-  SyncClient get client => _client;
-  HostDiscovery get discovery => _discovery;
+  /// Returns this device's local IP (empty string on web).
+  Future<String> getLocalIp() => _platform.getLocalIp();
 
-  String? get hostAddress => null; // resolved via SyncHost._getLocalIp
+  /// Scan LAN subnet for Yokuli hosts. Returns [] on web.
+  Future<List<DiscoveredHost>> scanForHosts(String subnet) =>
+      _platform.scanForHosts(subnet);
 }
 
 final lanSyncServiceProvider = Provider<LanSyncService>((ref) {
