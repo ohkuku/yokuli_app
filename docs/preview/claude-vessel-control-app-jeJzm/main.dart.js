@@ -115708,7 +115708,7 @@ A.ib.prototype={
 L(){return"DeviceRole."+this.b}}
 A.mi.prototype={
 gP_(){var s=this.c
-if(s.length!==0)return"ws://"+s+":"+this.d+"/signalk/v1/stream"
+if(s.length!==0)return"ws://"+s+":"+this.d+"/signalk/v1/stream?subscribe=all"
 return this.b},
 pn(a,b,c,d,e,f,a0,a1,a2,a3,a4,a5,a6){var s=this,r=a6==null?s.a:a6,q=a3==null?s.b:a3,p=a0==null?s.c:a0,o=a2==null?s.d:a2,n=a4==null?s.e:a4,m=a1==null?s.f:a1,l=c==null?s.r:c,k=d==null?s.w:d,j=e==null?s.x:e,i=b==null?s.y:b,h=a==null?s.z:a,g=f==null?s.Q:f
 return new A.mi(r,q,p,o,n,m,l,k,j,i,h,g,a5==null?s.as:a5)},
@@ -119404,7 +119404,7 @@ b=n.z
 b===$&&A.a()
 l=b.a.a
 if(g.length===0){s=1
-break}k="ws://"+g+":"+f+"/signalk/v1/stream"
+break}k="ws://"+g+":"+f+"/signalk/v1/stream?subscribe=all"
 n.O(new A.aV8(n))
 j=null
 s=J.bW(m)!==0&&J.bW(l)!==0?3:4
@@ -119459,7 +119459,7 @@ l=A.iC(m,m,m,m,m,B.ME)
 s=n.w
 s===$&&A.a()
 r=!g
-s=A.cl(A.ja(!1,!1,s,B.WS,r,B.qF,1,!1,m,B.MD,B.mn),3)
+s=A.cl(A.ja(!1,!1,s,B.WT,r,B.qF,1,!1,m,B.MD,B.mn),3)
 q=n.x
 q===$&&A.a()
 p=t.p
@@ -119661,7 +119661,7 @@ A.cN(this.a,!1).er(s)
 return null},
 $S:0}
 A.aXR.prototype={
-$1(a){var s=null,r=this.a,q=A.ja(s,!0,r,B.WT,s,s,6,!1,s,B.be,s)
+$1(a){var s=null,r=this.a,q=A.ja(s,!0,r,B.WS,s,s,6,!1,s,B.be,s)
 return A.lj(A.b([A.ed(B.mv,new A.aXP(a),s),A.ed(B.MG,new A.aXQ(a,r),s)],t.p),B.W,q,s,B.ao4)},
 $S:34}
 A.aXP.prototype={
@@ -124703,13 +124703,13 @@ B.VI=new A.bs(B.Vn,null,null,null,null)
 B.WQ=new A.ii(null,null,null,"Host port",null,null,null,null,null,null,"8765",null,null,null,null,null,!0,!0,!1,null,null,null,null,null,null,null,null,null,B.VI,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,!0,null,null,null,null)
 B.Wd=new A.bs(B.ky,null,null,null,null)
 B.WR=new A.ii(null,null,null,"Host IP address",null,null,null,null,null,null,"192.168.1.100",null,null,null,null,null,!0,!0,!1,null,null,null,null,null,null,null,null,null,B.Wd,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,!0,null,null,null,null)
-B.UO=new A.aG(63169,"MaterialIcons",null,!1)
-B.VY=new A.bs(B.UO,null,null,null,null)
-B.WS=new A.ii(null,null,null,"Host IP",null,null,null,null,null,null,"192.168.1.10",null,null,null,null,null,!0,!0,!1,null,null,null,null,null,null,null,null,null,B.VY,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,!0,null,null,null,null)
 B.acn=new A.fq(4,B.et,B.nr)
 B.acp=new A.fq(4,B.et,B.dP)
-B.WT=new A.ii(null,null,null,null,null,null,null,null,null,null,"\u8bb0\u5f55\u8fd9\u6b21\u822a\u884c\u7684\u611f\u53d7\u3001\u8def\u7ebf\u6216\u5176\u4ed6\u4fe1\u606f\u2026",null,B.dk,null,null,null,!0,!0,!1,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,B.acn,null,null,B.acp,null,!0,null,null,null,null)
+B.WS=new A.ii(null,null,null,null,null,null,null,null,null,null,"\u8bb0\u5f55\u8fd9\u6b21\u822a\u884c\u7684\u611f\u53d7\u3001\u8def\u7ebf\u6216\u5176\u4ed6\u4fe1\u606f\u2026",null,B.dk,null,null,null,!0,!0,!1,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,B.acn,null,null,B.acp,null,!0,null,null,null,null)
 B.auh=new A.ii(null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,!0,!0,!1,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,!0,null,null,null,null)
+B.UO=new A.aG(63169,"MaterialIcons",null,!1)
+B.VY=new A.bs(B.UO,null,null,null,null)
+B.WT=new A.ii(null,null,null,"Host / Address",null,null,null,null,null,null,"192.168.1.10 or signalk.local",null,null,null,null,null,!0,!0,!1,null,null,null,null,null,null,null,null,null,B.VY,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,!0,null,null,null,null)
 B.V2=new A.aG(983153,"MaterialIcons",null,!1)
 B.W4=new A.bs(B.V2,null,null,null,null)
 B.WU=new A.ii(null,null,null,"Username",null,null,null,null,null,null,null,null,null,null,null,null,!0,!0,!1,null,null,null,null,null,null,null,null,null,B.W4,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,!0,null,null,null,null)
