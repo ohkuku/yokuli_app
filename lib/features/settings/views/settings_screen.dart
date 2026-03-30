@@ -155,9 +155,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(children: [
-                      Icon(Icons.router_rounded, size: 16, color: AppColors.cyan),
-                      SizedBox(width: 6),
+                    Row(children: [
+                      const Icon(Icons.router_rounded, size: 16, color: AppColors.cyan),
+                      const SizedBox(width: 6),
                       Text(ref.watch(stringsProvider).hostingStatus,
                           style: const TextStyle(
                               color: AppColors.cyan,
