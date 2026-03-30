@@ -36,6 +36,7 @@ abstract class LanSyncPlatform {
   void Function(Map<String, dynamic> data)? onVoyageUpsert;
   void Function(Map<String, dynamic>)? onKanbanSync;
   void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
+  void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
   /// Host only: called when a new client connects; receives a send-to-one function
   /// that LanSyncService uses to dump all persisted module data to the new client.
   void Function(void Function(Map<String, dynamic>))? onNewClientConnected;

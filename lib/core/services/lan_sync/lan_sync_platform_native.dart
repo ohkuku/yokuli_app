@@ -79,6 +79,7 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _client.onVoyageUpsert = (data) => onVoyageUpsert?.call(data);
     _client.onKanbanSync = (data) => onKanbanSync?.call(data);
     _client.onSkCredentialsReceived = (data) => onSkCredentialsReceived?.call(data);
+    _client.onSettingsSyncReceived = (data) => onSettingsSyncReceived?.call(data);
     _client.onSyncMetaReceived = (svMs, peerId) =>
         onSyncMetaReceived?.call(svMs, peerId);
     await _client.connect(wsUrl);

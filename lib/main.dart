@@ -4,20 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'app.dart';
-import 'core/providers/settings_provider.dart';
-import 'core/providers/locale_provider.dart';
-import 'core/services/signalk/signalk_auth.dart';
-import 'core/providers/voyage_provider.dart';
-import 'core/providers/task_provider.dart';
-import 'core/providers/issue_provider.dart';
-import 'core/providers/log_provider.dart';
-import 'core/providers/alarm_provider.dart';
-import 'core/providers/alarm_rule_provider.dart';
-import 'core/services/alarm_dispatcher.dart';
-import 'core/services/signalk/signalk_client.dart';
-import 'core/providers/device_provider.dart';
-import 'core/services/lan_sync/lan_sync_service.dart';
-import 'features/safety/providers/safety_provider.dart';
+import 'core/theme/app_theme.dart';
+import 'features/startup/startup_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,14 +15,12 @@ void main() async {
   await Hive.openBox('logbook');
   await Hive.openBox('maintenance');
 
-  // Preferred orientations: allow landscape on tablets / portrait+landscape on phones
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
 
-  // Dark status / nav bar
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
@@ -43,92 +29,48 @@ void main() async {
   ));
 
   runApp(
-    ProviderScope(
-      observers: const [_AppProviderObserver()],
-      child: const _AppInit(),
+    const ProviderScope(
+      observers: [_AppProviderObserver()],
+      child: _AppGate(),
     ),
   );
 }
 
-/// Handles auto-connect logic after settings are loaded
-class _AppInit extends ConsumerStatefulWidget {
-  const _AppInit();
+// ---------------------------------------------------------------------------
+// App gate — shows startup screen, then hands off to the main app
+// ---------------------------------------------------------------------------
+
+class _AppGate extends ConsumerStatefulWidget {
+  const _AppGate();
 
   @override
-  ConsumerState<_AppInit> createState() => _AppInitState();
+  ConsumerState<_AppGate> createState() => _AppGateState();
 }
 
-class _AppInitState extends ConsumerState<_AppInit> {
+class _AppGateState extends ConsumerState<_AppGate> {
+  bool _ready = false;
+
   @override
-  void initState() {
-    super.initState();
-    Future.microtask(() async {
-      // Load settings first — build() fires _loadFromPrefs() async so we must
-      // await it explicitly before reading any persisted values.
-      await ref.read(settingsProvider.notifier).load();
-      await ref.read(safetyProvider.notifier).load();
-      // Ensure deviceId is loaded from prefs before any P2P activity starts.
-      ref.read(deviceProvider); // triggers _load() async internally
-      await ref.read(localeProvider.notifier).init();
-      await ref.read(alarmRuleProvider.notifier).load();
-      await ref.read(notifyChannelProvider.notifier).load();
-      await _loadPersistentData();
-      // Initialize alarm dispatcher (creates it, which starts listening).
-      ref.read(alarmDispatcherProvider);
-      await _autoConnect();
-    });
-  }
-
-  Future<void> _loadPersistentData() async {
-    await Future.wait([
-      ref.read(voyageProvider.notifier).load(),
-      ref.read(taskProvider.notifier).load(),
-      ref.read(issueProvider.notifier).load(),
-      ref.read(logProvider.notifier).load(),
-      ref.read(alarmProvider.notifier).load(),
-    ]);
-  }
-
-  Future<void> _autoConnect() async {
-    final settings = ref.read(settingsProvider);
-
-    if (settings.autoConnectSignalK && settings.effectiveSignalKUrl.isNotEmpty) {
-      String? token;
-      if (settings.hasCredentials) {
-        try {
-          token = await SignalKAuth.login(
-            settings.effectiveSignalKUrl,
-            settings.signalKUsername,
-            settings.signalKPassword,
-          );
-        } catch (_) {
-          // Proceed without token if login fails
-        }
-      }
-      await ref.read(signalKClientProvider).connect(
-        settings.effectiveSignalKUrl,
-        token: token,
+  Widget build(BuildContext context) {
+    if (!_ready) {
+      // Wrap startup screen in a MaterialApp so it has theme + Directionality.
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.darkTheme,
+        home: StartupScreen(
+          onComplete: () {
+            if (mounted) setState(() => _ready = true);
+          },
+        ),
       );
     }
-
-    if (settings.autoConnectLan) {
-      await ref.read(lanSyncServiceProvider).start();
-    }
-
-    // Wire LAN sync → safety provider for MOB events
-    final lanSync = ref.read(lanSyncServiceProvider);
-    lanSync.onMobAlert = (alert) {
-      ref.read(safetyProvider.notifier).receiveMob(alert);
-    };
-    lanSync.onMobCancelReceived = () {
-      ref.read(safetyProvider.notifier).receiveMobCancel();
-    };
-    // onKanbanSync is now wired directly in LanSyncService constructor
+    return const YokulApp();
   }
-
-  @override
-  Widget build(BuildContext context) => const YokulApp();
 }
+
+// ---------------------------------------------------------------------------
+// Provider observer (debug only)
+// ---------------------------------------------------------------------------
 
 class _AppProviderObserver extends ProviderObserver {
   const _AppProviderObserver();
@@ -140,10 +82,6 @@ class _AppProviderObserver extends ProviderObserver {
     Object? newValue,
     ProviderContainer container,
   ) {
-    // For debugging — disable in production
-    assert(() {
-      // Only log errors
-      return true;
-    }());
+    assert(() => true);
   }
 }

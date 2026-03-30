@@ -38,6 +38,7 @@ class SyncClient {
   void Function(Map<String, dynamic> data)? onVoyageUpsert;
   void Function(Map<String, dynamic>)? onKanbanSync;
   void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
+  void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
   /// Called when server sends sync_meta (stateVersionMs + deviceId of the server).
   void Function(int svMs, String peerId)? onSyncMetaReceived;
 
@@ -108,6 +109,8 @@ class SyncClient {
           onKanbanSync?.call(json);
         case 'sk_credentials':
           if (data != null) onSkCredentialsReceived?.call(data);
+        case 'settings_sync':
+          if (data != null) onSettingsSyncReceived?.call(data);
         case 'sync_meta':
           final svMs = json['sv'] as int?;
           final peerId = json['id'] as String? ?? '';

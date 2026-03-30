@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,25 +11,15 @@ import '../../../core/services/signalk/signalk_client.dart';
 import '../../../core/services/signalk/signalk_auth.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
 
-/// Strips scheme, path, and any embedded port from a host string so only
-/// the bare hostname or IP address remains. Returns the sanitized host and
-/// the extracted port (or [defaultPort] if none was embedded).
-///
-/// Examples:
-///   'http://signalk.local:3000/signalk/v1/stream' → ('signalk.local', 3000)
-///   '192.168.1.10:3000'                          → ('192.168.1.10', 3000)
-///   'signalk.local'                               → ('signalk.local', 3000)
+/// Strip scheme, embedded port, and path from a host string.
 (String, int) _parseHostPort(String raw, int defaultPort) {
   var s = raw.trim();
   if (s.isEmpty) return ('', defaultPort);
-  // Strip scheme
   s = s.replaceFirst(RegExp(r'^(wss?|https?)://'), '');
-  // Strip path/query
   final slash = s.indexOf('/');
   if (slash >= 0) s = s.substring(0, slash);
   final q = s.indexOf('?');
   if (q >= 0) s = s.substring(0, q);
-  // Extract embedded port (skip IPv6 addresses like [::1])
   int port = defaultPort;
   if (!s.startsWith('[')) {
     final colon = s.lastIndexOf(':');
@@ -56,16 +47,14 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
   late final TextEditingController _userCtrl;
   late final TextEditingController _passCtrl;
 
-  bool _connecting  = false;
+  bool _saving = false;
   bool _obscurePass = true;
-  String? _connectError;
+  String? _saveError;
 
   @override
   void initState() {
     super.initState();
     final s = ref.read(settingsProvider);
-
-    // Pre-populate host/port from saved settings; fall back to parsing legacy URL
     String initialHost = s.signalKHost;
     int initialPort = s.signalKPort;
     if (initialHost.isEmpty && s.signalKUrl.isNotEmpty) {
@@ -75,7 +64,6 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
         if (uri.port > 0) initialPort = uri.port;
       } catch (_) {}
     }
-
     _hostCtrl = TextEditingController(text: initialHost);
     _portCtrl = TextEditingController(text: initialPort.toString());
     _userCtrl = TextEditingController(text: s.signalKUsername);
@@ -91,77 +79,76 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
     super.dispose();
   }
 
-  // ── Connect (auto-auth if credentials filled) ─────────────────────────────
+  // ── Save & connect ─────────────────────────────────────────────────────────
 
-  Future<void> _connect() async {
+  Future<void> _saveAndConnect() async {
     final rawHost = _hostCtrl.text.trim();
     final rawPort = int.tryParse(_portCtrl.text.trim()) ?? 3000;
-    // Normalize: strip scheme/path, extract embedded port if user pasted a URL
     final (host, port) = _parseHostPort(rawHost, rawPort);
     if (host.isEmpty) return;
-    // Update controllers to reflect the normalized values
+
     if (host != rawHost) _hostCtrl.text = host;
     if (port != rawPort) _portCtrl.text = '$port';
+
     final user = _userCtrl.text.trim();
     final pass = _passCtrl.text;
-
     final url = 'ws://$host:$port/signalk/v1/stream?subscribe=all';
-    setState(() { _connecting = true; _connectError = null; });
+
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
 
     String? token;
-
-    // Step 1: login fresh if credentials are provided
     if (user.isNotEmpty && pass.isNotEmpty) {
       try {
         token = await SignalKAuth.login(url, user, pass);
       } on SignalKAuthException catch (e) {
-        if (mounted) setState(() { _connecting = false; _connectError = e.message; });
+        if (mounted) setState(() { _saving = false; _saveError = e.message; });
         return;
       } catch (e) {
-        if (mounted) setState(() { _connecting = false; _connectError = e.toString(); });
+        if (mounted) setState(() { _saving = false; _saveError = e.toString(); });
         return;
       }
     }
 
-    // Save host/port/credentials
     await ref.read(settingsProvider.notifier).update(
-      ref.read(settingsProvider).copyWith(
-        signalKHost:     host,
-        signalKPort:     port,
-        signalKUsername: user,
-        signalKPassword: pass,
-      ),
-    );
+          ref.read(settingsProvider).copyWith(
+                signalKHost: host,
+                signalKPort: port,
+                signalKUsername: user,
+                signalKPassword: pass,
+              ),
+        );
 
-    // Step 2: open WebSocket (with token if we have one)
+    // Disconnect existing connection first, then reconnect
+    await ref.read(signalKClientProvider).disconnect();
     await ref.read(signalKClientProvider).connect(url, token: token);
 
-    // Step 3: push credentials to any connected LAN clients (always a server on native)
-    ref.read(lanSyncServiceProvider).broadcastSkCredentials();
+    // Broadcast updated credentials + settings to LAN peers
+    ref.read(lanSyncServiceProvider).broadcastSettings();
 
-    if (mounted) setState(() => _connecting = false);
+    if (mounted) setState(() => _saving = false);
   }
 
-  Future<void> _disconnect() async {
-    await ref.read(signalKClientProvider).disconnect();
-    ref.read(vesselProvider.notifier).reset();
-  }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final conn     = ref.watch(connectionProvider);
-    final vessel   = ref.watch(vesselProvider);
+    final conn = ref.watch(connectionProvider);
+    final vessel = ref.watch(vesselProvider);
     final settings = ref.watch(settingsProvider);
     final skStatus = conn.signalK;
     final connected = skStatus == ConnectionStatus.connected;
-
     final s = ref.watch(stringsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('Signal K Hub')),
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        title: const Text('Signal K Hub'),
+        iconTheme: const IconThemeData(color: AppColors.textPrimary),
+      ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -170,8 +157,8 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
             _StatusCard(status: skStatus, error: conn.signalKError),
             const SizedBox(height: 20),
 
-            // ── Server ────────────────────────────────────────────────
-            _SectionHeader(s.skServerSection),
+            // ── Server config ──────────────────────────────────────────
+            _SectionHeader('服务器'),
             const SizedBox(height: 8),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -180,7 +167,6 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
                   flex: 3,
                   child: TextField(
                     controller: _hostCtrl,
-                    enabled: !connected,
                     style: const TextStyle(
                       color: AppColors.textPrimary,
                       fontFeatures: [FontFeature.tabularFigures()],
@@ -200,7 +186,6 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
                   width: 100,
                   child: TextField(
                     controller: _portCtrl,
-                    enabled: !connected,
                     style: const TextStyle(
                       color: AppColors.textPrimary,
                       fontFeatures: [FontFeature.tabularFigures()],
@@ -217,120 +202,99 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
             ),
             const SizedBox(height: 16),
 
-            // ── Authentication (optional) ─────────────────────────────
-            _SectionHeader('${s.skAuthSection}  ${s.skAuthHint}'),
+            // ── Auth ──────────────────────────────────────────────────
+            _SectionHeader('认证（可选）'),
             const SizedBox(height: 8),
-
-            if (!connected) ...[
-              TextField(
-                controller: _userCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Username',
-                  prefixIcon: Icon(Icons.person_rounded),
-                ),
-                autocorrect: false,
-                textInputAction: TextInputAction.next,
+            TextField(
+              controller: _userCtrl,
+              decoration: const InputDecoration(
+                labelText: '用户名',
+                prefixIcon: Icon(Icons.person_rounded),
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _passCtrl,
-                obscureText: _obscurePass,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  prefixIcon: const Icon(Icons.lock_rounded),
-                  suffixIcon: IconButton(
-                    icon: Icon(_obscurePass
-                        ? Icons.visibility_rounded
-                        : Icons.visibility_off_rounded),
-                    color: AppColors.textMuted,
-                    onPressed: () =>
-                        setState(() => _obscurePass = !_obscurePass),
-                  ),
+              autocorrect: false,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _passCtrl,
+              obscureText: _obscurePass,
+              decoration: InputDecoration(
+                labelText: '密码',
+                prefixIcon: const Icon(Icons.lock_rounded),
+                suffixIcon: IconButton(
+                  icon: Icon(_obscurePass
+                      ? Icons.visibility_rounded
+                      : Icons.visibility_off_rounded),
+                  color: AppColors.textMuted,
+                  onPressed: () =>
+                      setState(() => _obscurePass = !_obscurePass),
                 ),
-                onSubmitted: (_) => _connect(),
+              ),
+              onSubmitted: (_) => _saveAndConnect(),
+            ),
+
+            if (connected && settings.signalKUsername.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.verified_user_rounded,
+                      color: AppColors.success, size: 14),
+                  const SizedBox(width: 6),
+                  Text('已认证: ${settings.signalKUsername}',
+                      style: const TextStyle(
+                          color: AppColors.success, fontSize: 12)),
+                ],
               ),
             ],
 
-            if (connected && settings.signalKUsername.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    const Icon(Icons.verified_user_rounded,
-                        color: AppColors.success, size: 14),
-                    const SizedBox(width: 6),
-                    Text('Authenticated as ${settings.signalKUsername}',
-                        style: const TextStyle(
-                            color: AppColors.success, fontSize: 12)),
-                  ],
-                ),
-              ),
-
-            if (_connectError != null) ...[
+            if (_saveError != null) ...[
               const SizedBox(height: 8),
               Row(children: [
                 const Icon(Icons.error_outline_rounded,
                     size: 14, color: AppColors.danger),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text(_connectError!,
+                  child: Text(_saveError!,
                       style: const TextStyle(
                           color: AppColors.danger, fontSize: 12)),
                 ),
               ]),
             ],
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
-            // ── Single Connect / Disconnect button ────────────────────
-            if (connected)
-              OutlinedButton.icon(
-                onPressed: _disconnect,
-                icon: const Icon(Icons.link_off_rounded,
-                    color: AppColors.danger),
-                label: const Text('Disconnect',
-                    style: TextStyle(color: AppColors.danger)),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.danger),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              )
-            else
-              ElevatedButton.icon(
-                onPressed: _connecting ? null : _connect,
-                icon: _connecting
-                    ? const SizedBox(
-                        width: 16, height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.background))
-                    : const Icon(Icons.link_rounded),
-                label: Text(_connecting ? s.skConnecting : s.connect),
-                style: ElevatedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48)),
+            // ── Save & connect button ─────────────────────────────────
+            ElevatedButton.icon(
+              onPressed: _saving ? null : _saveAndConnect,
+              icon: _saving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.background))
+                  : const Icon(Icons.link_rounded),
+              label: Text(_saving
+                  ? '连接中…'
+                  : connected
+                      ? '重新连接'
+                      : '保存并连接'),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+                backgroundColor:
+                    connected ? AppColors.teal : AppColors.cyan,
+                foregroundColor: AppColors.background,
               ),
+            ),
 
             const SizedBox(height: 28),
 
-            // ── Live data (when connected) ────────────────────────────
+            // ── Live data ─────────────────────────────────────────────
             if (connected) ...[
-              _SectionHeader(s.liveData),
+              _SectionHeader('实时数据'),
               const SizedBox(height: 8),
               _DataTable(vessel: vessel),
               const SizedBox(height: 24),
             ],
-
-            // ── Options ───────────────────────────────────────────────
-            _SectionHeader(s.skOptionsSection),
-            const SizedBox(height: 8),
-            _ToggleTile(
-              title: s.autoConnect,
-              subtitle: s.autoConnectHint,
-              value: settings.autoConnectSignalK,
-              onChanged: (v) => ref
-                  .read(settingsProvider.notifier)
-                  .update(settings.copyWith(autoConnectSignalK: v)),
-            ),
           ],
         ),
       ),
@@ -349,13 +313,13 @@ class _StatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final (color, icon, label) = switch (status) {
       ConnectionStatus.connected =>
-        (AppColors.success, Icons.check_circle_rounded, 'Connected'),
+        (AppColors.success, Icons.check_circle_rounded, '已连接'),
       ConnectionStatus.connecting =>
-        (AppColors.warning, Icons.sync_rounded, 'Connecting…'),
+        (AppColors.warning, Icons.sync_rounded, '连接中…'),
       ConnectionStatus.error =>
-        (AppColors.danger, Icons.error_rounded, 'Error'),
+        (AppColors.danger, Icons.error_rounded, '连接错误'),
       ConnectionStatus.disconnected =>
-        (AppColors.inactive, Icons.radio_button_unchecked, 'Disconnected'),
+        (AppColors.inactive, Icons.radio_button_unchecked, '未连接'),
     };
     return Container(
       padding: const EdgeInsets.all(16),
@@ -468,32 +432,4 @@ class _SectionHeader extends StatelessWidget {
           fontSize: 11,
           fontWeight: FontWeight.w700,
           letterSpacing: 1.5));
-}
-
-class _ToggleTile extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-  const _ToggleTile(
-      {required this.title,
-      required this.subtitle,
-      required this.value,
-      required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: SwitchListTile(
-          title: Text(title),
-          subtitle: Text(subtitle),
-          value: value,
-          onChanged: onChanged,
-          activeColor: AppColors.cyan,
-        ),
-      );
 }

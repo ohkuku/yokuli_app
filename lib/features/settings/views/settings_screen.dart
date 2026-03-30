@@ -75,6 +75,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 hostPort: port,
               ),
         );
+    // Sync name + settings to all LAN peers immediately
+    ref.read(lanSyncServiceProvider).broadcastSettings();
     if (mounted) {
       final s = ref.read(stringsProvider);
       ScaffoldMessenger.of(context)
@@ -463,28 +465,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ],
 
-            const SizedBox(height: 12),
-
-            // Connect / Disconnect LAN button
-            _LanConnectButton(conn: conn),
-            const SizedBox(height: 12),
-
-            _ToggleTile(
-              title: 'Auto-start LAN sync on launch',
-              value: settings.autoConnectLan,
-              onChanged: (v) => ref
-                  .read(settingsProvider.notifier)
-                  .update(settings.copyWith(autoConnectLan: v)),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _restartLanSync,
-                icon: const Icon(Icons.refresh_rounded),
-                label: Text(ref.watch(stringsProvider).restartLanSync),
-              ),
-            ),
             const SizedBox(height: 24),
 
             // --- Devices ---
@@ -503,9 +483,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _ToggleTile(
               title: 'Keep screen on',
               value: settings.keepScreenOn,
-              onChanged: (v) => ref
-                  .read(settingsProvider.notifier)
-                  .update(settings.copyWith(keepScreenOn: v)),
+              onChanged: (v) async {
+                await ref
+                    .read(settingsProvider.notifier)
+                    .update(settings.copyWith(keepScreenOn: v));
+                ref.read(lanSyncServiceProvider).broadcastSettings();
+              },
             ),
             const SizedBox(height: 24),
 

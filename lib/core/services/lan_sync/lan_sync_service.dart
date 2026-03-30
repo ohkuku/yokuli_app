@@ -51,7 +51,12 @@ class LanSyncService {
 
   LanSyncService(this._ref) {
     _platform.onStateReceived = (state) {
-      _ref.read(vesselProvider.notifier).update(state);
+      // Don't overwrite local SK data with LAN broadcasts — that causes
+      // rapid oscillation when multiple devices all have SK connected.
+      final skStatus = _ref.read(connectionProvider).signalK;
+      if (skStatus != ConnectionStatus.connected) {
+        _ref.read(vesselProvider.notifier).update(state);
+      }
     };
     _platform.onMobReceived = (alert) => onMobAlert?.call(alert);
     _platform.onMobCancelReceived = () => onMobCancelReceived?.call();
@@ -59,6 +64,7 @@ class LanSyncService {
       _ref.read(kanbanProvider.notifier).applySync(data);
     };
     _platform.onSkCredentialsReceived = _onSkCredentialsReceived;
+    _platform.onSettingsSyncReceived = _onSettingsSyncReceived;
     _platform.onClientConnectionChanged = (connected) {
       _conn.setLanSyncStatus(
         connected ? ConnectionStatus.connected : ConnectionStatus.connecting,
@@ -145,19 +151,22 @@ class LanSyncService {
       'id': device.deviceId,
     });
 
-    // SK credentials — client uses these to connect independently.
+    // Settings sync — vessel name, tile order, SK credentials, etc.
     final s = _ref.read(settingsProvider);
-    if (s.signalKHost.isNotEmpty) {
-      sendTo({
-        'type': 'sk_credentials',
-        'data': {
-          'host': s.signalKHost,
-          'port': s.signalKPort,
-          'username': s.signalKUsername,
-          'password': s.signalKPassword,
+    sendTo({
+      'type': 'settings_sync',
+      'data': {
+        'vesselName': s.vesselName,
+        'tileOrder': s.tileOrder,
+        'keepScreenOn': s.keepScreenOn,
+        if (s.signalKHost.isNotEmpty) ...{
+          'skHost': s.signalKHost,
+          'skPort': s.signalKPort,
+          'skUser': s.signalKUsername,
+          'skPass': s.signalKPassword,
         },
-      });
-    }
+      },
+    });
     // Log entries
     for (final entry in _ref.read(logProvider)) {
       sendTo({'type': 'log_append', 'data': entry.toJson()});
@@ -234,6 +243,61 @@ class LanSyncService {
       } catch (_) {}
     }
     await _ref.read(signalKClientProvider).connect(url, token: token);
+  }
+
+  Future<void> _onSettingsSyncReceived(Map<String, dynamic> data) async {
+    final current = _ref.read(settingsProvider);
+    final vesselName = data['vesselName'] as String?;
+    final tileOrder = (data['tileOrder'] as List?)?.cast<String>();
+    final keepScreenOn = data['keepScreenOn'] as bool?;
+    final skHost = data['skHost'] as String?;
+    final skPort = data['skPort'] as int?;
+    final skUser = data['skUser'] as String?;
+    final skPass = data['skPass'] as String?;
+
+    await _ref.read(settingsProvider.notifier).update(
+          current.copyWith(
+            vesselName: vesselName ?? current.vesselName,
+            tileOrder: tileOrder ?? current.tileOrder,
+            keepScreenOn: keepScreenOn ?? current.keepScreenOn,
+            signalKHost: skHost ?? current.signalKHost,
+            signalKPort: skPort ?? current.signalKPort,
+            signalKUsername: skUser ?? current.signalKUsername,
+            signalKPassword: skPass ?? current.signalKPassword,
+          ),
+        );
+
+    // Auto-connect SK if credentials arrived and we're not already connected
+    if (skHost != null && skHost.isNotEmpty) {
+      final skStatus = _ref.read(connectionProvider).signalK;
+      if (skStatus != ConnectionStatus.connected) {
+        await _onSkCredentialsReceived({
+          'host': skHost,
+          'port': skPort ?? 3000,
+          'username': skUser ?? '',
+          'password': skPass ?? '',
+        });
+      }
+    }
+  }
+
+  /// Broadcast current settings to all peers (call after any settings change).
+  void broadcastSettings() {
+    final s = _ref.read(settingsProvider);
+    broadcastJson({
+      'type': 'settings_sync',
+      'data': {
+        'vesselName': s.vesselName,
+        'tileOrder': s.tileOrder,
+        'keepScreenOn': s.keepScreenOn,
+        if (s.signalKHost.isNotEmpty) ...{
+          'skHost': s.signalKHost,
+          'skPort': s.signalKPort,
+          'skUser': s.signalKUsername,
+          'skPass': s.signalKPassword,
+        },
+      },
+    });
   }
 
   // ---------------------------------------------------------------------------
