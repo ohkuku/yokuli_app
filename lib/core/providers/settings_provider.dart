@@ -104,6 +104,9 @@ class SettingsNotifier extends Notifier<AppSettings> {
     return const AppSettings();
   }
 
+  /// Awaitable version — call this at startup before reading settings.
+  Future<void> load() => _loadFromPrefs();
+
   Future<void> _loadFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     final tileOrderStr = prefs.getString(_keyTileOrder) ?? '';

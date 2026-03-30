@@ -59,8 +59,10 @@ class _AppInitState extends ConsumerState<_AppInit> {
   @override
   void initState() {
     super.initState();
-    // Delay to let settings load from SharedPreferences first
     Future.microtask(() async {
+      // Load settings first — build() fires _loadFromPrefs() async so we must
+      // await it explicitly before reading any persisted values.
+      await ref.read(settingsProvider.notifier).load();
       await ref.read(localeProvider.notifier).init();
       await _loadPersistentData();
       await _autoConnect();
@@ -81,7 +83,11 @@ class _AppInitState extends ConsumerState<_AppInit> {
     final settings = ref.read(settingsProvider);
 
     if (settings.autoConnectSignalK && settings.effectiveSignalKUrl.isNotEmpty) {
-      await ref.read(signalKClientProvider).connect(settings.effectiveSignalKUrl);
+      final token = settings.hasToken ? settings.signalKToken : null;
+      await ref.read(signalKClientProvider).connect(
+        settings.effectiveSignalKUrl,
+        token: token,
+      );
     }
 
     if (settings.autoConnectLan) {
