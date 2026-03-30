@@ -32,9 +32,8 @@ class LanSyncService {
       );
     };
     _platform.onPeerCountChanged = (count) {
-      _conn.setLanSyncStatus(
-        count > 0 ? ConnectionStatus.connected : ConnectionStatus.connecting,
-      );
+      _conn.setPeerCount(count);
+      // Host status stays connected regardless of client count
     };
   }
 
@@ -52,6 +51,7 @@ class LanSyncService {
       case DeviceRole.host:
         _conn.setLanSyncStatus(ConnectionStatus.connecting);
         await _platform.startHost(settings.hostPort, settings.vesselName);
+        _conn.setLanSyncStatus(ConnectionStatus.connected);
         // Push VesselState to connected clients at 2 Hz
         _stateTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
           if (_platform.isHostRunning) {

@@ -31,10 +31,12 @@ class SyncClient {
     _doConnect(wsUrl);
   }
 
-  void _doConnect(String wsUrl) {
+  Future<void> _doConnect(String wsUrl) async {
     onConnectionChanged?.call(false);
     try {
       _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      // Wait for the WebSocket handshake to complete before reporting connected
+      await _channel!.ready;
       _sub = _channel!.stream.listen(
         _onMessage,
         onError: (_) {
@@ -49,6 +51,7 @@ class SyncClient {
       );
       onConnectionChanged?.call(true);
     } catch (_) {
+      _channel = null;
       onConnectionChanged?.call(false);
       if (!_intentionalDisconnect) _scheduleReconnect();
     }

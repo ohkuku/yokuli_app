@@ -170,7 +170,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Connected peers: ${conn.connectedPeers.length}',
+                      'Connected peers: ${conn.peerCount}',
                       style: const TextStyle(
                           color: AppColors.textPrimary, fontSize: 13),
                     ),

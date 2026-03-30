@@ -7,14 +7,14 @@ class AppConnectionState {
   final String? signalKError;
   final ConnectionStatus lanSync;
   final String? lanSyncError;
-  final List<String> connectedPeers; // IPs of connected LAN peers
+  final int peerCount; // number of clients connected to this host
 
   const AppConnectionState({
     this.signalK = ConnectionStatus.disconnected,
     this.signalKError,
     this.lanSync = ConnectionStatus.disconnected,
     this.lanSyncError,
-    this.connectedPeers = const [],
+    this.peerCount = 0,
   });
 
   AppConnectionState copyWith({
@@ -22,14 +22,14 @@ class AppConnectionState {
     String? signalKError,
     ConnectionStatus? lanSync,
     String? lanSyncError,
-    List<String>? connectedPeers,
+    int? peerCount,
   }) =>
       AppConnectionState(
         signalK: signalK ?? this.signalK,
         signalKError: signalKError ?? this.signalKError,
         lanSync: lanSync ?? this.lanSync,
         lanSyncError: lanSyncError ?? this.lanSyncError,
-        connectedPeers: connectedPeers ?? this.connectedPeers,
+        peerCount: peerCount ?? this.peerCount,
       );
 
   bool get isSignalKConnected => signalK == ConnectionStatus.connected;
@@ -48,16 +48,8 @@ class ConnectionNotifier extends Notifier<AppConnectionState> {
     state = state.copyWith(lanSync: status, lanSyncError: error);
   }
 
-  void addPeer(String ip) {
-    if (!state.connectedPeers.contains(ip)) {
-      state = state.copyWith(connectedPeers: [...state.connectedPeers, ip]);
-    }
-  }
-
-  void removePeer(String ip) {
-    state = state.copyWith(
-      connectedPeers: state.connectedPeers.where((p) => p != ip).toList(),
-    );
+  void setPeerCount(int count) {
+    state = state.copyWith(peerCount: count);
   }
 }
 
