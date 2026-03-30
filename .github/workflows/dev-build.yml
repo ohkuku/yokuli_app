@@ -103,7 +103,7 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: build/web
-          destination_dir: preview/${{ steps.ver.outputs.branch }}
+          destination_dir: docs/preview/${{ steps.ver.outputs.branch }}
           keep_files: true   # preserve other branches' previews
 
       # ── GitHub Release ─────────────────────────────────────────────────
