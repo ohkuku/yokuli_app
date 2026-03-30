@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
@@ -10,7 +11,7 @@ class AisScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
@@ -20,6 +21,7 @@ class AisScreen extends ConsumerWidget {
             labelColor: AppColors.cyan,
             unselectedLabelColor: AppColors.textSecondary,
             tabs: [
+              Tab(text: 'Radar'),
               Tab(text: 'Nearby'),
               Tab(text: 'Risk'),
               Tab(text: 'Own Ship'),
@@ -29,6 +31,7 @@ class AisScreen extends ConsumerWidget {
         body: SafeArea(
           child: TabBarView(
             children: [
+              _RadarTab(),
               _NearbyTab(),
               _RiskTab(),
               _OwnShipTab(),
@@ -38,6 +41,231 @@ class AisScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Radar Tab
+// ---------------------------------------------------------------------------
+
+class _RadarTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final aisState = ref.watch(aisProvider);
+    final targets = aisState.targets;
+
+    return Column(
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: CustomPaint(
+                painter: _AisRadarPainter(targets: targets),
+                child: Container(),
+              ),
+            ),
+          ),
+        ),
+        // Legend
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _LegendDot(color: AppColors.danger, label: 'High Risk (CPA<0.5NM)'),
+              const SizedBox(width: 16),
+              _LegendDot(color: AppColors.warning, label: 'Caution'),
+              const SizedBox(width: 16),
+              _LegendDot(color: AppColors.success, label: 'Clear'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _LegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8, height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+      ],
+    );
+  }
+}
+
+class _AisRadarPainter extends CustomPainter {
+  final List<AisTargetState> targets;
+
+  const _AisRadarPainter({required this.targets});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 8;
+
+    // Determine scale: fit the furthest target, min 3NM, max 20NM
+    double maxDist = 3.0;
+    for (final t in targets) {
+      if (t.relativeDistanceNm != null && t.relativeDistanceNm! > maxDist) {
+        maxDist = math.min(t.relativeDistanceNm!, 20.0);
+      }
+    }
+    // Round up to a nice ring value
+    final rangeNm = maxDist <= 3 ? 3.0 : maxDist <= 6 ? 6.0 : maxDist <= 10 ? 10.0 : 20.0;
+    final scale = radius / rangeNm;
+
+    // Background
+    final bgPaint = Paint()..color = const Color(0xFF0A1A2F);
+    canvas.drawCircle(center, radius, bgPaint);
+
+    // Range rings
+    final ringPaint = Paint()
+      ..color = Colors.white.withOpacity(0.08)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+
+    final ringIntervals = rangeNm <= 3 ? [1.0, 2.0, 3.0]
+        : rangeNm <= 6 ? [2.0, 4.0, 6.0]
+        : rangeNm <= 10 ? [2.5, 5.0, 10.0]
+        : [5.0, 10.0, 20.0];
+
+    final labelStyle = TextStyle(
+      color: Colors.white.withOpacity(0.3),
+      fontSize: 9,
+    );
+
+    for (final nm in ringIntervals) {
+      final r = nm * scale;
+      canvas.drawCircle(center, r, ringPaint);
+      // Ring label at top
+      final nmLabel = nm == nm.roundToDouble() ? '${nm.toInt()}NM' : '${nm}NM';
+      final tp = TextPainter(
+        text: TextSpan(text: nmLabel, style: labelStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(center.dx - tp.width / 2, center.dy - r + 2));
+    }
+
+    // Cardinal lines (N/S/E/W)
+    final linePaint = Paint()
+      ..color = Colors.white.withOpacity(0.07)
+      ..strokeWidth = 0.6;
+    canvas.drawLine(Offset(center.dx, center.dy - radius),
+        Offset(center.dx, center.dy + radius), linePaint);
+    canvas.drawLine(Offset(center.dx - radius, center.dy),
+        Offset(center.dx + radius, center.dy), linePaint);
+
+    // Compass labels
+    final compassStyle = TextStyle(
+      color: Colors.white.withOpacity(0.4),
+      fontSize: 10,
+      fontWeight: FontWeight.w600,
+    );
+    final compassEntries = <({String label, double dx, double dy})>[
+      (label: 'N', dx: 0.0, dy: -radius - 2.0),
+      (label: 'S', dx: 0.0, dy: radius - 12.0),
+      (label: 'E', dx: radius - 10.0, dy: -6.0),
+      (label: 'W', dx: -radius + 2.0, dy: -6.0),
+    ];
+    for (final entry in compassEntries) {
+      final tp = TextPainter(
+        text: TextSpan(text: entry.label, style: compassStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(center.dx + entry.dx - tp.width / 2, center.dy + entry.dy));
+    }
+
+    // Own ship triangle at center
+    final ownPaint = Paint()..color = AppColors.cyan;
+    const triangleSize = 7.0;
+    final path = Path()
+      ..moveTo(center.dx, center.dy - triangleSize)
+      ..lineTo(center.dx - triangleSize * 0.6, center.dy + triangleSize * 0.6)
+      ..lineTo(center.dx + triangleSize * 0.6, center.dy + triangleSize * 0.6)
+      ..close();
+    canvas.drawPath(path, ownPaint);
+
+    // Targets
+    for (final target in targets) {
+      if (target.relativeDistanceNm == null || target.relativeBearingDeg == null) continue;
+      if (target.status == AisTargetStatus.lost) continue;
+
+      final dist = target.relativeDistanceNm!;
+      if (dist > rangeNm) continue;
+
+      final bearingRad = (target.relativeBearingDeg! - 90) * math.pi / 180;
+      final tx = center.dx + dist * scale * math.cos(bearingRad);
+      final ty = center.dy + dist * scale * math.sin(bearingRad);
+
+      // Color by CPA risk
+      final Color dotColor;
+      if (target.closestPointNm != null && target.closestPointNm! < 0.5) {
+        dotColor = AppColors.danger;
+      } else if (target.closestPointNm != null && target.closestPointNm! < 1.0) {
+        dotColor = AppColors.warning;
+      } else {
+        dotColor = AppColors.success;
+      }
+
+      final dotPaint = Paint()..color = dotColor;
+      canvas.drawCircle(Offset(tx, ty), 5, dotPaint);
+
+      // Heading vector (short line)
+      if (target.cog != null && target.sog != null && target.sog! > 0.5) {
+        final cogRad = (target.cog! - 90) * math.pi / 180;
+        final vecLen = target.sog! * scale * 0.5;
+        final vecPaint = Paint()
+          ..color = dotColor.withOpacity(0.7)
+          ..strokeWidth = 1.5
+          ..strokeCap = StrokeCap.round;
+        canvas.drawLine(
+          Offset(tx, ty),
+          Offset(tx + vecLen * math.cos(cogRad), ty + vecLen * math.sin(cogRad)),
+          vecPaint,
+        );
+      }
+
+      // Name label
+      if (target.name != null || target.mmsi.isNotEmpty) {
+        final nameTp = TextPainter(
+          text: TextSpan(
+            text: target.name ?? target.mmsi.substring(
+                math.max(0, target.mmsi.length - 4)),
+            style: TextStyle(
+              color: dotColor.withOpacity(0.85),
+              fontSize: 9,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        nameTp.paint(canvas, Offset(tx + 7, ty - 5));
+      }
+    }
+
+    // Outer border
+    final borderPaint = Paint()
+      ..color = Colors.white.withOpacity(0.12)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    canvas.drawCircle(center, radius, borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(_AisRadarPainter old) => old.targets != targets;
 }
 
 // ---------------------------------------------------------------------------

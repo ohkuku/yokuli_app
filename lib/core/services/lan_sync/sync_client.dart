@@ -22,6 +22,7 @@ class SyncClient {
   // Callbacks
   void Function(VesselState state)? onStateReceived;
   void Function(MobAlert alert)? onMobReceived;
+  void Function()? onMobCancelReceived;
   void Function(bool connected)? onConnectionChanged;
   void Function(Map<String, dynamic> data)? onLogAppend;
   void Function(Map<String, dynamic> data)? onAlarmSync;
@@ -71,6 +72,8 @@ class SyncClient {
           if (data != null) onStateReceived?.call(VesselState.fromJson(data));
         case 'mob':
           if (data != null) onMobReceived?.call(MobAlert.fromJson(data));
+        case 'mob_cancel':
+          onMobCancelReceived?.call();
         case 'log_append':
           if (data != null) onLogAppend?.call(data);
         case 'alarm':

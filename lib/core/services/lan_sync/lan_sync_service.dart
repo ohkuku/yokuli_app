@@ -31,12 +31,14 @@ class LanSyncService {
   Timer? _stateTimer;
 
   void Function(MobAlert alert)? onMobAlert;
+  void Function()? onMobCancelReceived;
 
   LanSyncService(this._ref) {
     _platform.onStateReceived = (state) {
       _ref.read(vesselProvider.notifier).update(state);
     };
     _platform.onMobReceived = (alert) => onMobAlert?.call(alert);
+    _platform.onMobCancelReceived = () => onMobCancelReceived?.call();
     _platform.onClientConnectionChanged = (connected) {
       _conn.setLanSyncStatus(
         connected ? ConnectionStatus.connected : ConnectionStatus.connecting,

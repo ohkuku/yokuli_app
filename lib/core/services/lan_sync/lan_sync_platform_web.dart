@@ -91,6 +91,8 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
           if (data != null) onStateReceived?.call(VesselState.fromJson(data));
         case 'mob':
           if (data != null) onMobReceived?.call(MobAlert.fromJson(data));
+        case 'mob_cancel':
+          onMobCancelReceived?.call();
         case 'log_append':
           if (data != null) onLogAppend?.call(data);
         case 'alarm':

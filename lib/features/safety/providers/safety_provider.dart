@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/mob_alert.dart';
 import '../../../core/models/vessel_state.dart';
 import '../../../core/providers/vessel_provider.dart';
+import '../../../core/providers/lan_broadcast.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
 
 class SafetyState {
@@ -71,11 +72,20 @@ class SafetyNotifier extends Notifier<SafetyState> {
     if (state.activeMob != null) {
       state.activeMob!.isActive = false;
       state = state.copyWith(clearMob: true);
+      ref.read(lanBroadcastProvider)?.call({'type': 'mob_cancel'});
     }
   }
 
   void receiveMob(MobAlert alert) {
     state = state.copyWith(activeMob: alert);
+  }
+
+  /// Called when a remote device cancelled the MOB — clears locally without re-broadcasting.
+  void receiveMobCancel() {
+    if (state.activeMob != null) {
+      state.activeMob!.isActive = false;
+      state = state.copyWith(clearMob: true);
+    }
   }
 
   void setDepthAlarm({required bool enabled, double? threshold}) {

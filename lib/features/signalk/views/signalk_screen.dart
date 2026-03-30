@@ -16,7 +16,8 @@ class SignalKScreen extends ConsumerStatefulWidget {
 }
 
 class _SignalKScreenState extends ConsumerState<SignalKScreen> {
-  late final TextEditingController _urlCtrl;
+  late final TextEditingController _hostCtrl;
+  late final TextEditingController _portCtrl;
   late final TextEditingController _userCtrl;
   late final TextEditingController _passCtrl;
 
@@ -28,14 +29,28 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
   void initState() {
     super.initState();
     final s = ref.read(settingsProvider);
-    _urlCtrl  = TextEditingController(text: s.signalKUrl);
+
+    // Pre-populate host/port from saved settings; fall back to parsing legacy URL
+    String initialHost = s.signalKHost;
+    int initialPort = s.signalKPort;
+    if (initialHost.isEmpty && s.signalKUrl.isNotEmpty) {
+      try {
+        final uri = Uri.parse(s.signalKUrl);
+        initialHost = uri.host;
+        if (uri.port > 0) initialPort = uri.port;
+      } catch (_) {}
+    }
+
+    _hostCtrl = TextEditingController(text: initialHost);
+    _portCtrl = TextEditingController(text: initialPort.toString());
     _userCtrl = TextEditingController(text: s.signalKUsername);
     _passCtrl = TextEditingController();
   }
 
   @override
   void dispose() {
-    _urlCtrl.dispose();
+    _hostCtrl.dispose();
+    _portCtrl.dispose();
     _userCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
@@ -44,11 +59,13 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
   // ── Connect (auto-auth if credentials filled) ─────────────────────────────
 
   Future<void> _connect() async {
-    final url  = _urlCtrl.text.trim();
+    final host = _hostCtrl.text.trim();
+    final port = int.tryParse(_portCtrl.text.trim()) ?? 3000;
     final user = _userCtrl.text.trim();
     final pass = _passCtrl.text;
-    if (url.isEmpty) return;
+    if (host.isEmpty) return;
 
+    final url = 'ws://$host:$port/signalk/v1/stream';
     setState(() { _connecting = true; _connectError = null; });
 
     String? token;
@@ -57,10 +74,11 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
     if (user.isNotEmpty && pass.isNotEmpty) {
       try {
         token = await SignalKAuth.login(url, user, pass);
-        // Persist username + token; password is NOT stored
+        // Persist host, port, username + token; password is NOT stored
         await ref.read(settingsProvider.notifier).update(
           ref.read(settingsProvider).copyWith(
-            signalKUrl:      url,
+            signalKHost:     host,
+            signalKPort:     port,
             signalKUsername: user,
             signalKToken:    token,
           ),
@@ -78,7 +96,7 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
       final saved = ref.read(settingsProvider);
       token = saved.hasToken ? saved.signalKToken : null;
       await ref.read(settingsProvider.notifier).update(
-        saved.copyWith(signalKUrl: url),
+        saved.copyWith(signalKHost: host, signalKPort: port),
       );
     }
 
@@ -123,23 +141,50 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
             _StatusCard(status: skStatus, error: conn.signalKError),
             const SizedBox(height: 20),
 
-            // ── Server URL ────────────────────────────────────────────
+            // ── Server ────────────────────────────────────────────────
             _SectionHeader('SERVER'),
             const SizedBox(height: 8),
-            TextField(
-              controller: _urlCtrl,
-              enabled: !connected,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
-              decoration: const InputDecoration(
-                labelText: 'WebSocket URL',
-                hintText: 'ws://192.168.1.10:3000/signalk/v1/stream',
-                prefixIcon: Icon(Icons.link_rounded),
-              ),
-              keyboardType: TextInputType.url,
-              autocorrect: false,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: _hostCtrl,
+                    enabled: !connected,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Host IP',
+                      hintText: '192.168.1.10',
+                      prefixIcon: Icon(Icons.dns_rounded),
+                    ),
+                    keyboardType: TextInputType.url,
+                    autocorrect: false,
+                    textInputAction: TextInputAction.next,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 100,
+                  child: TextField(
+                    controller: _portCtrl,
+                    enabled: !connected,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Port',
+                      hintText: '3000',
+                    ),
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.next,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
 

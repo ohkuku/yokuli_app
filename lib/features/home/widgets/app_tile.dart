@@ -10,6 +10,7 @@ class AppTileData {
   final String route;
   final String? badge;
   final bool isStub;
+  final int notificationCount;
 
   const AppTileData({
     required this.id,
@@ -19,6 +20,7 @@ class AppTileData {
     required this.route,
     this.badge,
     this.isStub = false,
+    this.notificationCount = 0,
   });
 }
 
@@ -78,32 +80,61 @@ class _AppTileState extends State<AppTile>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Icon badge
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(13),
-                  color: accent.withOpacity(0.18),
-                  border: Border.all(
-                    color: accent.withOpacity(0.30),
-                    width: 0.8,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: accent.withOpacity(0.25),
-                      blurRadius: 12,
-                      spreadRadius: -2,
+              // Icon badge (with optional notification count)
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(13),
+                      color: accent.withOpacity(0.18),
+                      border: Border.all(
+                        color: accent.withOpacity(0.30),
+                        width: 0.8,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: accent.withOpacity(0.25),
+                          blurRadius: 12,
+                          spreadRadius: -2,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Icon(
-                  widget.data.icon,
-                  color: widget.data.isStub
-                      ? Colors.white.withOpacity(0.35)
-                      : accent,
-                  size: 22,
-                ),
+                    child: Icon(
+                      widget.data.icon,
+                      color: widget.data.isStub
+                          ? Colors.white.withOpacity(0.35)
+                          : accent,
+                      size: 22,
+                    ),
+                  ),
+                  if (widget.data.notificationCount > 0)
+                    Positioned(
+                      top: -4,
+                      right: -4,
+                      child: Container(
+                        constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFFF3B30),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          widget.data.notificationCount > 99
+                              ? '99+'
+                              : widget.data.notificationCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
               ),
               const Spacer(),
               // Label

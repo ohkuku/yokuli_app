@@ -53,6 +53,8 @@ class S {
 
   // --- Signal K ---
   String get signalKUrl     => _m['signalKUrl']!;
+  String get signalKHostLabel => _m['signalKHostLabel']!;
+  String get signalKPortLabel => _m['signalKPortLabel']!;
   String get connect        => _m['connect']!;
   String get disconnect     => _m['disconnect']!;
   String get liveData       => _m['liveData']!;
@@ -238,7 +240,9 @@ const _en = <String, String>{
   'mobRecoveredBtn': 'MOB RECOVERED — Cancel Alert',
   'alarmLabel':     'ALARM',
 
-  'signalKUrl':    'Signal K URL',
+  'signalKUrl':       'Signal K URL',
+  'signalKHostLabel': 'Host IP',
+  'signalKPortLabel': 'Port',
   'connect':       'Connect',
   'disconnect':    'Disconnect',
   'liveData':      'Live Data',
@@ -408,7 +412,9 @@ const _zh = <String, String>{
   'mobRecoveredBtn': '人员已救援 — 取消警报',
   'alarmLabel':     '警报',
 
-  'signalKUrl':    'Signal K 地址',
+  'signalKUrl':       'Signal K 地址',
+  'signalKHostLabel': '主机 IP',
+  'signalKPortLabel': '端口',
   'connect':       '连接',
   'disconnect':    '断开',
   'liveData':      '实时数据',

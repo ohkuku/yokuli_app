@@ -13,6 +13,7 @@ import 'core/providers/log_provider.dart';
 import 'core/providers/alarm_provider.dart';
 import 'core/services/signalk/signalk_client.dart';
 import 'core/services/lan_sync/lan_sync_service.dart';
+import 'features/safety/providers/safety_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -78,13 +79,22 @@ class _AppInitState extends ConsumerState<_AppInit> {
   Future<void> _autoConnect() async {
     final settings = ref.read(settingsProvider);
 
-    if (settings.autoConnectSignalK && settings.signalKUrl.isNotEmpty) {
-      await ref.read(signalKClientProvider).connect(settings.signalKUrl);
+    if (settings.autoConnectSignalK && settings.effectiveSignalKUrl.isNotEmpty) {
+      await ref.read(signalKClientProvider).connect(settings.effectiveSignalKUrl);
     }
 
     if (settings.autoConnectLan) {
       await ref.read(lanSyncServiceProvider).start();
     }
+
+    // Wire LAN sync → safety provider for MOB events
+    final lanSync = ref.read(lanSyncServiceProvider);
+    lanSync.onMobAlert = (alert) {
+      ref.read(safetyProvider.notifier).receiveMob(alert);
+    };
+    lanSync.onMobCancelReceived = () {
+      ref.read(safetyProvider.notifier).receiveMobCancel();
+    };
   }
 
   @override

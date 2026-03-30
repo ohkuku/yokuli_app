@@ -6,7 +6,9 @@ enum DeviceRole { standalone, host, client }
 
 class AppSettings {
   final String vesselName;
-  final String signalKUrl; // e.g. ws://192.168.1.10:3000/signalk/v1/stream
+  final String signalKUrl; // legacy; use signalKHost+signalKPort for new setups
+  final String signalKHost; // e.g. 192.168.1.10
+  final int signalKPort;    // default 3000
   final String signalKUsername; // optional; empty = no auth
   final String signalKToken;    // JWT; empty = not logged in
   final DeviceRole deviceRole;
@@ -15,10 +17,13 @@ class AppSettings {
   final bool autoConnectSignalK;
   final bool autoConnectLan;
   final bool keepScreenOn;
+  final List<String> tileOrder; // home screen tile ordering
 
   const AppSettings({
     this.vesselName = 'My Vessel',
     this.signalKUrl = '',
+    this.signalKHost = '',
+    this.signalKPort = 3000,
     this.signalKUsername = '',
     this.signalKToken = '',
     this.deviceRole = DeviceRole.standalone,
@@ -27,13 +32,25 @@ class AppSettings {
     this.autoConnectSignalK = false,
     this.autoConnectLan = false,
     this.keepScreenOn = true,
+    this.tileOrder = const [],
   });
 
   bool get hasToken => signalKToken.isNotEmpty;
 
+  /// The WebSocket URL to connect to Signal K.
+  /// Prefers host+port if signalKHost is set, otherwise falls back to signalKUrl.
+  String get effectiveSignalKUrl {
+    if (signalKHost.isNotEmpty) {
+      return 'ws://$signalKHost:$signalKPort/signalk/v1/stream';
+    }
+    return signalKUrl;
+  }
+
   AppSettings copyWith({
     String? vesselName,
     String? signalKUrl,
+    String? signalKHost,
+    int? signalKPort,
     String? signalKUsername,
     String? signalKToken,
     DeviceRole? deviceRole,
@@ -42,10 +59,13 @@ class AppSettings {
     bool? autoConnectSignalK,
     bool? autoConnectLan,
     bool? keepScreenOn,
+    List<String>? tileOrder,
   }) =>
       AppSettings(
         vesselName: vesselName ?? this.vesselName,
         signalKUrl: signalKUrl ?? this.signalKUrl,
+        signalKHost: signalKHost ?? this.signalKHost,
+        signalKPort: signalKPort ?? this.signalKPort,
         signalKUsername: signalKUsername ?? this.signalKUsername,
         signalKToken: signalKToken ?? this.signalKToken,
         deviceRole: deviceRole ?? this.deviceRole,
@@ -54,12 +74,15 @@ class AppSettings {
         autoConnectSignalK: autoConnectSignalK ?? this.autoConnectSignalK,
         autoConnectLan: autoConnectLan ?? this.autoConnectLan,
         keepScreenOn: keepScreenOn ?? this.keepScreenOn,
+        tileOrder: tileOrder ?? this.tileOrder,
       );
 }
 
 class SettingsNotifier extends Notifier<AppSettings> {
   static const _keyVesselName    = 'vessel_name';
   static const _keySignalKUrl    = 'signalk_url';
+  static const _keySignalKHost   = 'signalk_host';
+  static const _keySignalKPort2  = 'signalk_port2'; // port2 to avoid clash
   static const _keySignalKUser   = 'signalk_username';
   static const _keySignalKToken  = 'signalk_token';
   static const _keyDeviceRole    = 'device_role';
@@ -68,6 +91,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
   static const _keyAutoConnectSK = 'auto_connect_sk';
   static const _keyAutoConnectLan = 'auto_connect_lan';
   static const _keyKeepScreenOn  = 'keep_screen_on';
+  static const _keyTileOrder     = 'tile_order';
 
   @override
   AppSettings build() {
@@ -77,9 +101,12 @@ class SettingsNotifier extends Notifier<AppSettings> {
 
   Future<void> _loadFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
+    final tileOrderStr = prefs.getString(_keyTileOrder) ?? '';
     state = AppSettings(
       vesselName:      prefs.getString(_keyVesselName)   ?? 'My Vessel',
       signalKUrl:      prefs.getString(_keySignalKUrl)   ?? '',
+      signalKHost:     prefs.getString(_keySignalKHost)  ?? '',
+      signalKPort:     prefs.getInt(_keySignalKPort2)    ?? 3000,
       signalKUsername: prefs.getString(_keySignalKUser)  ?? '',
       signalKToken:    prefs.getString(_keySignalKToken) ?? '',
       deviceRole: DeviceRole.values.firstWhere(
@@ -91,6 +118,9 @@ class SettingsNotifier extends Notifier<AppSettings> {
       autoConnectSignalK: prefs.getBool(_keyAutoConnectSK) ?? false,
       autoConnectLan: prefs.getBool(_keyAutoConnectLan) ?? false,
       keepScreenOn: prefs.getBool(_keyKeepScreenOn) ?? true,
+      tileOrder: tileOrderStr.isEmpty
+          ? const []
+          : tileOrderStr.split(',').where((s) => s.isNotEmpty).toList(),
     );
   }
 
@@ -99,6 +129,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyVesselName,   updated.vesselName);
     await prefs.setString(_keySignalKUrl,   updated.signalKUrl);
+    await prefs.setString(_keySignalKHost,  updated.signalKHost);
+    await prefs.setInt(_keySignalKPort2,    updated.signalKPort);
     await prefs.setString(_keySignalKUser,  updated.signalKUsername);
     await prefs.setString(_keySignalKToken, updated.signalKToken);
     await prefs.setString(_keyDeviceRole, updated.deviceRole.name);
@@ -107,6 +139,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
     await prefs.setBool(_keyAutoConnectSK, updated.autoConnectSignalK);
     await prefs.setBool(_keyAutoConnectLan, updated.autoConnectLan);
     await prefs.setBool(_keyKeepScreenOn, updated.keepScreenOn);
+    await prefs.setString(_keyTileOrder, updated.tileOrder.join(','));
   }
 }
 

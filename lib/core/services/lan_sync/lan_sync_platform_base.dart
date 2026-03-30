@@ -17,6 +17,7 @@ abstract class LanSyncPlatform {
   // --- Callbacks ---
   void Function(VesselState state)? onStateReceived;
   void Function(MobAlert alert)? onMobReceived;
+  void Function()? onMobCancelReceived;
   void Function(bool connected)? onClientConnectionChanged;
   void Function(int count)? onPeerCountChanged;
   void Function(Map<String, dynamic> data)? onLogAppend;

@@ -10,6 +10,9 @@ import '../../../core/providers/connection_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/providers/locale_provider.dart';
+import '../../../core/providers/alarm_provider.dart';
+import '../../../core/providers/task_provider.dart';
+import '../../../core/providers/issue_provider.dart';
 import '../../../core/services/update/update_dialog.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../widgets/app_tile.dart';
@@ -50,7 +53,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final vessel  = ref.watch(vesselProvider);
     final s       = ref.watch(stringsProvider);
 
-    final tiles = _buildTiles(vessel, conn, s);
+    final alarmCount  = ref.watch(activeAlarmCountProvider);
+    final taskCount   = ref.watch(openTasksProvider).length;
+    final issueCount  = ref.watch(openIssuesProvider).length;
+
+    var tiles = _buildTiles(vessel, conn, s, alarmCount, taskCount, issueCount);
+
+    // Apply saved tile order
+    if (settings.tileOrder.isNotEmpty) {
+      tiles = _sortTiles(tiles, settings.tileOrder);
+    }
+
     final width  = MediaQuery.of(context).size.width;
     final crossCount = width > 900 ? 4 : (width > 600 ? 3 : 2);
 
@@ -70,6 +83,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   now: _now,
                   vesselName: settings.vesselName,
                   conn: conn,
+                  onArrange: () => _showArrangeSheet(context, tiles, settings),
                 ),
                 Expanded(
                   child: GridView.builder(
@@ -82,6 +96,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                     itemCount: tiles.length,
                     itemBuilder: (context, i) => AppTile(
+                      key: ValueKey(tiles[i].id),
                       data: tiles[i],
                       onTap: () => context.push(tiles[i].route),
                     ),
@@ -98,7 +113,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  List<AppTileData> _buildTiles(vessel, AppConnectionState conn, s) {
+  List<AppTileData> _buildTiles(
+    vessel,
+    AppConnectionState conn,
+    s,
+    int alarmCount,
+    int taskCount,
+    int issueCount,
+  ) {
     final sogStr = vessel.speedOverGround != null
         ? '${vessel.speedOverGround!.toStringAsFixed(1)} kn'
         : null;
@@ -143,6 +165,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         icon: Icons.emergency_rounded,
         accentColor: AppColors.modSafety,
         route: '/safety',
+        notificationCount: alarmCount,
       ),
       AppTileData(
         id: 'maintenance',
@@ -176,28 +199,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       AppTileData(
         id: 'voyage',
-        label: 'Voyage',
+        label: s.voyage,
         icon: Icons.anchor_rounded,
         accentColor: AppColors.cyan,
         route: '/voyage',
       ),
       AppTileData(
         id: 'tasks',
-        label: 'Tasks',
+        label: s.tasksTitle,
         icon: Icons.checklist_rounded,
         accentColor: AppColors.success,
         route: '/tasks',
+        notificationCount: taskCount,
       ),
       AppTileData(
         id: 'issues',
-        label: 'Issues',
+        label: s.issuesTitle,
         icon: Icons.bug_report_rounded,
         accentColor: AppColors.warning,
         route: '/issues',
+        notificationCount: issueCount,
       ),
       AppTileData(
         id: 'log',
-        label: 'Log',
+        label: s.logTitle,
         icon: Icons.receipt_long_rounded,
         accentColor: const Color(0xFF5E5CE6),
         route: '/log',
@@ -211,6 +236,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
     ];
   }
+
+  List<AppTileData> _sortTiles(List<AppTileData> tiles, List<String> order) {
+    final indexed = {for (final t in tiles) t.id: t};
+    final sorted = <AppTileData>[];
+    for (final id in order) {
+      if (indexed.containsKey(id)) sorted.add(indexed[id]!);
+    }
+    // Append any tiles not in the saved order (newly added tiles)
+    for (final t in tiles) {
+      if (!order.contains(t.id)) sorted.add(t);
+    }
+    return sorted;
+  }
+
+  void _showArrangeSheet(
+      BuildContext context, List<AppTileData> tiles, AppSettings settings) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _ArrangeSheet(tiles: tiles),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -219,11 +270,13 @@ class _Header extends StatelessWidget {
   final DateTime now;
   final String vesselName;
   final AppConnectionState conn;
+  final VoidCallback? onArrange;
 
   const _Header({
     required this.now,
     required this.vesselName,
     required this.conn,
+    this.onArrange,
   });
 
   @override
@@ -243,7 +296,7 @@ class _Header extends StatelessWidget {
                 children: [
                   Text(
                     vesselName.toUpperCase(),
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: AppColors.cyan,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -275,6 +328,21 @@ class _Header extends StatelessWidget {
               active: conn.isLanSyncActive,
               color: AppColors.teal,
               label: 'LAN',
+            ),
+            const SizedBox(width: 8),
+            // Arrange tiles button
+            GestureDetector(
+              onTap: onArrange,
+              child: Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white.withOpacity(0.10)),
+                ),
+                child: Icon(Icons.grid_view_rounded,
+                    size: 14, color: Colors.white.withOpacity(0.4)),
+              ),
             ),
           ],
         ),
@@ -327,6 +395,135 @@ class _ConnBadge extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Arrange tiles bottom sheet
+
+class _ArrangeSheet extends ConsumerStatefulWidget {
+  final List<AppTileData> tiles;
+  const _ArrangeSheet({required this.tiles});
+
+  @override
+  ConsumerState<_ArrangeSheet> createState() => _ArrangeSheetState();
+}
+
+class _ArrangeSheetState extends ConsumerState<_ArrangeSheet> {
+  late List<AppTileData> _tiles;
+
+  @override
+  void initState() {
+    super.initState();
+    _tiles = List.from(widget.tiles);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.65,
+      minChildSize: 0.4,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (context, scrollController) {
+        return Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.inactive,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Arrange Tiles',
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _save,
+                    child: Text(
+                      'Done',
+                      style: const TextStyle(
+                        color: AppColors.cyan,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(color: AppColors.border, indent: 20, endIndent: 20),
+            Expanded(
+              child: ReorderableListView.builder(
+                scrollController: scrollController,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                itemCount: _tiles.length,
+                onReorder: (oldIndex, newIndex) {
+                  setState(() {
+                    if (newIndex > oldIndex) newIndex--;
+                    final item = _tiles.removeAt(oldIndex);
+                    _tiles.insert(newIndex, item);
+                  });
+                },
+                itemBuilder: (context, index) {
+                  final tile = _tiles[index];
+                  final accent = tile.isStub
+                      ? Colors.white.withOpacity(0.3)
+                      : tile.accentColor;
+                  return ListTile(
+                    key: ValueKey(tile.id),
+                    leading: Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        color: accent.withOpacity(0.15),
+                        border: Border.all(color: accent.withOpacity(0.25)),
+                      ),
+                      child: Icon(tile.icon, size: 18, color: accent),
+                    ),
+                    title: Text(
+                      tile.label,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    trailing: Icon(
+                      Icons.drag_handle_rounded,
+                      color: AppColors.textMuted,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _save() {
+    ref.read(settingsProvider.notifier).update(
+      ref.read(settingsProvider).copyWith(
+        tileOrder: _tiles.map((t) => t.id).toList(),
+      ),
+    );
+    Navigator.pop(context);
   }
 }
 
