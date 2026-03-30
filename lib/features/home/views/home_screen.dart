@@ -86,7 +86,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  List<AppTileData> _buildTiles(vessel, ConnectionState conn) {
+  List<AppTileData> _buildTiles(vessel, AppConnectionState conn) {
     final sogStr = vessel.speedOverGround != null
         ? '${vessel.speedOverGround!.toStringAsFixed(1)} kn'
         : null;
@@ -169,7 +169,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 class _Header extends StatelessWidget {
   final DateTime now;
   final String vesselName;
-  final ConnectionState conn;
+  final AppConnectionState conn;
 
   const _Header({
     required this.now,

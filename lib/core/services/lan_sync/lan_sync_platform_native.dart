@@ -1,8 +1,8 @@
-import '../../../models/mob_alert.dart';
-import '../../../models/vessel_state.dart';
+import '../../models/mob_alert.dart';
+import '../../models/vessel_state.dart';
 import 'lan_sync_platform_base.dart';
 import 'sync_host.dart';
-import 'sync_client.dart';
+import 'sync_client.dart' hide DiscoveredHost;
 
 /// Native (Android / iOS / desktop) implementation.
 /// Wraps SyncHost (shelf WS server + UDP broadcast) and SyncClient.

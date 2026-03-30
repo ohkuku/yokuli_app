@@ -1,5 +1,5 @@
-import '../../../models/mob_alert.dart';
-import '../../../models/vessel_state.dart';
+import '../../models/mob_alert.dart';
+import '../../models/vessel_state.dart';
 
 /// Host discovered on the LAN
 typedef DiscoveredHost = ({String name, String host, int port, String ws});

@@ -2,14 +2,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 enum ConnectionStatus { disconnected, connecting, connected, error }
 
-class ConnectionState {
+class AppConnectionState {
   final ConnectionStatus signalK;
   final String? signalKError;
   final ConnectionStatus lanSync;
   final String? lanSyncError;
   final List<String> connectedPeers; // IPs of connected LAN peers
 
-  const ConnectionState({
+  const AppConnectionState({
     this.signalK = ConnectionStatus.disconnected,
     this.signalKError,
     this.lanSync = ConnectionStatus.disconnected,
@@ -17,14 +17,14 @@ class ConnectionState {
     this.connectedPeers = const [],
   });
 
-  ConnectionState copyWith({
+  AppConnectionState copyWith({
     ConnectionStatus? signalK,
     String? signalKError,
     ConnectionStatus? lanSync,
     String? lanSyncError,
     List<String>? connectedPeers,
   }) =>
-      ConnectionState(
+      AppConnectionState(
         signalK: signalK ?? this.signalK,
         signalKError: signalKError ?? this.signalKError,
         lanSync: lanSync ?? this.lanSync,
@@ -36,9 +36,9 @@ class ConnectionState {
   bool get isLanSyncActive => lanSync == ConnectionStatus.connected;
 }
 
-class ConnectionNotifier extends Notifier<ConnectionState> {
+class ConnectionNotifier extends Notifier<AppConnectionState> {
   @override
-  ConnectionState build() => const ConnectionState();
+  AppConnectionState build() => const AppConnectionState();
 
   void setSignalKStatus(ConnectionStatus status, {String? error}) {
     state = state.copyWith(signalK: status, signalKError: error);
@@ -61,6 +61,6 @@ class ConnectionNotifier extends Notifier<ConnectionState> {
   }
 }
 
-final connectionProvider = NotifierProvider<ConnectionNotifier, ConnectionState>(
+final connectionProvider = NotifierProvider<ConnectionNotifier, AppConnectionState>(
   ConnectionNotifier.new,
 );
