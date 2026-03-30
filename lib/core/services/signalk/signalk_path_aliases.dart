@@ -21,6 +21,9 @@ class SignalKPathAliases {
     'panelPower': 'inputPower',
     'state': 'chargerState',
     'yieldToday': 'yieldTodayWh',
+    // Generic aliases used by some SK server plugins (e.g. venus-signalk)
+    'voltage': 'inputVoltage',   // panel/input voltage
+    'current': 'outputCurrent',  // charge current to battery
   };
 
   // ---------------------------------------------------------------------------

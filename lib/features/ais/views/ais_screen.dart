@@ -1,8 +1,11 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/ais_provider.dart';
+import '../../../core/providers/vessel_provider.dart';
 import '../../../core/models/ais_state.dart';
 
 class AisScreen extends ConsumerWidget {
@@ -44,20 +47,128 @@ class AisScreen extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Radar Tab
+// Radar Tab — map view (with polar-chart fallback)
 // ---------------------------------------------------------------------------
 
-class _RadarTab extends ConsumerWidget {
+class _RadarTab extends ConsumerStatefulWidget {
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final aisState = ref.watch(aisProvider);
-    final targets = aisState.targets;
+  ConsumerState<_RadarTab> createState() => _RadarTabState();
+}
 
+class _RadarTabState extends ConsumerState<_RadarTab> {
+  bool _showMap = true;
+  final _mapController = MapController();
+
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final targets = ref.watch(aisProvider).targets.where(
+          (t) => t.status != AisTargetStatus.lost,
+        ).toList();
+    final ownPos = ref.watch(vesselProvider).position;
+
+    if (_showMap && ownPos != null) {
+      return _buildMapView(ownPos, targets);
+    }
+    return _buildPolarView(targets, ownPos != null);
+  }
+
+  Widget _buildMapView(dynamic ownPos, List<AisTargetState> targets) {
+    final center = LatLng(ownPos.latitude as double, ownPos.longitude as double);
+
+    final markers = <Marker>[
+      // Own ship
+      Marker(
+        point: center,
+        width: 28,
+        height: 28,
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.cyan,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+          ),
+          child: const Icon(Icons.navigation_rounded, color: Colors.white, size: 14),
+        ),
+      ),
+      // AIS targets
+      for (final t in targets)
+        if (t.position != null)
+          Marker(
+            point: LatLng(t.position!.latitude, t.position!.longitude),
+            width: 70,
+            height: 38,
+            child: _AisMapMarker(target: t),
+          ),
+    ];
+
+    return Stack(
+      children: [
+        FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(
+            initialCenter: center,
+            initialZoom: 12,
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.yokuli.app',
+            ),
+            MarkerLayer(markers: markers),
+          ],
+        ),
+        // Switch to polar radar
+        Positioned(
+          top: 8,
+          right: 8,
+          child: _MapIconBtn(
+            icon: Icons.radar_rounded,
+            tooltip: 'Polar radar',
+            onTap: () => setState(() => _showMap = false),
+          ),
+        ),
+        // Re-center on own ship
+        Positioned(
+          bottom: 16,
+          right: 8,
+          child: _MapIconBtn(
+            icon: Icons.my_location_rounded,
+            tooltip: 'Center',
+            onTap: () {
+              try {
+                _mapController.move(center, _mapController.camera.zoom);
+              } catch (_) {}
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPolarView(List<AisTargetState> targets, bool hasPosition) {
     return Column(
       children: [
+        if (hasPosition)
+          Align(
+            alignment: Alignment.topRight,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(0, 8, 12, 0),
+              child: _MapIconBtn(
+                icon: Icons.map_rounded,
+                label: 'Map',
+                onTap: () => setState(() => _showMap = true),
+              ),
+            ),
+          ),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: EdgeInsets.fromLTRB(12, hasPosition ? 4 : 12, 12, 0),
             child: AspectRatio(
               aspectRatio: 1,
               child: CustomPaint(
@@ -67,18 +178,99 @@ class _RadarTab extends ConsumerWidget {
             ),
           ),
         ),
-        // Legend
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _LegendDot(color: AppColors.danger, label: 'High Risk (CPA<0.5NM)'),
-              const SizedBox(width: 16),
+              _LegendDot(color: AppColors.danger, label: 'High Risk (<0.5NM)'),
+              const SizedBox(width: 12),
               _LegendDot(color: AppColors.warning, label: 'Caution'),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               _LegendDot(color: AppColors.success, label: 'Clear'),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MapIconBtn extends StatelessWidget {
+  final IconData icon;
+  final String? label;
+  final String? tooltip;
+  final VoidCallback onTap;
+
+  const _MapIconBtn({required this.icon, required this.onTap, this.label, this.tooltip});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.symmetric(
+            horizontal: label != null ? 10 : 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.surface.withOpacity(0.92),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.border),
+          boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: AppColors.cyan),
+            if (label != null) ...[
+              const SizedBox(width: 4),
+              Text(label!, style: const TextStyle(color: AppColors.cyan, fontSize: 12)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AisMapMarker extends StatelessWidget {
+  final AisTargetState target;
+  const _AisMapMarker({required this.target});
+
+  Color _color() {
+    if (target.closestPointNm != null && target.closestPointNm! < 0.5) {
+      return AppColors.danger;
+    } else if (target.closestPointNm != null && target.closestPointNm! < 1.0) {
+      return AppColors.warning;
+    }
+    return AppColors.success;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _color();
+    final label = target.name ??
+        (target.mmsi.length >= 4
+            ? target.mmsi.substring(target.mmsi.length - 4)
+            : target.mmsi);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white70, width: 1),
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            shadows: const [Shadow(color: Colors.black, blurRadius: 3)],
           ),
         ),
       ],

@@ -23,6 +23,8 @@ class SignalKClient {
   String? _currentToken;
   bool _intentionalDisconnect = false;
   Timer? _reconnectTimer;
+  Timer? _watchdogTimer;
+  DateTime? _lastDeltaReceived;
 
   /// The own-vessel context string received in the SK hello message, e.g.
   /// 'vessels.urn:mrn:imo:mmsi:338234631'.  Used to distinguish own-ship AIS
@@ -78,11 +80,13 @@ class SignalKClient {
         _channel?.sink.add(
           jsonEncode(SignalKParser.buildAisSubscribeMessage()),
         );
+        _startWatchdog();
         return;
       }
 
       // Delta message.
       if (json.containsKey('updates')) {
+        _lastDeltaReceived = DateTime.now();
         final current = _ref.read(vesselProvider);
         final updated = SignalKParser.applyDelta(
           current,
@@ -115,9 +119,30 @@ class SignalKClient {
     });
   }
 
+  /// Starts a periodic watchdog that forces a reconnect if the connection is
+  /// "connected" but no delta messages have been received for 60 seconds.
+  /// This handles the common case where the SK server restarts and the TCP
+  /// connection appears open (half-open) but no data flows.
+  void _startWatchdog() {
+    _watchdogTimer?.cancel();
+    _lastDeltaReceived = DateTime.now();
+    _watchdogTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (_intentionalDisconnect) return;
+      final last = _lastDeltaReceived;
+      if (last == null) return;
+      if (DateTime.now().difference(last) > const Duration(seconds: 60)) {
+        // Stale connection — force close so _onDone triggers a reconnect.
+        _channel?.sink.close(ws_status.goingAway);
+      }
+    });
+  }
+
   Future<void> disconnect() async {
     _intentionalDisconnect = true;
     _reconnectTimer?.cancel();
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
+    _lastDeltaReceived = null;
     await _sub?.cancel();
     await _channel?.sink.close(ws_status.goingAway);
     _channel = null;
