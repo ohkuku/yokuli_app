@@ -12,6 +12,8 @@ import '../features/settings/views/settings_screen.dart';
 import '../features/ais/views/ais_screen.dart';
 import '../features/voyage/views/voyage_screen.dart';
 import '../features/kanban/views/kanban_screen.dart';
+import '../features/notifications/views/notifications_screen.dart';
+import '../features/alarm_management/views/alarm_management_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -67,6 +69,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/settings',
         name: 'settings',
         pageBuilder: (context, state) => _slidePage(state, const SettingsScreen()),
+      ),
+      GoRoute(
+        path: '/notifications',
+        name: 'notifications',
+        pageBuilder: (context, state) =>
+            _slidePage(state, const NotificationsScreen()),
+      ),
+      GoRoute(
+        path: '/alarm-management',
+        name: 'alarm-management',
+        pageBuilder: (context, state) =>
+            _slidePage(state, const AlarmManagementScreen()),
       ),
     ],
   );

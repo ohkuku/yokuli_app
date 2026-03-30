@@ -12,6 +12,8 @@ import 'core/providers/task_provider.dart';
 import 'core/providers/issue_provider.dart';
 import 'core/providers/log_provider.dart';
 import 'core/providers/alarm_provider.dart';
+import 'core/providers/alarm_rule_provider.dart';
+import 'core/services/alarm_dispatcher.dart';
 import 'core/services/signalk/signalk_client.dart';
 import 'core/services/lan_sync/lan_sync_service.dart';
 import 'core/providers/kanban_provider.dart';
@@ -66,7 +68,11 @@ class _AppInitState extends ConsumerState<_AppInit> {
       await ref.read(settingsProvider.notifier).load();
       await ref.read(safetyProvider.notifier).load();
       await ref.read(localeProvider.notifier).init();
+      await ref.read(alarmRuleProvider.notifier).load();
+      await ref.read(notifyChannelProvider.notifier).load();
       await _loadPersistentData();
+      // Initialize alarm dispatcher (creates it, which starts listening).
+      ref.read(alarmDispatcherProvider);
       await _autoConnect();
     });
   }

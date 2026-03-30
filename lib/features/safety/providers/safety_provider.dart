@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/models/alarm.dart';
 import '../../../core/models/mob_alert.dart';
 import '../../../core/models/vessel_state.dart';
+import '../../../core/providers/alarm_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/providers/lan_broadcast.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
@@ -137,6 +139,17 @@ class SafetyNotifier extends Notifier<SafetyState> {
       if (triggered != state.depthAlarmTriggered) {
         next = next.copyWith(depthAlarmTriggered: triggered);
         changed = true;
+        if (triggered) {
+          ref.read(alarmProvider.notifier).trigger(
+                type: AlarmType.depth,
+                level: AlarmLevel.critical,
+                message:
+                    'Depth below keel: ${vessel.depthBelowKeel!.toStringAsFixed(1)} m'
+                    ' (threshold ${state.depthAlarmThreshold.toStringAsFixed(1)} m)',
+              );
+        } else {
+          ref.read(alarmProvider.notifier).clearActiveByType(AlarmType.depth);
+        }
       }
     }
 
@@ -145,6 +158,17 @@ class SafetyNotifier extends Notifier<SafetyState> {
       if (triggered != state.speedAlarmTriggered) {
         next = next.copyWith(speedAlarmTriggered: triggered);
         changed = true;
+        if (triggered) {
+          ref.read(alarmProvider.notifier).trigger(
+                type: AlarmType.speed,
+                level: AlarmLevel.warning,
+                message:
+                    'Speed over ground: ${vessel.speedOverGround!.toStringAsFixed(1)} kn'
+                    ' (threshold ${state.speedAlarmThreshold.toStringAsFixed(1)} kn)',
+              );
+        } else {
+          ref.read(alarmProvider.notifier).clearActiveByType(AlarmType.speed);
+        }
       }
     }
 

@@ -2,7 +2,9 @@ enum AlarmType { mob, depth, battery, solar, speed, connection, ais }
 
 enum AlarmLevel { critical, warning, info }
 
-enum AlarmStatus { active, acknowledged, cleared }
+// Index-based serialisation — do NOT reorder existing values.
+// snoozed is index 3 (after cleared=2).
+enum AlarmStatus { active, acknowledged, cleared, snoozed }
 
 class Alarm {
   final String id;
@@ -14,6 +16,7 @@ class Alarm {
   final DateTime? clearedAt;
   final String? linkedLogId;
   final String? message;
+  final DateTime? snoozedUntil;
 
   const Alarm({
     required this.id,
@@ -25,9 +28,11 @@ class Alarm {
     this.clearedAt,
     this.linkedLogId,
     this.message,
+    this.snoozedUntil,
   });
 
   bool get isActive => status == AlarmStatus.active;
+  bool get isSnoozed => status == AlarmStatus.snoozed;
 
   Alarm copyWith({
     String? id,
@@ -39,6 +44,7 @@ class Alarm {
     Object? clearedAt = _sentinel,
     Object? linkedLogId = _sentinel,
     Object? message = _sentinel,
+    Object? snoozedUntil = _sentinel,
   }) {
     return Alarm(
       id: id ?? this.id,
@@ -55,6 +61,9 @@ class Alarm {
           ? this.linkedLogId
           : linkedLogId as String?,
       message: message == _sentinel ? this.message : message as String?,
+      snoozedUntil: snoozedUntil == _sentinel
+          ? this.snoozedUntil
+          : snoozedUntil as DateTime?,
     );
   }
 
@@ -68,6 +77,7 @@ class Alarm {
         if (clearedAt != null) 'ca': clearedAt!.toIso8601String(),
         if (linkedLogId != null) 'll': linkedLogId,
         if (message != null) 'msg': message,
+        if (snoozedUntil != null) 'su': snoozedUntil!.toIso8601String(),
       };
 
   factory Alarm.fromJson(Map<String, dynamic> json) {
@@ -82,6 +92,8 @@ class Alarm {
           json['ca'] != null ? DateTime.parse(json['ca'] as String) : null,
       linkedLogId: json['ll'] as String?,
       message: json['msg'] as String?,
+      snoozedUntil:
+          json['su'] != null ? DateTime.parse(json['su'] as String) : null,
     );
   }
 }

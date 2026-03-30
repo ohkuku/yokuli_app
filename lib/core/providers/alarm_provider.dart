@@ -44,9 +44,6 @@ class _JsonStore {
 /// Battery voltage below which a battery alarm is raised (Volts).
 const double _batteryLowVoltageThreshold = 11.8;
 
-/// Depth below keel that triggers a depth alarm (metres).
-const double _depthAlarmThresholdM = 2.0;
-
 // ---------------------------------------------------------------------------
 // AlarmNotifier
 // ---------------------------------------------------------------------------
@@ -148,7 +145,6 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
   /// Called by the service layer whenever a new VesselState arrives.
   void checkVesselState(VesselState vessel) {
     _checkBatteries(vessel);
-    _checkDepth(vessel);
   }
 
   void _checkBatteries(VesselState vessel) {
@@ -172,21 +168,41 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
     }
   }
 
-  void _checkDepth(VesselState vessel) {
-    final depth = vessel.depthBelowKeel;
-    if (depth == null) return;
+  // ---- Snooze / reactivate ------------------------------------------------
 
-    if (depth < _depthAlarmThresholdM) {
-      final hasActive = state.any(
-          (a) => a.type == AlarmType.depth && a.status == AlarmStatus.active);
-      if (!hasActive) {
-        trigger(
-          type: AlarmType.depth,
-          level: AlarmLevel.critical,
-          message:
-              'Depth below keel critical: ${depth.toStringAsFixed(1)} m',
-        );
-      }
+  /// Snooze an alarm for [mins] minutes.
+  void snooze(String id, int mins) {
+    state = state.map((a) {
+      if (a.id != id) return a;
+      if (a.status == AlarmStatus.cleared) return a;
+      return a.copyWith(
+        status: AlarmStatus.snoozed,
+        snoozedUntil: DateTime.now().add(Duration(minutes: mins)),
+      );
+    }).toList();
+    save();
+    final updated = state.firstWhere((a) => a.id == id, orElse: () => state.first);
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'alarm', 'data': updated.toJson()});
+  }
+
+  /// Reactivate a snoozed alarm (snooze period expired).
+  void reactivate(String id) {
+    state = state.map((a) {
+      if (a.id != id || a.status != AlarmStatus.snoozed) return a;
+      return a.copyWith(
+        status: AlarmStatus.active,
+        snoozedUntil: null,
+      );
+    }).toList();
+    save();
+  }
+
+  /// Clear all active alarms of a given [type] (used by SafetyNotifier).
+  void clearActiveByType(AlarmType type) {
+    for (final a in state.where(
+        (a) => a.type == type && a.status == AlarmStatus.active).toList()) {
+      clear(a.id);
     }
   }
 
@@ -200,7 +216,11 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
   List<Alarm> get acknowledged =>
       state.where((a) => a.status == AlarmStatus.acknowledged).toList();
 
-  /// Active + acknowledged alarms (i.e. not yet cleared).
+  /// All alarms currently in the [AlarmStatus.snoozed] state.
+  List<Alarm> get snoozed =>
+      state.where((a) => a.status == AlarmStatus.snoozed).toList();
+
+  /// Active + snoozed + acknowledged alarms (i.e. not yet cleared).
   List<Alarm> get uncleared =>
       state.where((a) => a.status != AlarmStatus.cleared).toList();
 
@@ -238,7 +258,11 @@ final unclearedAlarmsProvider = Provider<List<Alarm>>(
   (ref) => ref.watch(alarmProvider.notifier).uncleared,
 );
 
-/// Count of active alarms — useful for badge indicators.
+/// Count of active (and snoozed) alarms — useful for badge indicators.
 final activeAlarmCountProvider = Provider<int>(
-  (ref) => ref.watch(activeAlarmsProvider).length,
+  (ref) => ref
+      .watch(alarmProvider)
+      .where((a) =>
+          a.status == AlarmStatus.active || a.status == AlarmStatus.snoozed)
+      .length,
 );
