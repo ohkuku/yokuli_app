@@ -103,6 +103,14 @@ jobs:
           # base-href must match the GitHub Pages subdirectory
           flutter build web --release --base-href "/yokuli_app/preview/${BRANCH}/"
 
+      - name: Cache-bust web assets
+        run: |
+          SHA="${{ steps.ver.outputs.short_sha }}"
+          # Append ?v=SHA to bootstrap and service-worker references in index.html
+          # so browsers always fetch fresh JS even when index.html is CDN-cached.
+          sed -i "s/flutter_bootstrap\.js\b/flutter_bootstrap.js?v=${SHA}/g" build/web/index.html
+          sed -i "s/flutter_service_worker\.js\b/flutter_service_worker.js?v=${SHA}/g" build/web/index.html
+
       - name: Deploy web preview to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
