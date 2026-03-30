@@ -42,6 +42,7 @@ class KanbanCard {
   final KanbanPriority priority;
   final DateTime createdAt;
   final DateTime? updatedAt;
+  final bool archived;
 
   const KanbanCard({
     required this.id,
@@ -52,6 +53,7 @@ class KanbanCard {
     this.priority = KanbanPriority.medium,
     required this.createdAt,
     this.updatedAt,
+    this.archived = false,
   });
 
   KanbanCard copyWith({
@@ -61,6 +63,7 @@ class KanbanCard {
     String? category,
     KanbanPriority? priority,
     DateTime? updatedAt,
+    bool? archived,
   }) =>
       KanbanCard(
         id: id,
@@ -71,6 +74,7 @@ class KanbanCard {
         priority: priority ?? this.priority,
         createdAt: createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
+        archived: archived ?? this.archived,
       );
 
   Map<String, dynamic> toJson() => {
@@ -82,6 +86,7 @@ class KanbanCard {
         'pri': priority.index,
         'ca': createdAt.toIso8601String(),
         if (updatedAt != null) 'ua': updatedAt!.toIso8601String(),
+        if (archived) 'arc': true,
       };
 
   factory KanbanCard.fromJson(Map<String, dynamic> j) => KanbanCard(
@@ -93,6 +98,7 @@ class KanbanCard {
         priority: KanbanPriority.values[(j['pri'] as num?)?.toInt() ?? 1],
         createdAt: DateTime.parse(j['ca'] as String),
         updatedAt: j['ua'] != null ? DateTime.parse(j['ua'] as String) : null,
+        archived: j['arc'] as bool? ?? false,
       );
 }
 
@@ -105,7 +111,17 @@ class KanbanState {
     this.cards = const [],
   });
 
-  List<KanbanCard> cardsForColumn(String columnId) =>
-      cards.where((c) => c.columnId == columnId).toList()
+  List<KanbanCard> cardsForColumn(String columnId, {String? category}) =>
+      cards
+          .where((c) =>
+              c.columnId == columnId &&
+              !c.archived &&
+              (category == null || c.category == category))
+          .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  List<KanbanCard> get archivedCards =>
+      cards.where((c) => c.archived).toList()
+        ..sort((a, b) => (b.updatedAt ?? b.createdAt)
+            .compareTo(a.updatedAt ?? a.createdAt));
 }

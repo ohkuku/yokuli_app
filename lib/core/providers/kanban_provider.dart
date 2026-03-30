@@ -97,6 +97,26 @@ class KanbanNotifier extends Notifier<KanbanState> {
     _broadcast();
   }
 
+  Future<void> archiveCard(String id) async {
+    final updated = state.cards.map((c) {
+      if (c.id != id) return c;
+      return c.copyWith(archived: true, updatedAt: DateTime.now());
+    }).toList();
+    state = KanbanState(columns: state.columns, cards: updated);
+    await _save();
+    _broadcast();
+  }
+
+  Future<void> unarchiveCard(String id) async {
+    final updated = state.cards.map((c) {
+      if (c.id != id) return c;
+      return c.copyWith(archived: false, updatedAt: DateTime.now());
+    }).toList();
+    state = KanbanState(columns: state.columns, cards: updated);
+    await _save();
+    _broadcast();
+  }
+
   Future<void> moveCard(String cardId, String toColumnId) async {
     final updated = state.cards.map((c) {
       if (c.id != cardId) return c;

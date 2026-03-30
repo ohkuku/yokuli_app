@@ -215,6 +215,57 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _connectToDiscoveredHost(DiscoveredHost host) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBg,
+        title: Text(host.name,
+            style: const TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          host.ws,
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('连接',
+                style: TextStyle(color: AppColors.cyan, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    // Save host settings
+    final newSettings = ref.read(settingsProvider).copyWith(
+          hostIp: host.host,
+          hostPort: host.port,
+          deviceRole: DeviceRole.client,
+        );
+    await ref.read(settingsProvider.notifier).update(newSettings);
+    _hostIpCtrl.text = host.host;
+    _hostPortCtrl.text = host.port.toString();
+
+    // Connect
+    final svc = ref.read(lanSyncServiceProvider);
+    if (ref.read(connectionProvider).isLanSyncActive) {
+      await svc.restart();
+    } else {
+      await svc.start();
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已连接到 ${host.name}')),
+      );
+    }
+  }
+
   Future<void> _restartLanSync() async {
     await ref.read(lanSyncServiceProvider).restart();
     if (mounted) {
@@ -368,16 +419,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ]),
                 if (_discoveredHosts.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  ...(_discoveredHosts.map((h) => ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.device_hub_rounded,
-                            color: AppColors.cyan),
-                        title: Text(h.name),
-                        subtitle: Text(h.ws),
-                        onTap: () {
-                          _hostIpCtrl.text = h.host;
-                          _hostPortCtrl.text = h.port.toString();
-                        },
+                  ...(_discoveredHosts.map((h) => _DiscoveredHostTile(
+                        host: h,
+                        onConnect: () => _connectToDiscoveredHost(h),
                       ))),
                 ],
               ] else ...[
@@ -747,6 +791,61 @@ class _LangBtn extends StatelessWidget {
               fontSize: 14,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DiscoveredHostTile extends StatelessWidget {
+  final DiscoveredHost host;
+  final VoidCallback onConnect;
+  const _DiscoveredHostTile({required this.host, required this.onConnect});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onConnect,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.cyan.withAlpha(15),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.cyan.withAlpha(50)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.device_hub_rounded, color: AppColors.cyan, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(host.name,
+                      style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13)),
+                  Text(host.ws,
+                      style: const TextStyle(
+                          color: AppColors.textMuted, fontSize: 11)),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppColors.cyan.withAlpha(40),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text('连接',
+                  style: TextStyle(
+                      color: AppColors.cyan,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+            ),
+          ],
         ),
       ),
     );

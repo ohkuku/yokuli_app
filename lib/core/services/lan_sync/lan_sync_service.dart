@@ -19,6 +19,7 @@ import '../../providers/alarm_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/issue_provider.dart';
 import '../../providers/voyage_provider.dart';
+import '../../providers/kanban_provider.dart';
 import '../../providers/lan_broadcast.dart';
 import '../signalk/signalk_auth.dart';
 import '../signalk/signalk_client.dart';
@@ -34,14 +35,15 @@ class LanSyncService {
 
   void Function(MobAlert alert)? onMobAlert;
   void Function()? onMobCancelReceived;
-  void Function(Map<String, dynamic>)? onKanbanSync;
 
   LanSyncService(this._ref) {
     _platform.onStateReceived = (state) {
       _ref.read(vesselProvider.notifier).update(state);
     };
     _platform.onMobReceived = (alert) => onMobAlert?.call(alert);
-    _platform.onKanbanSync = (data) => onKanbanSync?.call(data);
+    _platform.onKanbanSync = (data) {
+      _ref.read(kanbanProvider.notifier).applySync(data);
+    };
     _platform.onSkCredentialsReceived = _onSkCredentialsReceived;
     _platform.onMobCancelReceived = () => onMobCancelReceived?.call();
     _platform.onClientConnectionChanged = (connected) {
@@ -155,6 +157,13 @@ class LanSyncService {
     for (final vs in voyageState.history) {
       sendTo({'type': 'voyage_upsert', 'data': vs.toJson()});
     }
+    // Kanban
+    final kanban = _ref.read(kanbanProvider);
+    sendTo({
+      'type': 'kanban_sync',
+      'columns': kanban.columns.map((c) => c.toJson()).toList(),
+      'cards': kanban.cards.map((c) => c.toJson()).toList(),
+    });
   }
 
   ConnectionNotifier get _conn => _ref.read(connectionProvider.notifier);

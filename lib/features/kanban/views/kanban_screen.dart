@@ -15,10 +15,12 @@ class KanbanScreen extends ConsumerStatefulWidget {
 
 class _KanbanScreenState extends ConsumerState<KanbanScreen> {
   String? _filterColumnId;
+  String? _filterCategory;
 
   @override
   Widget build(BuildContext context) {
     final kanban = ref.watch(kanbanProvider);
+    final archivedCount = kanban.archivedCards.length;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -30,6 +32,36 @@ class _KanbanScreenState extends ConsumerState<KanbanScreen> {
         ),
         iconTheme: const IconThemeData(color: AppColors.textPrimary),
         actions: [
+          // Archive button
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.inventory_2_outlined,
+                    color: AppColors.textSecondary),
+                tooltip: '存档',
+                onPressed: () => _showArchiveSheet(context),
+              ),
+              if (archivedCount > 0)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: AppColors.textMuted,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('$archivedCount',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.add_box_outlined, color: AppColors.cyan),
             tooltip: '添加列',
@@ -50,6 +82,7 @@ class _KanbanScreenState extends ConsumerState<KanbanScreen> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ── Column (status) filter ──────────────────────────
                 if (kanban.columns.length > 1)
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
@@ -67,15 +100,46 @@ class _KanbanScreenState extends ConsumerState<KanbanScreen> {
                               child: _FilterChip(
                                 label: col.title,
                                 selected: _filterColumnId == col.id,
-                                onTap: () => setState(() => _filterColumnId =
-                                    _filterColumnId == col.id
-                                        ? null
-                                        : col.id),
+                                onTap: () => setState(() =>
+                                    _filterColumnId =
+                                        _filterColumnId == col.id
+                                            ? null
+                                            : col.id),
                               ),
                             )),
                       ],
                     ),
                   ),
+                // ── Category filter ────────────────────────────────
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: EdgeInsets.fromLTRB(
+                      12, kanban.columns.length > 1 ? 4 : 8, 12, 0),
+                  child: Row(
+                    children: [
+                      _FilterChip(
+                        label: '所有类型',
+                        selected: _filterCategory == null,
+                        onTap: () =>
+                            setState(() => _filterCategory = null),
+                        accent: AppColors.teal,
+                      ),
+                      ...kKanbanDefaultCategories.map((cat) => Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: _FilterChip(
+                              label: cat,
+                              selected: _filterCategory == cat,
+                              onTap: () => setState(() =>
+                                  _filterCategory =
+                                      _filterCategory == cat ? null : cat),
+                              accent: AppColors.teal,
+                            ),
+                          )),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                // ── Board ──────────────────────────────────────────
                 Expanded(
                   child: ScrollConfiguration(
                     behavior: ScrollConfiguration.of(context).copyWith(
@@ -97,7 +161,8 @@ class _KanbanScreenState extends ConsumerState<KanbanScreen> {
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: columns.map((col) {
-                            final cards = kanban.cardsForColumn(col.id);
+                            final cards = kanban.cardsForColumn(col.id,
+                                category: _filterCategory);
                             return _KanbanColumnWidget(
                               column: col,
                               cards: cards,
@@ -201,6 +266,18 @@ class _KanbanScreenState extends ConsumerState<KanbanScreen> {
         card: card,
         defaultColumnId: defaultColumnId,
       ),
+    );
+  }
+
+  void _showArchiveSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => const _ArchiveSheet(),
     );
   }
 }
@@ -514,9 +591,9 @@ class _CardSheetState extends ConsumerState<_CardSheet> {
     if (mounted) Navigator.pop(context);
   }
 
-  Future<void> _delete() async {
+  Future<void> _archive() async {
     if (widget.card == null) return;
-    await ref.read(kanbanProvider.notifier).deleteCard(widget.card!.id);
+    await ref.read(kanbanProvider.notifier).archiveCard(widget.card!.id);
     if (mounted) Navigator.pop(context);
   }
 
@@ -686,21 +763,22 @@ class _CardSheetState extends ConsumerState<_CardSheet> {
                 ),
               ),
 
-              // Delete button (edit mode only)
+              // Archive button (edit mode only)
               if (widget.card != null) ...[
                 const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
-                  child: OutlinedButton(
+                  child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.danger,
-                      side: const BorderSide(color: AppColors.danger),
+                      foregroundColor: AppColors.textSecondary,
+                      side: const BorderSide(color: AppColors.border),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                     ),
-                    onPressed: _delete,
-                    child: const Text('删除卡片',
+                    onPressed: _archive,
+                    icon: const Icon(Icons.inventory_2_outlined, size: 16),
+                    label: const Text('存档',
                         style: TextStyle(fontWeight: FontWeight.w600)),
                   ),
                 ),
@@ -774,34 +852,186 @@ class _FilterChip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _FilterChip(
-      {required this.label, required this.selected, required this.onTap});
+  final Color accent;
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.accent = AppColors.cyan,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: selected
-              ? AppColors.cyan.withOpacity(0.2)
-              : AppColors.surface,
+          color: selected ? accent.withOpacity(0.18) : AppColors.surface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-              color: selected ? AppColors.cyan : AppColors.border),
+              color: selected ? accent : AppColors.border),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color:
-                selected ? AppColors.cyan : AppColors.textSecondary,
+            color: selected ? accent : AppColors.textSecondary,
             fontSize: 12,
-            fontWeight:
-                selected ? FontWeight.w700 : FontWeight.w500,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Archive sheet
+// ---------------------------------------------------------------------------
+
+class _ArchiveSheet extends ConsumerWidget {
+  const _ArchiveSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final kanban = ref.watch(kanbanProvider);
+    final archived = kanban.archivedCards;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (_, scrollController) => ListView(
+        controller: scrollController,
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: AppColors.inactive,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Row(children: [
+            const Icon(Icons.inventory_2_outlined,
+                size: 18, color: AppColors.textSecondary),
+            const SizedBox(width: 8),
+            Text(
+              '存档 (${archived.length})',
+              style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          const Text(
+            '已存档的卡片不会出现在看板上。',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+          ),
+          const SizedBox(height: 16),
+          if (archived.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text('暂无存档',
+                    style:
+                        TextStyle(color: AppColors.textMuted, fontSize: 13)),
+              ),
+            )
+          else
+            ...archived.map((card) => _ArchivedCardTile(card: card)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ArchivedCardTile extends ConsumerWidget {
+  final KanbanCard card;
+  const _ArchivedCardTile({required this.card});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(card.title,
+                    style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text(card.category,
+                    style: const TextStyle(
+                        color: AppColors.textMuted, fontSize: 11)),
+              ],
+            ),
+          ),
+          // Restore
+          IconButton(
+            icon: const Icon(Icons.unarchive_outlined,
+                size: 18, color: AppColors.cyan),
+            tooltip: '恢复',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            onPressed: () =>
+                ref.read(kanbanProvider.notifier).unarchiveCard(card.id),
+          ),
+          // Permanent delete
+          IconButton(
+            icon: const Icon(Icons.delete_forever_rounded,
+                size: 18, color: AppColors.danger),
+            tooltip: '永久删除',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            onPressed: () async {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  backgroundColor: AppColors.cardBg,
+                  title: const Text('永久删除',
+                      style: TextStyle(color: AppColors.textPrimary)),
+                  content: Text('确定要永久删除"${card.title}"？此操作不可撤销。',
+                      style: const TextStyle(
+                          color: AppColors.textSecondary)),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('取消',
+                          style: TextStyle(
+                              color: AppColors.textSecondary)),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('删除',
+                          style: TextStyle(color: AppColors.danger)),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed == true) {
+                ref.read(kanbanProvider.notifier).deleteCard(card.id);
+              }
+            },
+          ),
+        ],
       ),
     );
   }
