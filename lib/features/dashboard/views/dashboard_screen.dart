@@ -106,8 +106,8 @@ class DashboardScreen extends ConsumerWidget {
 
             // Batteries section
             if (vessel.batteries.isNotEmpty) ...[
-              const SliverPadding(
-                padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                 sliver: SliverToBoxAdapter(
                   child: Text(
                     s.power.toUpperCase(),

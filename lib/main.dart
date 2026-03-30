@@ -82,6 +82,6 @@ class _AppProviderObserver extends ProviderObserver {
     Object? newValue,
     ProviderContainer container,
   ) {
-    assert(() => true);
+    assert(true);
   }
 }
