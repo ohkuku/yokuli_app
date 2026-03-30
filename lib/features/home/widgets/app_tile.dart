@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 
@@ -7,8 +8,8 @@ class AppTileData {
   final IconData icon;
   final Color accentColor;
   final String route;
-  final String? badge; // optional live value snippet
-  final bool isStub; // greyed-out placeholder
+  final String? badge;
+  final bool isStub;
 
   const AppTileData({
     required this.id,
@@ -21,113 +22,196 @@ class AppTileData {
   });
 }
 
-class AppTile extends StatelessWidget {
+class AppTile extends StatefulWidget {
   final AppTileData data;
   final VoidCallback onTap;
 
   const AppTile({super.key, required this.data, required this.onTap});
 
   @override
+  State<AppTile> createState() => _AppTileState();
+}
+
+class _AppTileState extends State<AppTile>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 100),
+    );
+    _scale = Tween<double>(begin: 1.0, end: 0.93).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final accent = data.isStub ? AppColors.inactive : data.accentColor;
+    final accent = widget.data.isStub
+        ? Colors.white.withOpacity(0.3)
+        : widget.data.accentColor;
 
     return GestureDetector(
-      onTap: data.isStub ? null : onTap,
-      child: AnimatedScale(
-        scale: 1.0,
-        duration: const Duration(milliseconds: 120),
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.cardBg,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border, width: 1),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.cardBg,
-                Color.lerp(AppColors.cardBg, accent, 0.08)!,
-              ],
-            ),
-          ),
-          child: Stack(
+      onTapDown: widget.data.isStub ? null : (_) => _ctrl.forward(),
+      onTapUp: widget.data.isStub
+          ? null
+          : (_) {
+              _ctrl.reverse();
+              widget.onTap();
+            },
+      onTapCancel: () => _ctrl.reverse(),
+      child: ScaleTransition(
+        scale: _scale,
+        child: _GlassTile(
+          accent: accent,
+          isStub: widget.data.isStub,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Subtle corner accent line
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  height: 2,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [
-                      accent.withAlpha(180),
-                      accent.withAlpha(0),
-                    ]),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              // Icon badge
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(13),
+                  color: accent.withOpacity(0.18),
+                  border: Border.all(
+                    color: accent.withOpacity(0.30),
+                    width: 0.8,
                   ),
-                ),
-              ),
-
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Icon
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: accent.withAlpha(28),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(data.icon, color: accent, size: 24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accent.withOpacity(0.25),
+                      blurRadius: 12,
+                      spreadRadius: -2,
                     ),
-                    const Spacer(),
-                    // Label
-                    Text(
-                      data.label,
-                      style: TextStyle(
-                        color: data.isStub
-                            ? AppColors.textMuted
-                            : AppColors.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.2,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    // Badge / live value
-                    if (data.badge != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        data.badge!,
-                        style: TextStyle(
-                          color: accent,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    if (data.isStub) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        'Coming soon',
-                        style: TextStyle(
-                          color: AppColors.textDim,
-                          fontSize: 10,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
+                child: Icon(
+                  widget.data.icon,
+                  color: widget.data.isStub
+                      ? Colors.white.withOpacity(0.35)
+                      : accent,
+                  size: 22,
+                ),
               ),
+              const Spacer(),
+              // Label
+              Text(
+                widget.data.label,
+                style: TextStyle(
+                  color: widget.data.isStub
+                      ? Colors.white.withOpacity(0.35)
+                      : Colors.white.withOpacity(0.92),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.1,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 3),
+              // Badge / sub-line
+              if (widget.data.badge != null)
+                Text(
+                  widget.data.badge!,
+                  style: TextStyle(
+                    color: accent.withOpacity(0.85),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                )
+              else if (widget.data.isStub)
+                Text(
+                  'Coming soon',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.22),
+                    fontSize: 10,
+                    fontStyle: FontStyle.italic,
+                  ),
+                )
+              else
+                const SizedBox(height: 13), // maintain height
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassTile extends StatelessWidget {
+  final Color accent;
+  final bool isStub;
+  final Widget child;
+
+  const _GlassTile({
+    required this.accent,
+    required this.isStub,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const radius = BorderRadius.all(Radius.circular(22));
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        border: Border.all(
+          color: isStub
+              ? Colors.white.withOpacity(0.08)
+              : Colors.white.withOpacity(0.16),
+          width: 0.8,
+        ),
+        boxShadow: isStub
+            ? null
+            : [
+                BoxShadow(
+                  color: accent.withOpacity(0.08),
+                  blurRadius: 20,
+                  offset: const Offset(0, 6),
+                ),
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.15),
+                  blurRadius: 20,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isStub
+                    ? [
+                        Colors.white.withOpacity(0.04),
+                        Colors.white.withOpacity(0.02),
+                      ]
+                    : [
+                        accent.withOpacity(0.12),
+                        Colors.white.withOpacity(0.06),
+                      ],
+              ),
+            ),
+            child: child,
           ),
         ),
       ),

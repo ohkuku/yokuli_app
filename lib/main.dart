@@ -5,6 +5,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import 'app.dart';
 import 'core/providers/settings_provider.dart';
+import 'core/providers/locale_provider.dart';
 import 'core/services/signalk/signalk_client.dart';
 import 'core/services/lan_sync/lan_sync_service.dart';
 
@@ -52,7 +53,10 @@ class _AppInitState extends ConsumerState<_AppInit> {
   void initState() {
     super.initState();
     // Delay to let settings load from SharedPreferences first
-    Future.microtask(_autoConnect);
+    Future.microtask(() async {
+      await ref.read(localeProvider.notifier).init();
+      await _autoConnect();
+    });
   }
 
   Future<void> _autoConnect() async {
