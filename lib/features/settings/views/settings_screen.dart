@@ -271,6 +271,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
             const SizedBox(height: 12),
 
+            // Connect / Disconnect LAN button
+            _LanConnectButton(conn: conn),
+            const SizedBox(height: 12),
+
             _ToggleTile(
               title: 'Auto-start LAN sync on launch',
               value: settings.autoConnectLan,
@@ -576,6 +580,66 @@ class _LangBtn extends StatelessWidget {
               fontSize: 14,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LanConnectButton extends ConsumerStatefulWidget {
+  final AppConnectionState conn;
+  const _LanConnectButton({required this.conn});
+
+  @override
+  ConsumerState<_LanConnectButton> createState() => _LanConnectButtonState();
+}
+
+class _LanConnectButtonState extends ConsumerState<_LanConnectButton> {
+  bool _loading = false;
+
+  Future<void> _toggle() async {
+    setState(() => _loading = true);
+    try {
+      final svc = ref.read(lanSyncServiceProvider);
+      if (widget.conn.isLanSyncActive) {
+        await svc.stop();
+      } else {
+        await svc.start();
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = widget.conn.isLanSyncActive;
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isActive
+              ? AppColors.danger.withAlpha(200)
+              : AppColors.cyan.withAlpha(220),
+          foregroundColor: isActive ? Colors.white : AppColors.background,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 0,
+        ),
+        onPressed: _loading ? null : _toggle,
+        icon: _loading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(isActive ? Icons.wifi_off_rounded : Icons.wifi_rounded,
+                size: 20),
+        label: Text(
+          isActive ? 'DISCONNECT' : 'CONNECT LAN',
+          style:
+              const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
         ),
       ),
     );

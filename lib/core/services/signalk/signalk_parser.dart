@@ -47,9 +47,10 @@ class SignalKParser {
 
       // If this update belongs to another vessel's context (not own-ship),
       // delegate entirely to the AIS parser.
-      if (updateContext != null &&
-          updateContext.startsWith('vessels.') &&
-          updateContext != 'vessels.self') {
+      final isSelf = updateContext == null ||
+                     updateContext == 'vessels.self' ||
+                     (selfContext != null && updateContext == selfContext);
+      if (!isSelf && updateContext!.startsWith('vessels.')) {
         state = SignalKAisParser.applyVesselDelta(
           state,
           updateContext,

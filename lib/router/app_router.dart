@@ -15,6 +15,7 @@ import '../features/ais/views/ais_screen.dart';
 import '../features/voyage/views/voyage_screen.dart';
 import '../features/tasks/views/tasks_screen.dart';
 import '../features/issues/views/issues_screen.dart';
+import '../features/kanban/views/kanban_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -71,14 +72,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/tasks',
         name: 'tasks',
-        builder: (context, state) => const TasksScreen(),
-        pageBuilder: (context, state) => _slidePage(state, const TasksScreen()),
+        builder: (context, state) => const KanbanScreen(),
+        pageBuilder: (context, state) => _slidePage(state, const KanbanScreen()),
       ),
       GoRoute(
         path: '/issues',
         name: 'issues',
-        builder: (context, state) => const IssuesScreen(),
-        pageBuilder: (context, state) => _slidePage(state, const IssuesScreen()),
+        builder: (context, state) => const KanbanScreen(),
+        pageBuilder: (context, state) => _slidePage(state, const KanbanScreen()),
+      ),
+      GoRoute(
+        path: '/kanban',
+        name: 'kanban',
+        builder: (context, state) => const KanbanScreen(),
+        pageBuilder: (context, state) => _slidePage(state, const KanbanScreen()),
       ),
       GoRoute(
         path: '/safety',
@@ -89,8 +96,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/maintenance',
         name: 'maintenance',
-        builder: (context, state) => const MaintenanceScreen(),
-        pageBuilder: (context, state) => _slidePage(state, const MaintenanceScreen()),
+        builder: (context, state) => const KanbanScreen(),
+        pageBuilder: (context, state) => _slidePage(state, const KanbanScreen()),
       ),
       GoRoute(
         path: '/settings',

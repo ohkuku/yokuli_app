@@ -151,6 +151,12 @@ class LogNotifier extends Notifier<List<LogEntry>> {
   List<LogEntry> byType(LogEntryType type) =>
       state.where((e) => e.type == type).toList();
 
+  /// Remove a log entry by ID and persist.
+  Future<void> delete(String id) async {
+    state = state.where((e) => e.id != id).toList();
+    await save();
+  }
+
   /// Upsert a [LogEntry] received from a remote device (LAN sync).
   /// If an entry with the same ID already exists it is ignored (idempotent).
   Future<void> appendRemote(Map<String, dynamic> data) async {

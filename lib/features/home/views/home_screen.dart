@@ -11,8 +11,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/providers/locale_provider.dart';
 import '../../../core/providers/alarm_provider.dart';
-import '../../../core/providers/task_provider.dart';
-import '../../../core/providers/issue_provider.dart';
+import '../../../core/providers/kanban_provider.dart';
 import '../../../core/services/update/update_dialog.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../widgets/app_tile.dart';
@@ -54,10 +53,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final s       = ref.watch(stringsProvider);
 
     final alarmCount  = ref.watch(activeAlarmCountProvider);
-    final taskCount   = ref.watch(openTasksProvider).length;
-    final issueCount  = ref.watch(openIssuesProvider).length;
+    final kanbanCount = ref.watch(kanbanProvider).cards.length;
 
-    var tiles = _buildTiles(vessel, conn, s, alarmCount, taskCount, issueCount);
+    var tiles = _buildTiles(vessel, conn, s, alarmCount, kanbanCount);
 
     // Apply saved tile order
     if (settings.tileOrder.isNotEmpty) {
@@ -118,12 +116,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     AppConnectionState conn,
     s,
     int alarmCount,
-    int taskCount,
-    int issueCount,
+    int kanbanCount,
   ) {
     final sogStr = vessel.speedOverGround != null
         ? '${vessel.speedOverGround!.toStringAsFixed(1)} kn'
         : null;
+
+    // For client devices, show LAN 客户端 badge instead of SK connection status
+    final settings = ref.read(settingsProvider);
+    final signalKBadge = settings.deviceRole == DeviceRole.client
+        ? 'LAN 客户端'
+        : (conn.isSignalKConnected ? s.connected : s.disconnected);
 
     return [
       AppTileData(
@@ -132,7 +135,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         icon: Icons.hub_rounded,
         accentColor: AppColors.modSignalK,
         route: '/signalk',
-        badge: conn.isSignalKConnected ? s.connected : s.disconnected,
+        badge: signalKBadge,
       ),
       AppTileData(
         id: 'dashboard',
@@ -153,13 +156,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             : null,
       ),
       AppTileData(
-        id: 'logbook',
-        label: s.logbook,
-        icon: Icons.auto_stories_rounded,
-        accentColor: AppColors.modLogbook,
-        route: '/logbook',
-      ),
-      AppTileData(
         id: 'safety',
         label: s.safety,
         icon: Icons.emergency_rounded,
@@ -168,11 +164,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         notificationCount: alarmCount,
       ),
       AppTileData(
-        id: 'maintenance',
-        label: s.maintenance,
-        icon: Icons.build_rounded,
+        id: 'kanban',
+        label: '船务看板',
+        icon: Icons.view_kanban_rounded,
         accentColor: AppColors.modMaintenance,
-        route: '/maintenance',
+        route: '/kanban',
+        badge: kanbanCount > 0 ? '$kanbanCount' : null,
       ),
       AppTileData(
         id: 'weather',
@@ -203,22 +200,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         icon: Icons.anchor_rounded,
         accentColor: AppColors.cyan,
         route: '/voyage',
-      ),
-      AppTileData(
-        id: 'tasks',
-        label: s.tasksTitle,
-        icon: Icons.checklist_rounded,
-        accentColor: AppColors.success,
-        route: '/tasks',
-        notificationCount: taskCount,
-      ),
-      AppTileData(
-        id: 'issues',
-        label: s.issuesTitle,
-        icon: Icons.bug_report_rounded,
-        accentColor: AppColors.warning,
-        route: '/issues',
-        notificationCount: issueCount,
       ),
       AppTileData(
         id: 'log',

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -156,6 +157,12 @@ class _VoyageScreenState extends ConsumerState<VoyageScreen> {
     final history = [...voyageState.history]
       ..sort((a, b) => b.startTime.compareTo(a.startTime));
 
+    // Log entries for the active voyage
+    final allLogs = ref.watch(logProvider);
+    final voyageLogs = active != null
+        ? allLogs.where((e) => e.voyageId == active.id).toList()
+        : <LogEntry>[];
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -182,6 +189,35 @@ class _VoyageScreenState extends ConsumerState<VoyageScreen> {
             // ---- Quick log buttons ----
             _QuickLogSection(s: s, onLog: (label) => _quickLog(label, s)),
             const SizedBox(height: 16),
+
+            // ---- Voyage log entries (active voyage only) ----
+            if (active != null) ...[
+              const _SectionLabel('记录'),
+              const SizedBox(height: 8),
+              if (voyageLogs.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Center(
+                    child: Text(
+                      '暂无记录',
+                      style: const TextStyle(
+                          color: AppColors.textMuted, fontSize: 13),
+                    ),
+                  ),
+                )
+              else
+                ...voyageLogs.map((entry) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _LogEntryTile(
+                        entry: entry,
+                        onDelete: () => ref
+                            .read(logProvider.notifier)
+                            .delete(entry.id),
+                        onTap: () => _showLogDetails(context, entry),
+                      ),
+                    )),
+              const SizedBox(height: 16),
+            ],
 
             // ---- Start voyage (only when no active voyage) ----
             if (active == null) ...[
@@ -215,6 +251,18 @@ class _VoyageScreenState extends ConsumerState<VoyageScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showLogDetails(BuildContext context, LogEntry entry) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _LogDetailsSheet(entry: entry),
     );
   }
 }
@@ -619,6 +667,227 @@ class _SourceBadge extends StatelessWidget {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Log Entry Tile
+// ---------------------------------------------------------------------------
+
+class _LogEntryTile extends StatelessWidget {
+  final LogEntry entry;
+  final VoidCallback onDelete;
+  final VoidCallback onTap;
+
+  const _LogEntryTile({
+    required this.entry,
+    required this.onDelete,
+    required this.onTap,
+  });
+
+  IconData _typeIcon() {
+    return switch (entry.type) {
+      LogEntryType.navigation => Icons.navigation_rounded,
+      LogEntryType.alarm => Icons.warning_amber_rounded,
+      LogEntryType.manual => Icons.edit_note_rounded,
+      LogEntryType.system => Icons.info_outline_rounded,
+      LogEntryType.maintenance => Icons.build_rounded,
+      LogEntryType.power => Icons.bolt_rounded,
+      LogEntryType.ais => Icons.radar_rounded,
+    };
+  }
+
+  Color _typeColor() {
+    return switch (entry.type) {
+      LogEntryType.navigation => AppColors.cyan,
+      LogEntryType.alarm => AppColors.danger,
+      LogEntryType.manual => AppColors.teal,
+      LogEntryType.system => AppColors.textMuted,
+      LogEntryType.maintenance => AppColors.modMaintenance,
+      LogEntryType.power => AppColors.modPower,
+      LogEntryType.ais => AppColors.modWeather,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final timeFmt = DateFormat('HH:mm').format(entry.timestamp.toLocal());
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.cardBg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: _typeColor().withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(_typeIcon(), size: 16, color: _typeColor()),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.message,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    timeFmt,
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close_rounded,
+                  size: 16, color: AppColors.textMuted),
+              onPressed: onDelete,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Log Details Sheet
+// ---------------------------------------------------------------------------
+
+class _LogDetailsSheet extends StatelessWidget {
+  final LogEntry entry;
+  const _LogDetailsSheet({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final ctx = entry.context;
+    final timeFmt =
+        DateFormat('dd MMM yyyy  HH:mm:ss').format(entry.timestamp.toLocal());
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.55,
+      minChildSize: 0.4,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (_, scrollController) => ListView(
+        controller: scrollController,
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: AppColors.inactive,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Text(
+            entry.message,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            timeFmt,
+            style:
+                const TextStyle(color: AppColors.textMuted, fontSize: 12),
+          ),
+          const SizedBox(height: 16),
+          const Divider(color: AppColors.border),
+          const SizedBox(height: 12),
+          if (ctx != null) ...[
+            if (ctx.position != null)
+              _DetailRow(
+                icon: Icons.location_on_rounded,
+                label: 'GPS',
+                value:
+                    '${ctx.position!.latitude.toStringAsFixed(5)}, ${ctx.position!.longitude.toStringAsFixed(5)}',
+              ),
+            if (ctx.sog != null)
+              _DetailRow(
+                icon: Icons.speed_rounded,
+                label: 'SOG',
+                value: '${ctx.sog!.toStringAsFixed(1)} kn',
+              ),
+            if (ctx.cog != null)
+              _DetailRow(
+                icon: Icons.explore_rounded,
+                label: 'COG',
+                value: '${ctx.cog!.toStringAsFixed(0)}°',
+              ),
+            if (ctx.depth != null)
+              _DetailRow(
+                icon: Icons.water_rounded,
+                label: '水深',
+                value: '${ctx.depth!.toStringAsFixed(1)} m',
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _DetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: AppColors.textMuted),
+            const SizedBox(width: 8),
+            Text(
+              '$label: ',
+              style: const TextStyle(
+                  color: AppColors.textSecondary, fontSize: 13),
+            ),
+            Text(
+              value,
+              style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+      );
 }
 
 // ---------------------------------------------------------------------------
