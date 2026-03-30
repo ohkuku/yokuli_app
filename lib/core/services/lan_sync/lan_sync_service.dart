@@ -9,6 +9,11 @@ import '../../providers/connection_provider.dart'
     show ConnectionNotifier, ConnectionStatus, connectionProvider;
 import '../../providers/settings_provider.dart' show DeviceRole, settingsProvider;
 import '../../providers/vessel_provider.dart';
+import '../../providers/log_provider.dart';
+import '../../providers/alarm_provider.dart';
+import '../../providers/task_provider.dart';
+import '../../providers/issue_provider.dart';
+import '../../providers/voyage_provider.dart';
 import 'lan_sync_platform.dart'; // conditional export → native or web impl
 
 /// Coordinates LAN sync using the platform-appropriate adapter.
@@ -34,6 +39,21 @@ class LanSyncService {
     _platform.onPeerCountChanged = (count) {
       _conn.setPeerCount(count);
       // Host status stays connected regardless of client count
+    };
+    _platform.onLogAppend = (data) {
+      _ref.read(logProvider.notifier).appendRemote(data);
+    };
+    _platform.onAlarmSync = (data) {
+      _ref.read(alarmProvider.notifier).upsertRemote(data);
+    };
+    _platform.onTaskUpsert = (data) {
+      _ref.read(taskProvider.notifier).upsertInstanceRemote(data);
+    };
+    _platform.onIssueUpsert = (data) {
+      _ref.read(issueProvider.notifier).upsertRemote(data);
+    };
+    _platform.onVoyageUpsert = (data) {
+      _ref.read(voyageProvider.notifier).upsertRemote(data);
     };
   }
 
@@ -94,6 +114,13 @@ class LanSyncService {
     }
     onMobAlert?.call(alert);
   }
+
+  /// Send a JSON message from client to host (client mode only).
+  void sendJson(Map<String, dynamic> message) => _platform.sendJson(message);
+
+  /// Broadcast a JSON message to all connected clients (host mode only).
+  void broadcastJson(Map<String, dynamic> message) =>
+      _platform.broadcastJson(message);
 
   /// Returns this device's local IP (empty string on web).
   Future<String> getLocalIp() => _platform.getLocalIp();

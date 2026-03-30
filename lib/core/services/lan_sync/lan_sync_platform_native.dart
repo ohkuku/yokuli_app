@@ -22,6 +22,11 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
   Future<void> startHost(int port, String vesselName) async {
     _host.onClientCountChanged = (count) => onPeerCountChanged?.call(count);
     _host.onMobReceived = (alert) => onMobReceived?.call(alert);
+    _host.onLogAppend = (data) => onLogAppend?.call(data);
+    _host.onAlarmSync = (data) => onAlarmSync?.call(data);
+    _host.onTaskUpsert = (data) => onTaskUpsert?.call(data);
+    _host.onIssueUpsert = (data) => onIssueUpsert?.call(data);
+    _host.onVoyageUpsert = (data) => onVoyageUpsert?.call(data);
     await _host.start(port: port, vesselName: vesselName);
   }
 
@@ -35,6 +40,10 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
   void broadcastMob(MobAlert alert) => _host.broadcastMob(alert);
 
   @override
+  void broadcastJson(Map<String, dynamic> message) =>
+      _host.broadcastJson(message);
+
+  @override
   bool get isHostRunning => _host.isRunning;
 
   // --- Client ---
@@ -44,6 +53,11 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _client.onStateReceived = (state) => onStateReceived?.call(state);
     _client.onMobReceived = (alert) => onMobReceived?.call(alert);
     _client.onConnectionChanged = (c) => onClientConnectionChanged?.call(c);
+    _client.onLogAppend = (data) => onLogAppend?.call(data);
+    _client.onAlarmSync = (data) => onAlarmSync?.call(data);
+    _client.onTaskUpsert = (data) => onTaskUpsert?.call(data);
+    _client.onIssueUpsert = (data) => onIssueUpsert?.call(data);
+    _client.onVoyageUpsert = (data) => onVoyageUpsert?.call(data);
     await _client.connect(wsUrl);
   }
 
@@ -52,6 +66,9 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
 
   @override
   void sendMob(MobAlert alert) => _client.sendMob(alert);
+
+  @override
+  void sendJson(Map<String, dynamic> message) => _client.sendJson(message);
 
   @override
   bool get isClientConnected => _client.isConnected;

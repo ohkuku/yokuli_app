@@ -27,6 +27,12 @@ class SyncHost {
   // Callbacks
   void Function(int clientCount)? onClientCountChanged;
   void Function(MobAlert alert)? onMobReceived;
+  // New event callbacks (host receives from clients, re-broadcasts)
+  void Function(Map<String, dynamic> data)? onLogAppend;
+  void Function(Map<String, dynamic> data)? onAlarmSync;
+  void Function(Map<String, dynamic> data)? onTaskUpsert;
+  void Function(Map<String, dynamic> data)? onIssueUpsert;
+  void Function(Map<String, dynamic> data)? onVoyageUpsert;
 
   Future<void> start({
     required int port,
@@ -110,14 +116,49 @@ class SyncHost {
     }
   }
 
+  void broadcastJson(Map<String, dynamic> message) {
+    final msg = jsonEncode(message);
+    for (final client in List.of(_clients)) {
+      _sendToChannel(client, msg);
+    }
+  }
+
   void _handleClientMessage(String raw) {
     try {
       final json = jsonDecode(raw) as Map<String, dynamic>;
-      if (json['type'] == 'mob') {
-        final alert = MobAlert.fromJson(json['data'] as Map<String, dynamic>);
-        onMobReceived?.call(alert);
-        // Re-broadcast to all other clients
-        broadcastMob(alert);
+      final type = json['type'] as String?;
+      final data = json['data'] as Map<String, dynamic>?;
+
+      switch (type) {
+        case 'mob':
+          final alert = MobAlert.fromJson(data!);
+          onMobReceived?.call(alert);
+          broadcastMob(alert);
+        case 'log_append':
+          if (data != null) {
+            onLogAppend?.call(data);
+            broadcastJson(json);
+          }
+        case 'alarm':
+          if (data != null) {
+            onAlarmSync?.call(data);
+            broadcastJson(json);
+          }
+        case 'task_upsert':
+          if (data != null) {
+            onTaskUpsert?.call(data);
+            broadcastJson(json);
+          }
+        case 'issue_upsert':
+          if (data != null) {
+            onIssueUpsert?.call(data);
+            broadcastJson(json);
+          }
+        case 'voyage_upsert':
+          if (data != null) {
+            onVoyageUpsert?.call(data);
+            broadcastJson(json);
+          }
       }
     } catch (_) {}
   }

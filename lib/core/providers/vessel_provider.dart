@@ -11,6 +11,18 @@ class VesselStateNotifier extends Notifier<VesselState> {
   }
 
   void applyPartial(VesselState partial) {
+    // Merge AIS targets (map upsert, not replace)
+    final mergedAis = Map<String, AisTargetState>.from(state.aisTargets);
+    mergedAis.addAll(partial.aisTargets);
+
+    // Merge solar controllers
+    final mergedSolar = Map<String, SolarChargeControllerState>.from(state.solar);
+    mergedSolar.addAll(partial.solar);
+
+    // Merge batteries
+    final mergedBatteries = Map<String, BatteryState>.from(state.batteries);
+    mergedBatteries.addAll(partial.batteries);
+
     state = VesselState(
       speedOverGround: partial.speedOverGround ?? state.speedOverGround,
       courseOverGround: partial.courseOverGround ?? state.courseOverGround,
@@ -22,7 +34,11 @@ class VesselStateNotifier extends Notifier<VesselState> {
       apparentWindAngle: partial.apparentWindAngle ?? state.apparentWindAngle,
       depthBelowKeel: partial.depthBelowKeel ?? state.depthBelowKeel,
       depthBelowSurface: partial.depthBelowSurface ?? state.depthBelowSurface,
-      batteries: partial.batteries.isNotEmpty ? partial.batteries : state.batteries,
+      batteries: mergedBatteries,
+      solar: mergedSolar,
+      powerSummary: partial.powerSummary ?? state.powerSummary,
+      aisTargets: mergedAis,
+      aisOwnShip: partial.aisOwnShip ?? state.aisOwnShip,
       lastUpdated: partial.lastUpdated,
       sourceDeviceId: partial.sourceDeviceId ?? state.sourceDeviceId,
     );

@@ -1,4 +1,6 @@
 import 'dart:math' as math;
+import 'solar_state.dart';
+import 'ais_state.dart';
 
 /// GPS position fix
 class GpsPosition {
@@ -70,6 +72,8 @@ class GpsPosition {
       '${latitude.toStringAsFixed(5)}°, ${longitude.toStringAsFixed(5)}°';
 }
 
+enum BatteryStatus { normal, warning, critical, stale, noData }
+
 /// Battery/bank state
 class BatteryState {
   final String id;
@@ -77,7 +81,9 @@ class BatteryState {
   final double? voltage;
   final double? current;
   final double? stateOfCharge; // 0.0 to 1.0
-  final double? temperature;
+  final double? temperature; // degrees Celsius
+  final DateTime lastUpdated;
+  final BatteryStatus status;
 
   const BatteryState({
     required this.id,
@@ -86,6 +92,8 @@ class BatteryState {
     this.current,
     this.stateOfCharge,
     this.temperature,
+    required this.lastUpdated,
+    required this.status,
   });
 
   BatteryState copyWith({
@@ -95,6 +103,8 @@ class BatteryState {
     double? current,
     double? stateOfCharge,
     double? temperature,
+    DateTime? lastUpdated,
+    BatteryStatus? status,
   }) =>
       BatteryState(
         id: id ?? this.id,
@@ -103,6 +113,8 @@ class BatteryState {
         current: current ?? this.current,
         stateOfCharge: stateOfCharge ?? this.stateOfCharge,
         temperature: temperature ?? this.temperature,
+        lastUpdated: lastUpdated ?? this.lastUpdated,
+        status: status ?? this.status,
       );
 
   Map<String, dynamic> toJson() => {
@@ -112,6 +124,8 @@ class BatteryState {
         if (current != null) 'a': current,
         if (stateOfCharge != null) 'soc': stateOfCharge,
         if (temperature != null) 'temp': temperature,
+        'lu': lastUpdated.toIso8601String(),
+        's': status.index,
       };
 
   factory BatteryState.fromJson(Map<String, dynamic> json) => BatteryState(
@@ -121,6 +135,12 @@ class BatteryState {
         current: json['a'] != null ? (json['a'] as num).toDouble() : null,
         stateOfCharge: json['soc'] != null ? (json['soc'] as num).toDouble() : null,
         temperature: json['temp'] != null ? (json['temp'] as num).toDouble() : null,
+        lastUpdated: json['lu'] != null
+            ? DateTime.parse(json['lu'] as String)
+            : DateTime.fromMillisecondsSinceEpoch(0),
+        status: json['s'] != null
+            ? BatteryStatus.values[json['s'] as int]
+            : BatteryStatus.noData,
       );
 }
 
@@ -144,6 +164,12 @@ class VesselState {
 
   // --- Power ---
   final Map<String, BatteryState> batteries;
+  final Map<String, SolarChargeControllerState> solar;
+  final PowerSummaryState? powerSummary;
+
+  // --- AIS ---
+  final Map<String, AisTargetState> aisTargets;
+  final AisOwnShipState? aisOwnShip;
 
   // --- Metadata ---
   final DateTime lastUpdated;
@@ -161,12 +187,18 @@ class VesselState {
     this.depthBelowKeel,
     this.depthBelowSurface,
     required this.batteries,
+    this.solar = const {},
+    this.powerSummary,
+    this.aisTargets = const {},
+    this.aisOwnShip,
     required this.lastUpdated,
     this.sourceDeviceId,
   });
 
   factory VesselState.empty() => VesselState(
         batteries: const {},
+        solar: const {},
+        aisTargets: const {},
         lastUpdated: DateTime.fromMillisecondsSinceEpoch(0),
       );
 
@@ -182,6 +214,10 @@ class VesselState {
     double? depthBelowKeel,
     double? depthBelowSurface,
     Map<String, BatteryState>? batteries,
+    Map<String, SolarChargeControllerState>? solar,
+    Object? powerSummary = _vsSentinel,
+    Map<String, AisTargetState>? aisTargets,
+    Object? aisOwnShip = _vsSentinel,
     DateTime? lastUpdated,
     String? sourceDeviceId,
   }) =>
@@ -197,6 +233,14 @@ class VesselState {
         depthBelowKeel: depthBelowKeel ?? this.depthBelowKeel,
         depthBelowSurface: depthBelowSurface ?? this.depthBelowSurface,
         batteries: batteries ?? this.batteries,
+        solar: solar ?? this.solar,
+        powerSummary: powerSummary == _vsSentinel
+            ? this.powerSummary
+            : powerSummary as PowerSummaryState?,
+        aisTargets: aisTargets ?? this.aisTargets,
+        aisOwnShip: aisOwnShip == _vsSentinel
+            ? this.aisOwnShip
+            : aisOwnShip as AisOwnShipState?,
         lastUpdated: lastUpdated ?? this.lastUpdated,
         sourceDeviceId: sourceDeviceId ?? this.sourceDeviceId,
       );
@@ -213,6 +257,10 @@ class VesselState {
         if (depthBelowKeel != null) 'dbt': depthBelowKeel,
         if (depthBelowSurface != null) 'dbs': depthBelowSurface,
         'batteries': batteries.map((k, v) => MapEntry(k, v.toJson())),
+        'solar': solar.map((k, v) => MapEntry(k, v.toJson())),
+        if (powerSummary != null) 'ps': powerSummary!.toJson(),
+        'aisTargets': aisTargets.map((k, v) => MapEntry(k, v.toJson())),
+        if (aisOwnShip != null) 'aisOwn': aisOwnShip!.toJson(),
         'ts': lastUpdated.toIso8601String(),
         if (sourceDeviceId != null) 'src': sourceDeviceId,
       };
@@ -234,7 +282,27 @@ class VesselState {
                 (k, v) => MapEntry(k, BatteryState.fromJson(v as Map<String, dynamic>)),
               )
             : const {},
+        solar: json['solar'] != null
+            ? (json['solar'] as Map<String, dynamic>).map(
+                (k, v) => MapEntry(
+                    k, SolarChargeControllerState.fromJson(v as Map<String, dynamic>)),
+              )
+            : const {},
+        powerSummary: json['ps'] != null
+            ? PowerSummaryState.fromJson(json['ps'] as Map<String, dynamic>)
+            : null,
+        aisTargets: json['aisTargets'] != null
+            ? (json['aisTargets'] as Map<String, dynamic>).map(
+                (k, v) => MapEntry(k, AisTargetState.fromJson(v as Map<String, dynamic>)),
+              )
+            : const {},
+        aisOwnShip: json['aisOwn'] != null
+            ? AisOwnShipState.fromJson(json['aisOwn'] as Map<String, dynamic>)
+            : null,
         lastUpdated: DateTime.parse(json['ts'] as String),
         sourceDeviceId: json['src'] as String?,
       );
 }
+
+// Sentinel for VesselState nullable copyWith parameters.
+const Object _vsSentinel = Object();

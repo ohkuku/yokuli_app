@@ -24,6 +24,11 @@ class SignalKClient {
   bool _intentionalDisconnect = false;
   Timer? _reconnectTimer;
 
+  /// The own-vessel context string received in the SK hello message, e.g.
+  /// 'vessels.urn:mrn:imo:mmsi:338234631'.  Used to distinguish own-ship AIS
+  /// identity updates from other vessel targets.
+  String? _selfContext;
+
   SignalKClient(this._ref);
 
   ConnectionNotifier get _conn => _ref.read(connectionProvider.notifier);
@@ -48,7 +53,6 @@ class SignalKClient {
         onError: _onError,
         onDone: _onDone,
       );
-      // Send subscribe after connection (Signal K sends hello first)
     } catch (e) {
       _conn.setSignalKStatus(ConnectionStatus.error, error: e.toString());
       _scheduleReconnect();
@@ -59,24 +63,36 @@ class SignalKClient {
     try {
       final json = jsonDecode(raw as String) as Map<String, dynamic>;
 
-      // Hello message
+      // Hello message – Signal K sends this immediately after the WS is opened.
       if (json.containsKey('version') && json.containsKey('roles')) {
+        // Store the own-vessel context so the AIS parser can distinguish self.
+        _selfContext = json['self'] as String?;
+
         _conn.setSignalKStatus(ConnectionStatus.connected);
-        // Subscribe to paths we need
+
+        // Send own-vessel subscribe (navigation, wind, depth, electrical).
         _channel?.sink.add(
           jsonEncode(SignalKParser.buildSubscribeMessage()),
+        );
+        // Send AIS subscribe for all vessels context.
+        _channel?.sink.add(
+          jsonEncode(SignalKParser.buildAisSubscribeMessage()),
         );
         return;
       }
 
-      // Delta message
+      // Delta message.
       if (json.containsKey('updates')) {
         final current = _ref.read(vesselProvider);
-        final updated = SignalKParser.applyDelta(current, json);
+        final updated = SignalKParser.applyDelta(
+          current,
+          json,
+          selfContext: _selfContext,
+        );
         _ref.read(vesselProvider.notifier).update(updated);
       }
     } catch (_) {
-      // Ignore parse errors
+      // Ignore parse errors.
     }
   }
 
@@ -106,11 +122,16 @@ class SignalKClient {
     await _channel?.sink.close(ws_status.goingAway);
     _channel = null;
     _sub = null;
+    _selfContext = null;
     _conn.setSignalKStatus(ConnectionStatus.disconnected);
   }
 
   bool get isConnected =>
       _ref.read(connectionProvider).signalK == ConnectionStatus.connected;
+
+  /// Returns the own-vessel context string from the last hello message, or
+  /// null if not yet connected.
+  String? get selfContext => _selfContext;
 
   /// Discover available Signal K paths via REST API
   static Future<List<String>> discoverPaths(String baseHttpUrl) async {
@@ -128,6 +149,7 @@ class SignalKClient {
       'environment.wind.angleApparent',
       'environment.depth.belowKeel',
       'electrical.batteries.*.voltage',
+      'electrical.solar.*.outputPower',
     ];
   }
 }

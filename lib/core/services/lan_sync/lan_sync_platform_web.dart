@@ -40,6 +40,9 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
   void broadcastMob(MobAlert alert) {}
 
   @override
+  void broadcastJson(Map<String, dynamic> message) {}
+
+  @override
   bool get isHostRunning => false;
 
   // --- Client ---
@@ -82,13 +85,22 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
   void _onMessage(dynamic raw) {
     try {
       final json = jsonDecode(raw as String) as Map<String, dynamic>;
+      final data = json['data'] as Map<String, dynamic>?;
       switch (json['type'] as String?) {
         case 'vessel_state':
-          final state = VesselState.fromJson(json['data'] as Map<String, dynamic>);
-          onStateReceived?.call(state);
+          if (data != null) onStateReceived?.call(VesselState.fromJson(data));
         case 'mob':
-          final alert = MobAlert.fromJson(json['data'] as Map<String, dynamic>);
-          onMobReceived?.call(alert);
+          if (data != null) onMobReceived?.call(MobAlert.fromJson(data));
+        case 'log_append':
+          if (data != null) onLogAppend?.call(data);
+        case 'alarm':
+          if (data != null) onAlarmSync?.call(data);
+        case 'task_upsert':
+          if (data != null) onTaskUpsert?.call(data);
+        case 'issue_upsert':
+          if (data != null) onIssueUpsert?.call(data);
+        case 'voyage_upsert':
+          if (data != null) onVoyageUpsert?.call(data);
       }
     } catch (_) {}
   }
@@ -117,6 +129,11 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
   @override
   void sendMob(MobAlert alert) {
     _channel?.sink.add(jsonEncode({'type': 'mob', 'data': alert.toJson()}));
+  }
+
+  @override
+  void sendJson(Map<String, dynamic> message) {
+    _channel?.sink.add(jsonEncode(message));
   }
 
   @override

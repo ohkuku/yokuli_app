@@ -23,6 +23,11 @@ class SyncClient {
   void Function(VesselState state)? onStateReceived;
   void Function(MobAlert alert)? onMobReceived;
   void Function(bool connected)? onConnectionChanged;
+  void Function(Map<String, dynamic> data)? onLogAppend;
+  void Function(Map<String, dynamic> data)? onAlarmSync;
+  void Function(Map<String, dynamic> data)? onTaskUpsert;
+  void Function(Map<String, dynamic> data)? onIssueUpsert;
+  void Function(Map<String, dynamic> data)? onVoyageUpsert;
 
   Future<void> connect(String wsUrl) async {
     await disconnect();
@@ -60,15 +65,28 @@ class SyncClient {
   void _onMessage(dynamic raw) {
     try {
       final json = jsonDecode(raw as String) as Map<String, dynamic>;
+      final data = json['data'] as Map<String, dynamic>?;
       switch (json['type'] as String?) {
         case 'vessel_state':
-          final state = VesselState.fromJson(json['data'] as Map<String, dynamic>);
-          onStateReceived?.call(state);
+          if (data != null) onStateReceived?.call(VesselState.fromJson(data));
         case 'mob':
-          final alert = MobAlert.fromJson(json['data'] as Map<String, dynamic>);
-          onMobReceived?.call(alert);
+          if (data != null) onMobReceived?.call(MobAlert.fromJson(data));
+        case 'log_append':
+          if (data != null) onLogAppend?.call(data);
+        case 'alarm':
+          if (data != null) onAlarmSync?.call(data);
+        case 'task_upsert':
+          if (data != null) onTaskUpsert?.call(data);
+        case 'issue_upsert':
+          if (data != null) onIssueUpsert?.call(data);
+        case 'voyage_upsert':
+          if (data != null) onVoyageUpsert?.call(data);
       }
     } catch (_) {}
+  }
+
+  void sendJson(Map<String, dynamic> message) {
+    _channel?.sink.add(jsonEncode(message));
   }
 
   void _scheduleReconnect() {

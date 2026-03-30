@@ -19,18 +19,25 @@ abstract class LanSyncPlatform {
   void Function(MobAlert alert)? onMobReceived;
   void Function(bool connected)? onClientConnectionChanged;
   void Function(int count)? onPeerCountChanged;
+  void Function(Map<String, dynamic> data)? onLogAppend;
+  void Function(Map<String, dynamic> data)? onAlarmSync;
+  void Function(Map<String, dynamic> data)? onTaskUpsert;
+  void Function(Map<String, dynamic> data)? onIssueUpsert;
+  void Function(Map<String, dynamic> data)? onVoyageUpsert;
 
   // --- Host operations (native only) ---
   Future<void> startHost(int port, String vesselName);
   Future<void> stopHost();
   void updateHostState(VesselState state);
   void broadcastMob(MobAlert alert);
+  void broadcastJson(Map<String, dynamic> message);
   bool get isHostRunning;
 
   // --- Client operations ---
   Future<void> connectAsClient(String wsUrl);
   Future<void> disconnectClient();
   void sendMob(MobAlert alert);
+  void sendJson(Map<String, dynamic> message);
   bool get isClientConnected;
 
   // --- Discovery ---

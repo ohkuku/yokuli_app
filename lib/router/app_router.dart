@@ -7,9 +7,14 @@ import '../features/dashboard/views/dashboard_screen.dart';
 import '../features/signalk/views/signalk_screen.dart';
 import '../features/power/views/power_screen.dart';
 import '../features/logbook/views/logbook_screen.dart';
+import '../features/logbook/views/log_screen.dart';
 import '../features/safety/views/safety_screen.dart';
 import '../features/maintenance/views/maintenance_screen.dart';
 import '../features/settings/views/settings_screen.dart';
+import '../features/ais/views/ais_screen.dart';
+import '../features/voyage/views/voyage_screen.dart';
+import '../features/tasks/views/tasks_screen.dart';
+import '../features/issues/views/issues_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -44,6 +49,36 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'logbook',
         builder: (context, state) => const LogbookScreen(),
         pageBuilder: (context, state) => _slidePage(state, const LogbookScreen()),
+      ),
+      GoRoute(
+        path: '/log',
+        name: 'log',
+        builder: (context, state) => const LogScreen(),
+        pageBuilder: (context, state) => _slidePage(state, const LogScreen()),
+      ),
+      GoRoute(
+        path: '/ais',
+        name: 'ais',
+        builder: (context, state) => const AisScreen(),
+        pageBuilder: (context, state) => _slidePage(state, const AisScreen()),
+      ),
+      GoRoute(
+        path: '/voyage',
+        name: 'voyage',
+        builder: (context, state) => const VoyageScreen(),
+        pageBuilder: (context, state) => _slidePage(state, const VoyageScreen()),
+      ),
+      GoRoute(
+        path: '/tasks',
+        name: 'tasks',
+        builder: (context, state) => const TasksScreen(),
+        pageBuilder: (context, state) => _slidePage(state, const TasksScreen()),
+      ),
+      GoRoute(
+        path: '/issues',
+        name: 'issues',
+        builder: (context, state) => const IssuesScreen(),
+        pageBuilder: (context, state) => _slidePage(state, const IssuesScreen()),
       ),
       GoRoute(
         path: '/safety',
