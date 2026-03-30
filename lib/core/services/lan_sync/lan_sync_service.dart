@@ -19,6 +19,7 @@ import '../../providers/alarm_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/issue_provider.dart';
 import '../../providers/voyage_provider.dart';
+import '../../providers/lan_broadcast.dart';
 import 'lan_sync_platform.dart'; // conditional export → native or web impl
 
 /// Coordinates LAN sync using the platform-appropriate adapter.
@@ -101,6 +102,16 @@ class LanSyncService {
     // On web, force client mode regardless of saved role
     final role = kIsWeb ? DeviceRole.client : settings.deviceRole;
 
+    // Register the appropriate broadcast function:
+    // - Host: push to all clients via broadcastJson
+    // - Client: send to host via sendJson (host will re-broadcast to others)
+    // - Standalone: no-op
+    _ref.read(lanBroadcastProvider.notifier).state = switch (role) {
+      DeviceRole.host       => broadcastJson,
+      DeviceRole.client     => sendJson,
+      DeviceRole.standalone => null,
+    };
+
     switch (role) {
       case DeviceRole.host:
         _conn.setLanSyncStatus(ConnectionStatus.connecting);
@@ -128,6 +139,7 @@ class LanSyncService {
 
   Future<void> stop() async {
     _stateTimer?.cancel();
+    _ref.read(lanBroadcastProvider.notifier).state = null;
     await _platform.stopHost();
     await _platform.disconnectClient();
     _conn.setLanSyncStatus(ConnectionStatus.disconnected);

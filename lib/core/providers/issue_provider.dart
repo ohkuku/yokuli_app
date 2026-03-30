@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/issue.dart';
+import 'lan_broadcast.dart';
 
 // ---------------------------------------------------------------------------
 // _JsonStore — private file-based JSON persistence helper
@@ -81,6 +82,8 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
 
     state = [...state, ticket];
     await save();
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'issue_upsert', 'data': ticket.toJson()});
     return ticket;
   }
 
@@ -93,6 +96,9 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
       return ticket.copyWith(status: status, resolvedAt: resolvedAt);
     }).toList();
     await save();
+    final updated = state.firstWhere((t) => t.id == id);
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'issue_upsert', 'data': updated.toJson()});
   }
 
   /// Append a free-text note to an issue.
@@ -102,6 +108,9 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
       return ticket.copyWith(notes: [...ticket.notes, note]);
     }).toList();
     await save();
+    final updated = state.firstWhere((t) => t.id == id);
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'issue_upsert', 'data': updated.toJson()});
   }
 
   /// Link a log entry ID to an issue.

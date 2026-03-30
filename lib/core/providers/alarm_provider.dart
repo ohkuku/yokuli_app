@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/alarm.dart';
 import '../models/vessel_state.dart';
+import 'lan_broadcast.dart';
 
 // ---------------------------------------------------------------------------
 // _JsonStore — private file-based JSON persistence helper
@@ -99,6 +100,8 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
 
     state = [...state, alarm];
     save(); // fire-and-forget
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'alarm', 'data': alarm.toJson()});
     return alarm.id;
   }
 
@@ -112,6 +115,9 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
       );
     }).toList();
     save();
+    final updated = state.firstWhere((a) => a.id == id);
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'alarm', 'data': updated.toJson()});
   }
 
   /// Clear an alarm (moves it to cleared state and records the time).
@@ -125,6 +131,9 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
       );
     }).toList();
     save();
+    final updated = state.firstWhere((a) => a.id == id, orElse: () => state.first);
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'alarm', 'data': updated.toJson()});
   }
 
   // ---- Auto-check vessel state --------------------------------------------

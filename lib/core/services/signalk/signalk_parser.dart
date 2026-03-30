@@ -45,9 +45,11 @@ class SignalKParser {
           .whereType<Map<String, dynamic>>()
           .toList(growable: false);
 
-      // If this update belongs to a 'vessels.*' context, delegate entirely to
-      // the AIS parser (it handles both own-ship and other targets).
-      if (updateContext != null && updateContext.startsWith('vessels.')) {
+      // If this update belongs to another vessel's context (not own-ship),
+      // delegate entirely to the AIS parser.
+      if (updateContext != null &&
+          updateContext.startsWith('vessels.') &&
+          updateContext != 'vessels.self') {
         state = SignalKAisParser.applyVesselDelta(
           state,
           updateContext,

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/task.dart';
+import 'lan_broadcast.dart';
 
 // ---------------------------------------------------------------------------
 // _JsonStore — private file-based JSON persistence helper
@@ -136,6 +137,8 @@ class TaskNotifier extends Notifier<TaskState> {
       instances: [...state.instances, instance],
     );
     await save();
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'task_upsert', 'data': instance.toJson()});
     return instance;
   }
 
@@ -172,6 +175,9 @@ class TaskNotifier extends Notifier<TaskState> {
 
     state = TaskState(templates: state.templates, instances: instances);
     await save();
+    final updated = state.instances.firstWhere((i) => i.id == instanceId);
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'task_upsert', 'data': updated.toJson()});
   }
 
   /// Mark an instance as done and record the completion timestamp.
@@ -187,6 +193,9 @@ class TaskNotifier extends Notifier<TaskState> {
 
     state = TaskState(templates: state.templates, instances: instances);
     await save();
+    final updated = state.instances.firstWhere((i) => i.id == instanceId);
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'task_upsert', 'data': updated.toJson()});
   }
 
   /// Mark an instance as skipped.
@@ -198,6 +207,9 @@ class TaskNotifier extends Notifier<TaskState> {
 
     state = TaskState(templates: state.templates, instances: instances);
     await save();
+    final updated = state.instances.firstWhere((i) => i.id == instanceId);
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'task_upsert', 'data': updated.toJson()});
   }
 
   /// Upsert a [TaskInstance] received from a remote device (LAN sync).

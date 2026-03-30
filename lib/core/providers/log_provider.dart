@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/log_entry.dart';
 import '../models/vessel_state.dart';
 import 'vessel_provider.dart';
+import 'lan_broadcast.dart';
 
 // ---------------------------------------------------------------------------
 // _JsonStore — private file-based JSON persistence helper
@@ -69,6 +70,8 @@ class LogNotifier extends Notifier<List<LogEntry>> {
     // Prepend so that state[0] is always the newest entry.
     state = [entry, ...state];
     await save();
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'log_append', 'data': entry.toJson()});
   }
 
   // ---- Convenience log method ---------------------------------------------

@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/vessel_state.dart';
 import '../models/voyage.dart';
 import 'vessel_provider.dart';
+import 'lan_broadcast.dart';
 
 // ---------------------------------------------------------------------------
 // _JsonStore — private file-based JSON persistence helper
@@ -131,6 +132,8 @@ class VoyageNotifier extends Notifier<VoyageState> {
       history: state.history,
     );
     await save();
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'voyage_upsert', 'data': session.toJson()});
   }
 
   /// End the currently active voyage.
@@ -148,6 +151,8 @@ class VoyageNotifier extends Notifier<VoyageState> {
 
     state = VoyageState(active: null, history: newHistory);
     await save();
+    ref.read(lanBroadcastProvider)?.call(
+        {'type': 'voyage_upsert', 'data': ended.toJson()});
   }
 
   // ---- Remote sync --------------------------------------------------------
