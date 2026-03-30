@@ -162,8 +162,13 @@ final aisProvider = Provider<AisState>((ref) {
   final double ownSog = ownShip?.sog ?? vessel.speedOverGround ?? 0.0;
   final double ownCog = ownShip?.cog ?? vessel.courseOverGround ?? 0.0;
 
+  // Filter own ship MMSI from targets (vessel may hear its own transponder).
+  final ownMmsi = ownShip?.mmsi;
+
   // Process each raw target: update status and compute CPA/TCPA/bearing.
-  final List<AisTargetState> processed = rawTargets.values.map((t) {
+  final List<AisTargetState> processed = rawTargets.values
+      .where((t) => ownMmsi == null || t.mmsi != ownMmsi)
+      .map((t) {
     final ageSec = now.difference(t.lastUpdated).inSeconds;
     final status = _ageToStatus(ageSec);
 

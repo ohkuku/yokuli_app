@@ -285,9 +285,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(ref.watch(stringsProvider).settings),
-        actions: [
-          TextButton(onPressed: _save, child: Text(ref.watch(stringsProvider).save)),
-        ],
       ),
       body: SafeArea(
         child: ListView(
@@ -314,6 +311,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 labelText: 'Vessel name',
                 prefixIcon: Icon(Icons.directions_boat_rounded),
               ),
+              onEditingComplete: _save,
+              textInputAction: TextInputAction.done,
             ),
             const SizedBox(height: 24),
 
@@ -325,9 +324,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _RoleSelector(
               current: settings.deviceRole,
               canBeHost: lanService.canBeHost,
-              onChanged: (role) => ref
-                  .read(settingsProvider.notifier)
-                  .update(settings.copyWith(deviceRole: role)),
+              onChanged: (role) async {
+                await ref
+                    .read(settingsProvider.notifier)
+                    .update(settings.copyWith(deviceRole: role));
+                final conn = ref.read(connectionProvider);
+                final svc = ref.read(lanSyncServiceProvider);
+                if (role == DeviceRole.standalone && conn.isLanSyncActive) {
+                  await svc.stop();
+                } else if (role != DeviceRole.standalone &&
+                    !conn.isLanSyncActive) {
+                  // Auto-start when switching to host or client
+                  await svc.start();
+                }
+              },
             ),
             const SizedBox(height: 12),
 
@@ -376,6 +386,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   prefixIcon: Icon(Icons.lan_rounded),
                 ),
                 keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.done,
+                onEditingComplete: _save,
               ),
             ],
 
@@ -389,6 +401,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   prefixIcon: Icon(Icons.wifi_rounded),
                 ),
                 keyboardType: TextInputType.url,
+                textInputAction: TextInputAction.next,
+                onEditingComplete: _save,
               ),
               const SizedBox(height: 8),
               TextField(
@@ -399,6 +413,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   prefixIcon: Icon(Icons.lan_rounded),
                 ),
                 keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.done,
+                onEditingComplete: _save,
               ),
               // Scan button (native only)
               if (!kIsWeb) ...[

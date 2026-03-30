@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
@@ -61,6 +63,7 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
   bool _showMap = true;
   final _mapController = MapController();
   _RadarMode _mode = _RadarMode.northUp;
+  _RadarMode _mapMode = _RadarMode.northUp; // separate mode for map view
   double _rangeNm = 0; // 0 = auto
 
   static const _zoomSteps = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0];
@@ -128,8 +131,9 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
                     : 20.0);
     final scale = radius / effectiveRange;
 
-    AisTargetState? nearest;
-    double minDist2 = 20.0 * 20.0; // pixels^2
+    // Collect all targets within 36px tap radius
+    const tapRadiusPx2 = 36.0 * 36.0;
+    final hits = <AisTargetState>[];
 
     for (final t in targets) {
       if (t.relativeBearingDeg == null || t.relativeDistanceNm == null) continue;
@@ -138,12 +142,35 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
       final tx = t.relativeDistanceNm! * scale * math.cos(bearRad);
       final ty = t.relativeDistanceNm! * scale * math.sin(bearRad);
       final d2 = (dx - tx) * (dx - tx) + (dy - ty) * (dy - ty);
-      if (d2 < minDist2) {
-        minDist2 = d2;
-        nearest = t;
-      }
+      if (d2 <= tapRadiusPx2) hits.add(t);
     }
-    if (nearest != null) _showTargetDetailSheet(context, nearest);
+
+    if (hits.isEmpty) return;
+    if (hits.length == 1) {
+      _showTargetDetailSheet(context, hits.first);
+    } else {
+      // Sort by distance, then show picker
+      hits.sort((a, b) =>
+          (a.relativeDistanceNm ?? 99).compareTo(b.relativeDistanceNm ?? 99));
+      _showTargetPickerSheet(context, hits);
+    }
+  }
+
+  void _showTargetPickerSheet(BuildContext context, List<AisTargetState> hits) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _TargetPickerSheet(
+        targets: hits,
+        onSelect: (t) {
+          Navigator.of(context).pop();
+          _showTargetDetailSheet(context, t);
+        },
+      ),
+    );
   }
 
   @override
@@ -161,6 +188,15 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
 
   Widget _buildMapView(dynamic ownPos, List<AisTargetState> targets) {
     final center = ll.LatLng(ownPos.latitude as double, ownPos.longitude as double);
+    final vessel = ref.watch(vesselProvider);
+    final hdg = vessel.heading;
+
+    // Apply heading-up rotation
+    if (_mapMode == _RadarMode.headingUp && hdg != null) {
+      try { _mapController.rotate(-hdg); } catch (_) {}
+    } else if (_mapMode == _RadarMode.northUp) {
+      try { _mapController.rotate(0); } catch (_) {}
+    }
 
     final markers = <Marker>[
       // Own ship
@@ -168,13 +204,18 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
         point: center,
         width: 28,
         height: 28,
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.cyan,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 2),
+        child: Transform.rotate(
+          angle: (_mapMode == _RadarMode.headingUp ? 0 : (hdg ?? 0)) *
+              math.pi / 180.0,
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppColors.cyan,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+            child: const Icon(Icons.navigation_rounded,
+                color: Colors.white, size: 14),
           ),
-          child: const Icon(Icons.navigation_rounded, color: Colors.white, size: 14),
         ),
       ),
       // AIS targets
@@ -182,9 +223,12 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
         if (t.position != null)
           Marker(
             point: ll.LatLng(t.position!.latitude, t.position!.longitude),
-            width: 70,
-            height: 38,
-            child: _AisMapMarker(target: t),
+            width: 80,
+            height: 44,
+            child: GestureDetector(
+              onTap: () => _showTargetDetailSheet(context, t),
+              child: _AisMapMarker(target: t),
+            ),
           ),
     ];
 
@@ -204,7 +248,16 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
             MarkerLayer(markers: markers),
           ],
         ),
-        // Switch to polar radar
+        // Top-left: heading mode toggle
+        Positioned(
+          top: 8,
+          left: 8,
+          child: _RadarModeToggle(
+            mode: _mapMode,
+            onChanged: (m) => setState(() => _mapMode = m),
+          ),
+        ),
+        // Top-right: switch to polar radar
         Positioned(
           top: 8,
           right: 8,
@@ -214,7 +267,7 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
             onTap: () => setState(() => _showMap = false),
           ),
         ),
-        // Re-center on own ship
+        // Bottom-right: re-center
         Positioned(
           bottom: 16,
           right: 8,
@@ -1146,6 +1199,67 @@ class _RiskBadge extends StatelessWidget {
 // Target detail bottom sheet
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Target picker sheet (multiple hits at same tap position)
+// ---------------------------------------------------------------------------
+
+class _TargetPickerSheet extends StatelessWidget {
+  final List<AisTargetState> targets;
+  final ValueChanged<AisTargetState> onSelect;
+  const _TargetPickerSheet({required this.targets, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: BoxDecoration(
+                color: AppColors.inactive,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const Text(
+            '附近船舶',
+            style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 12),
+          ...targets.map((t) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.directions_boat_rounded,
+                    color: AppColors.cyan, size: 20),
+                title: Text(
+                  t.displayName,
+                  style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600),
+                ),
+                subtitle: t.relativeDistanceNm != null
+                    ? Text(
+                        '${t.relativeDistanceNm!.toStringAsFixed(2)} NM',
+                        style: const TextStyle(
+                            color: AppColors.textMuted, fontSize: 12),
+                      )
+                    : null,
+                onTap: () => onSelect(t),
+              )),
+        ],
+      ),
+    );
+  }
+}
+
 void _showTargetDetailSheet(BuildContext context, AisTargetState target) {
   showModalBottomSheet(
     context: context,
@@ -1158,16 +1272,70 @@ void _showTargetDetailSheet(BuildContext context, AisTargetState target) {
   );
 }
 
-class _TargetDetailSheet extends StatelessWidget {
+class _TargetDetailSheet extends StatefulWidget {
   final AisTargetState target;
   const _TargetDetailSheet({required this.target});
 
   @override
+  State<_TargetDetailSheet> createState() => _TargetDetailSheetState();
+}
+
+class _TargetDetailSheetState extends State<_TargetDetailSheet> {
+  // Extra data fetched from public vessel registry
+  String? _apiVesselName;
+  String? _apiVesselType;
+  String? _apiFlag;
+  bool _fetching = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchVesselInfo();
+  }
+
+  Future<void> _fetchVesselInfo() async {
+    try {
+      // VT Explorer public API (DEMO key — returns basic vessel info)
+      final uri = Uri.parse(
+        'https://api.vtexplorer.com/vessels'
+        '?userkey=DEMO&mmsi=${widget.target.mmsi}&format=json',
+      );
+      final resp = await http
+          .get(uri, headers: {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 6));
+      if (resp.statusCode == 200) {
+        final body = jsonDecode(resp.body);
+        final list = body is List ? body : (body['vessels'] as List? ?? []);
+        if (list.isNotEmpty) {
+          final v = list[0] as Map<String, dynamic>;
+          if (mounted) {
+            setState(() {
+              _apiVesselName = v['AIS']?['NAME'] as String? ??
+                  v['NAME'] as String?;
+              _apiVesselType = v['AIS']?['SHIPTYPE'] as String? ??
+                  v['SHIPTYPE'] as String?;
+              _apiFlag = v['AIS']?['COUNTRY'] as String? ??
+                  v['COUNTRY'] as String?;
+            });
+          }
+        }
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _fetching = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final t = widget.target;
+    // Name: API result > AIS name > MMSI
+    final displayName = _apiVesselName?.isNotEmpty == true
+        ? _apiVesselName!
+        : t.name ?? t.mmsi;
+
     return DraggableScrollableSheet(
-      initialChildSize: 0.6,
+      initialChildSize: 0.65,
       minChildSize: 0.4,
-      maxChildSize: 0.9,
+      maxChildSize: 0.95,
       expand: false,
       builder: (context, scrollController) {
         return Column(
@@ -1190,16 +1358,39 @@ class _TargetDetailSheet extends StatelessWidget {
                       color: AppColors.cyan, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      target.displayName,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Expanded(
+                            child: Text(
+                              displayName,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          if (_fetching)
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                        ]),
+                        if (_apiFlag != null)
+                          Text(_apiFlag!,
+                              style: const TextStyle(
+                                  color: AppColors.textMuted, fontSize: 12)),
+                      ],
                     ),
                   ),
-                  _StatusPill(target.status),
+                  const SizedBox(width: 8),
+                  _StatusPill(t.status),
                 ],
               ),
             ),
@@ -1210,52 +1401,55 @@ class _TargetDetailSheet extends StatelessWidget {
                 controller: scrollController,
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
                 children: [
-                  _DetailRow('MMSI', target.mmsi),
-                  if (target.name != null) _DetailRow('Name', target.name!),
-                  if (target.callSign != null)
-                    _DetailRow('Call Sign', target.callSign!),
-                  if (target.shipType != null)
-                    _DetailRow('Ship Type', target.shipType.toString()),
-                  if (target.navStatus != null)
-                    _DetailRow('Nav Status', target.navStatus!),
-                  if (target.destination != null)
-                    _DetailRow('Destination', target.destination!),
-                  if (target.eta != null)
+                  // Name is already in header; show AIS name if different from API
+                  if (t.name != null &&
+                      _apiVesselName != null &&
+                      t.name != _apiVesselName)
+                    _DetailRow('AIS 船名', t.name!),
+                  _DetailRow('MMSI', t.mmsi),
+                  if (t.callSign != null) _DetailRow('Call Sign', t.callSign!),
+                  if (_apiVesselType != null)
+                    _DetailRow('Ship Type', _apiVesselType!)
+                  else if (t.shipType != null)
+                    _DetailRow('Ship Type', t.shipType.toString()),
+                  if (t.navStatus != null)
+                    _DetailRow('Nav Status', t.navStatus!),
+                  if (t.destination != null)
+                    _DetailRow('Destination', t.destination!),
+                  if (t.eta != null)
                     _DetailRow('ETA',
-                        '${target.eta!.day}/${target.eta!.month} ${target.eta!.hour.toString().padLeft(2, '0')}:${target.eta!.minute.toString().padLeft(2, '0')}'),
+                        '${t.eta!.day}/${t.eta!.month} '
+                        '${t.eta!.hour.toString().padLeft(2, '0')}:'
+                        '${t.eta!.minute.toString().padLeft(2, '0')}'),
                   const Divider(color: AppColors.border, height: 24),
-                  if (target.position != null) ...[
+                  if (t.position != null) ...[
                     _DetailRow('Latitude',
-                        '${target.position!.latitude.toStringAsFixed(5)}°'),
+                        '${t.position!.latitude.toStringAsFixed(5)}°'),
                     _DetailRow('Longitude',
-                        '${target.position!.longitude.toStringAsFixed(5)}°'),
+                        '${t.position!.longitude.toStringAsFixed(5)}°'),
                   ],
-                  if (target.sog != null)
-                    _DetailRow(
-                        'SOG', '${target.sog!.toStringAsFixed(1)} kn'),
-                  if (target.cog != null)
-                    _DetailRow(
-                        'COG', '${target.cog!.toStringAsFixed(1)}°'),
-                  if (target.heading != null)
-                    _DetailRow(
-                        'Heading', '${target.heading!.toStringAsFixed(1)}°'),
+                  if (t.sog != null)
+                    _DetailRow('SOG', '${t.sog!.toStringAsFixed(1)} kn'),
+                  if (t.cog != null)
+                    _DetailRow('COG', '${t.cog!.toStringAsFixed(1)}°'),
+                  if (t.heading != null)
+                    _DetailRow('Heading', '${t.heading!.toStringAsFixed(1)}°'),
                   const Divider(color: AppColors.border, height: 24),
-                  if (target.relativeDistanceNm != null)
+                  if (t.relativeDistanceNm != null)
                     _DetailRow('Distance',
-                        '${target.relativeDistanceNm!.toStringAsFixed(2)} NM'),
-                  if (target.relativeBearingDeg != null)
+                        '${t.relativeDistanceNm!.toStringAsFixed(2)} NM'),
+                  if (t.relativeBearingDeg != null)
                     _DetailRow('Bearing',
-                        '${target.relativeBearingDeg!.toStringAsFixed(1)}°'),
-                  if (target.closestPointNm != null)
+                        '${t.relativeBearingDeg!.toStringAsFixed(1)}°'),
+                  if (t.closestPointNm != null)
                     _DetailRow('CPA',
-                        '${target.closestPointNm!.toStringAsFixed(3)} NM'),
-                  if (target.tcpaMinutes != null)
+                        '${t.closestPointNm!.toStringAsFixed(3)} NM'),
+                  if (t.tcpaMinutes != null)
                     _DetailRow('TCPA',
-                        '${target.tcpaMinutes!.toStringAsFixed(1)} min'),
+                        '${t.tcpaMinutes!.toStringAsFixed(1)} min'),
                   const Divider(color: AppColors.border, height: 24),
-                  _DetailRow('Source',
-                      target.signalSource.name.toUpperCase()),
-                  _DetailRow('Last Updated', '${target.ageSec}s ago'),
+                  _DetailRow('Source', t.signalSource.name.toUpperCase()),
+                  _DetailRow('Last Updated', '${t.ageSec}s ago'),
                 ],
               ),
             ),
