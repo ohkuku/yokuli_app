@@ -384,6 +384,8 @@ const _en = <String, String>{
   'filterManual':       'Manual',
   'filterSystem':       'System',
   'filterAlarm':        'Alarm',
+  'filterSafety':       'Safety',
+  'filterMaintenance':  'Maintenance',
 };
 
 const _zh = <String, String>{
@@ -557,10 +559,12 @@ const _zh = <String, String>{
   'noLogEntries':       '暂无日志条目',
   'noLogEntriesHint':   '事件和手动条目将显示在此处。',
   'filterAll':          '全部',
-  'filterNavigation':   '导航',
+  'filterNavigation':   '航行',
   'filterPower':        '电力',
   'filterAis':          'AIS',
   'filterManual':       '手动',
   'filterSystem':       '系统',
   'filterAlarm':        '警报',
+  'filterSafety':       '安全',
+  'filterMaintenance':  '维保',
 };

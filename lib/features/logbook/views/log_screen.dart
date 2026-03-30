@@ -13,6 +13,21 @@ import '../../../core/models/log_entry.dart';
 import '../../../core/l10n/strings.dart';
 
 // ---------------------------------------------------------------------------
+// Tab category definition
+// ---------------------------------------------------------------------------
+
+typedef _TabCategory = ({String label, List<LogEntryType> types});
+
+// empty types list = show all
+const List<_TabCategory> _kTabs = [
+  (label: '全部', types: []),
+  (label: '航行', types: [LogEntryType.navigation]),
+  (label: '安全', types: [LogEntryType.system, LogEntryType.alarm]),
+  (label: '维保', types: [LogEntryType.maintenance]),
+  (label: '手动', types: [LogEntryType.manual]),
+];
+
+// ---------------------------------------------------------------------------
 // LogScreen
 // ---------------------------------------------------------------------------
 
@@ -23,8 +38,29 @@ class LogScreen extends ConsumerStatefulWidget {
   ConsumerState<LogScreen> createState() => _LogScreenState();
 }
 
-class _LogScreenState extends ConsumerState<LogScreen> {
-  LogEntryType? _activeFilter; // null = All
+class _LogScreenState extends ConsumerState<LogScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: _kTabs.length, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  List<LogEntry> _filter(List<LogEntry> all, List<LogEntryType> types) {
+    final entries = types.isEmpty
+        ? List<LogEntry>.from(all)
+        : all.where((e) => types.contains(e.type)).toList();
+    entries.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return entries;
+  }
 
   void _showLogDetail(BuildContext context, LogEntry entry) {
     showModalBottomSheet(
@@ -86,26 +122,63 @@ class _LogScreenState extends ConsumerState<LogScreen> {
     );
   }
 
+  Widget _buildEmpty(S s) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.subject_rounded,
+                size: 56, color: AppColors.inactive),
+            const SizedBox(height: 14),
+            Text(
+              s.noLogEntries,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              s.noLogEntriesHint,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: AppColors.textSecondary, fontSize: 13),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildList(
+      BuildContext context, List<LogEntry> entries, S s) {
+    final voyageNames = ref.watch(voyageNameMapProvider);
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
+      itemCount: entries.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 6),
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        return _LogEntryRow(
+          entry: entry,
+          voyageName:
+              entry.voyageId != null ? voyageNames[entry.voyageId] : null,
+          onTap: () => _showLogDetail(context, entry),
+          onVoyageTap: entry.voyageId != null
+              ? () => context.push('/voyage/${entry.voyageId}')
+              : null,
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(stringsProvider);
     final allEntries = ref.watch(logProvider);
-
-    // Filter + sort by timestamp desc
-    final filtered = allEntries
-        .where((e) => _activeFilter == null || e.type == _activeFilter)
-        .toList()
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-
-    final filters = <(LogEntryType?, String)>[
-      (null, s.filterAll),
-      (LogEntryType.navigation, s.filterNavigation),
-      (LogEntryType.power, s.filterPower),
-      (LogEntryType.ais, s.filterAis),
-      (LogEntryType.manual, s.filterManual),
-      (LogEntryType.system, s.filterSystem),
-      (LogEntryType.alarm, s.filterAlarm),
-    ];
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -114,14 +187,20 @@ class _LogScreenState extends ConsumerState<LogScreen> {
         title: Text(s.logTitle,
             style: const TextStyle(color: AppColors.textPrimary)),
         iconTheme: const IconThemeData(color: AppColors.textPrimary),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.filter_list_rounded,
-                color: AppColors.textSecondary),
-            tooltip: s.filterAll,
-            onPressed: () {},
-          ),
-        ],
+        bottom: TabBar(
+          controller: _tabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          indicatorColor: AppColors.cyan,
+          labelColor: AppColors.cyan,
+          unselectedLabelColor: AppColors.textSecondary,
+          labelStyle: const TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w600),
+          unselectedLabelStyle:
+              const TextStyle(fontSize: 13, fontWeight: FontWeight.w400),
+          dividerColor: AppColors.border,
+          tabs: _kTabs.map((t) => Tab(text: t.label)).toList(),
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.teal,
@@ -129,113 +208,13 @@ class _LogScreenState extends ConsumerState<LogScreen> {
         onPressed: () => _showManualLogDialog(s),
         child: const Icon(Icons.edit_rounded),
       ),
-      body: Column(
-        children: [
-          // ---- Filter chips ----
-          SizedBox(
-            height: 48,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 8),
-              children: filters.map((entry) {
-                final (type, label) = entry;
-                final isActive = _activeFilter == type;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: GestureDetector(
-                    onTap: () =>
-                        setState(() => _activeFilter = type),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: isActive
-                            ? AppColors.cyan.withAlpha(35)
-                            : AppColors.cardBg,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: isActive
-                              ? AppColors.cyan.withAlpha(180)
-                              : AppColors.border,
-                          width: isActive ? 1.5 : 1,
-                        ),
-                      ),
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          color: isActive
-                              ? AppColors.cyan
-                              : AppColors.textSecondary,
-                          fontSize: 13,
-                          fontWeight: isActive
-                              ? FontWeight.w700
-                              : FontWeight.w400,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-          const Divider(color: AppColors.border, height: 1),
-
-          // ---- Log entries ----
-          Expanded(
-            child: filtered.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.subject_rounded,
-                              size: 56, color: AppColors.inactive),
-                          const SizedBox(height: 14),
-                          Text(
-                            s.noLogEntries,
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            s.noLogEntriesHint,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 13),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, __) =>
-                        const SizedBox(height: 6),
-                    itemBuilder: (context, index) {
-                      final entry = filtered[index];
-                      final voyageNames = ref.watch(voyageNameMapProvider);
-                      return _LogEntryRow(
-                        entry: entry,
-                        voyageName: entry.voyageId != null
-                            ? voyageNames[entry.voyageId]
-                            : null,
-                        onTap: () => _showLogDetail(context, entry),
-                        onVoyageTap: entry.voyageId != null
-                            ? () => context.push('/voyage/${entry.voyageId}')
-                            : null,
-                      );
-                    },
-                  ),
-          ),
-        ],
+      body: TabBarView(
+        controller: _tabController,
+        children: _kTabs.map((category) {
+          final filtered = _filter(allEntries, category.types);
+          if (filtered.isEmpty) return _buildEmpty(s);
+          return _buildList(context, filtered, s);
+        }).toList(),
       ),
     );
   }

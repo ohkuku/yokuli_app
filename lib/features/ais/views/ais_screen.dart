@@ -26,10 +26,10 @@ class AisScreen extends ConsumerWidget {
             labelColor: AppColors.cyan,
             unselectedLabelColor: AppColors.textSecondary,
             tabs: [
-              Tab(text: 'Radar'),
-              Tab(text: 'Nearby'),
-              Tab(text: 'Risk'),
-              Tab(text: 'Own Ship'),
+              Tab(text: '雷达'),
+              Tab(text: '附近'),
+              Tab(text: '碰撞风险'),
+              Tab(text: '本船'),
             ],
           ),
         ),
@@ -160,6 +160,7 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surface,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -900,18 +901,42 @@ class _OwnShipTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final aisState = ref.watch(aisProvider);
+    final vessel = ref.watch(vesselProvider);
     final own = aisState.ownShip;
 
-    if (own == null) {
-      return const _EmptyState(
-        icon: Icons.location_off_outlined,
-        message: 'No own ship AIS data',
-      );
-    }
+    // Use AIS own-ship data if available; fall back to vessel navigation data.
+    final String title = own?.name ?? own?.mmsi ?? '本船';
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // Info banner when no AIS transponder data
+        if (own == null)
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.warning.withAlpha(18),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.warning.withAlpha(80)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.info_outline_rounded,
+                    color: AppColors.warning, size: 16),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '未检测到本船 AIS 应答器数据，显示导航传感器数据',
+                    style:
+                        TextStyle(color: AppColors.warning, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        // Main data card
         Container(
           decoration: BoxDecoration(
             color: AppColors.cardBg,
@@ -925,52 +950,73 @@ class _OwnShipTab extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                 child: Row(
                   children: [
-                    const Icon(Icons.directions_boat, color: AppColors.cyan, size: 20),
+                    const Icon(Icons.directions_boat,
+                        color: AppColors.cyan, size: 20),
                     const SizedBox(width: 8),
-                    Text(
-                      own.name ?? own.mmsi ?? 'Own Ship',
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
+                    if (own?.lastUpdated != null)
+                      Text(
+                        _formatAge(own!.lastUpdated!),
+                        style: const TextStyle(
+                            color: AppColors.textMuted, fontSize: 11),
+                      ),
                   ],
                 ),
               ),
               const SizedBox(height: 12),
               const Divider(color: AppColors.border, height: 1),
-              _OwnShipField('MMSI', own.mmsi ?? '—'),
-              _OwnShipField('Name', own.name ?? '—'),
-              _OwnShipField('Call Sign', own.callSign ?? '—'),
-              _OwnShipField(
-                'Ship Type',
-                own.shipType != null ? own.shipType.toString() : '—',
-              ),
-              _OwnShipField(
-                'SOG',
-                own.sog != null ? '${own.sog!.toStringAsFixed(1)} kn' : '—',
-              ),
-              _OwnShipField(
-                'COG',
-                own.cog != null ? '${own.cog!.toStringAsFixed(1)}°' : '—',
-              ),
-              _OwnShipField(
-                'Heading',
-                own.heading != null ? '${own.heading!.toStringAsFixed(1)}°' : '—',
-              ),
-              _OwnShipField('Nav Status', own.navStatus ?? '—'),
-              if (own.position != null)
+
+              // AIS-specific fields (only when transponder data available)
+              if (own != null) ...[
+                _OwnShipField('MMSI', own.mmsi ?? '—'),
+                _OwnShipField('船名', own.name ?? '—'),
+                _OwnShipField('呼号', own.callSign ?? '—'),
                 _OwnShipField(
-                  'Position',
-                  '${own.position!.latitude.toStringAsFixed(5)}°, '
-                  '${own.position!.longitude.toStringAsFixed(5)}°',
+                  '船型',
+                  own.shipType != null ? own.shipType.toString() : '—',
                 ),
-              if (own.lastUpdated != null)
+                _OwnShipField('航行状态', own.navStatus ?? '—'),
+              ],
+
+              // Navigation fields: prefer AIS, fall back to vessel sensors
+              _OwnShipField(
+                '航速 (SOG)',
+                _fmt1(own?.sog ?? vessel.speedOverGround, 'kn'),
+              ),
+              _OwnShipField(
+                '航向 (COG)',
+                _fmtDeg(own?.cog ?? vessel.courseOverGround),
+              ),
+              _OwnShipField(
+                '船首向 (HDG)',
+                _fmtDeg(own?.heading ?? vessel.heading),
+              ),
+              _OwnShipField(
+                '位置',
+                _fmtPosition(
+                  own?.position ?? vessel.position,
+                ),
+              ),
+              if (vessel.depthBelowKeel != null)
                 _OwnShipField(
-                  'Last Updated',
-                  _formatAge(own.lastUpdated!),
+                  '龙骨水深',
+                  '${vessel.depthBelowKeel!.toStringAsFixed(1)} m',
                 ),
+              if (vessel.trueWindSpeed != null)
+                _OwnShipField(
+                  '真风速',
+                  '${vessel.trueWindSpeed!.toStringAsFixed(1)} kn',
+                ),
+
               const SizedBox(height: 4),
             ],
           ),
@@ -979,11 +1025,28 @@ class _OwnShipTab extends ConsumerWidget {
     );
   }
 
+  String _fmt1(double? v, String unit) =>
+      v != null ? '${v.toStringAsFixed(1)} $unit' : '—';
+
+  String _fmtDeg(double? v) =>
+      v != null ? '${v.toStringAsFixed(1)}°' : '—';
+
+  String _fmtPosition(dynamic pos) {
+    if (pos == null) return '—';
+    try {
+      final lat = (pos as dynamic).latitude as double;
+      final lon = pos.longitude as double;
+      return '${lat.toStringAsFixed(5)}°, ${lon.toStringAsFixed(5)}°';
+    } catch (_) {
+      return '—';
+    }
+  }
+
   String _formatAge(DateTime dt) {
     final diff = DateTime.now().difference(dt);
-    if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    return '${diff.inHours}h ago';
+    if (diff.inSeconds < 60) return '${diff.inSeconds}s 前';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m 前';
+    return '${diff.inHours}h 前';
   }
 }
 
@@ -1210,50 +1273,68 @@ class _TargetPickerSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+    return DraggableScrollableSheet(
+      initialChildSize: 0.45,
+      minChildSize: 0.3,
+      maxChildSize: 0.85,
+      expand: false,
+      builder: (_, scrollController) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Handle
           Center(
             child: Container(
               width: 40,
               height: 4,
-              margin: const EdgeInsets.only(bottom: 14),
+              margin: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
                 color: AppColors.inactive,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
-          const Text(
-            '附近船舶',
-            style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.w700),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 10),
+            child: Text(
+              '附近船舶',
+              style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700),
+            ),
           ),
-          const SizedBox(height: 12),
-          ...targets.map((t) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.directions_boat_rounded,
-                    color: AppColors.cyan, size: 20),
-                title: Text(
-                  t.displayName,
-                  style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontWeight: FontWeight.w600),
-                ),
-                subtitle: t.relativeDistanceNm != null
-                    ? Text(
-                        '${t.relativeDistanceNm!.toStringAsFixed(2)} NM',
-                        style: const TextStyle(
-                            color: AppColors.textMuted, fontSize: 12),
-                      )
-                    : null,
-                onTap: () => onSelect(t),
-              )),
+          const Divider(color: AppColors.border, height: 1),
+          Expanded(
+            child: ListView.separated(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+              itemCount: targets.length,
+              separatorBuilder: (_, __) =>
+                  const Divider(color: AppColors.border, height: 1),
+              itemBuilder: (_, i) {
+                final t = targets[i];
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.directions_boat_rounded,
+                      color: AppColors.cyan, size: 20),
+                  title: Text(
+                    t.displayName,
+                    style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: t.relativeDistanceNm != null
+                      ? Text(
+                          '${t.relativeDistanceNm!.toStringAsFixed(2)} NM',
+                          style: const TextStyle(
+                              color: AppColors.textMuted, fontSize: 12),
+                        )
+                      : null,
+                  onTap: () => onSelect(t),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );

@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../models/log_entry.dart';
 import '../models/vessel_state.dart';
 import '../models/voyage.dart';
+import 'log_provider.dart';
 import 'vessel_provider.dart';
 import 'lan_broadcast.dart';
 
@@ -146,6 +148,12 @@ class VoyageNotifier extends Notifier<VoyageState> {
     await save();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'voyage_upsert', 'data': session.toJson()});
+    await ref.read(logProvider.notifier).log(
+          type: LogEntryType.navigation,
+          subtype: 'voyage_start',
+          message: '航行开始',
+          voyageId: session.id,
+        );
   }
 
   /// End the currently active voyage.
@@ -165,6 +173,12 @@ class VoyageNotifier extends Notifier<VoyageState> {
     await save();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'voyage_upsert', 'data': ended.toJson()});
+    await ref.read(logProvider.notifier).log(
+          type: LogEntryType.navigation,
+          subtype: 'voyage_end',
+          message: '航行结束',
+          voyageId: ended.id,
+        );
   }
 
   // ---- Delete -------------------------------------------------------------
