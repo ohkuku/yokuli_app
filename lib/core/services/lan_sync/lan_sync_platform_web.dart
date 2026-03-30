@@ -90,6 +90,13 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
   void _onMessage(dynamic raw) {
     try {
       final json = jsonDecode(raw as String) as Map<String, dynamic>;
+
+      // Propagate stateVersion from any message that carries _sv.
+      final embeddedSv = json['_sv'] as int?;
+      if (embeddedSv != null) {
+        onSyncMetaReceived?.call(embeddedSv, json['_id'] as String? ?? '');
+      }
+
       final data = json['data'] as Map<String, dynamic>?;
       switch (json['type'] as String?) {
         case 'vessel_state':

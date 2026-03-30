@@ -249,7 +249,13 @@ class LanSyncService {
     if (kIsWeb) {
       // Web: client-only — connect to manually configured host IP.
       final settings = _ref.read(settingsProvider);
-      _ref.read(lanBroadcastProvider.notifier).state = sendJson;
+      _ref.read(lanBroadcastProvider.notifier).state = (msg) {
+        final device = _ref.read(deviceProvider);
+        final withMeta = Map<String, dynamic>.from(msg)
+          ..['_sv'] = device.stateVersion.millisecondsSinceEpoch
+          ..['_id'] = device.deviceId;
+        _platform.sendJson(withMeta);
+      };
 
       if (settings.hostIp.isNotEmpty) {
         _conn.setLanSyncStatus(ConnectionStatus.connecting);
@@ -266,9 +272,14 @@ class LanSyncService {
 
     // Broadcast function: push to our WS clients AND upstream if we're also
     // connected as a client to a peer (so they relay it further).
+    // Always embed _sv + _id so all recipients stay in sv-sync automatically.
     _ref.read(lanBroadcastProvider.notifier).state = (msg) {
-      _platform.broadcastJson(msg);
-      if (_platform.isClientConnected) _platform.sendJson(msg);
+      final device = _ref.read(deviceProvider);
+      final withMeta = Map<String, dynamic>.from(msg)
+        ..['_sv'] = device.stateVersion.millisecondsSinceEpoch
+        ..['_id'] = device.deviceId;
+      _platform.broadcastJson(withMeta);
+      if (_platform.isClientConnected) _platform.sendJson(withMeta);
     };
 
     _conn.setLanSyncStatus(ConnectionStatus.connecting);

@@ -3,7 +3,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/models/alarm.dart';
 import '../../../core/models/mob_alert.dart';
 import '../../../core/models/vessel_state.dart';
+import '../../../core/models/log_entry.dart';
 import '../../../core/providers/alarm_provider.dart';
+import '../../../core/providers/log_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/providers/lan_broadcast.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
@@ -90,20 +92,41 @@ class SafetyNotifier extends Notifier<SafetyState> {
       triggeredByDevice: 'this device',
     );
     state = state.copyWith(activeMob: alert);
+    // Log MOB start
+    ref.read(logProvider.notifier).log(
+      type: LogEntryType.system,
+      subtype: 'mob_start',
+      message: 'MOB ALERT — person overboard triggered on this device',
+    );
     // Broadcast to LAN peers
     ref.read(lanSyncServiceProvider).triggerMob(alert);
   }
 
   void cancelMob() {
     if (state.activeMob != null) {
+      final elapsed = state.activeMob!.elapsed;
+      final mins = elapsed.inMinutes;
+      final secs = elapsed.inSeconds % 60;
       state.activeMob!.isActive = false;
       state = state.copyWith(clearMob: true);
+      // Log MOB end
+      ref.read(logProvider.notifier).log(
+        type: LogEntryType.system,
+        subtype: 'mob_end',
+        message: 'MOB CANCELLED — alert ended after ${mins}m ${secs}s',
+      );
       ref.read(lanBroadcastProvider)?.call({'type': 'mob_cancel'});
     }
   }
 
   void receiveMob(MobAlert alert) {
     state = state.copyWith(activeMob: alert);
+    // Log receipt of remote MOB
+    ref.read(logProvider.notifier).log(
+      type: LogEntryType.system,
+      subtype: 'mob_start',
+      message: 'MOB ALERT — received from remote device',
+    );
   }
 
   /// Called when a remote device cancelled the MOB — clears locally without re-broadcasting.
@@ -111,6 +134,11 @@ class SafetyNotifier extends Notifier<SafetyState> {
     if (state.activeMob != null) {
       state.activeMob!.isActive = false;
       state = state.copyWith(clearMob: true);
+      ref.read(logProvider.notifier).log(
+        type: LogEntryType.system,
+        subtype: 'mob_end',
+        message: 'MOB CANCELLED — received cancellation from remote device',
+      );
     }
   }
 

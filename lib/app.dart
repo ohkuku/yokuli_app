@@ -7,6 +7,7 @@ import 'core/services/alarm_dispatcher.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/locale_provider.dart';
+import 'features/safety/providers/safety_provider.dart';
 import 'router/app_router.dart';
 
 class YokulApp extends ConsumerWidget {
@@ -16,6 +17,17 @@ class YokulApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
     final locale = ref.watch(flutterLocaleProvider);
+
+    // Navigate every device to the safety screen when a MOB is triggered
+    // (whether local or received from a LAN peer).
+    ref.listen(
+      safetyProvider.select((s) => s.isMobActive),
+      (prev, isActive) {
+        if (isActive == true && prev != true) {
+          router.go('/safety');
+        }
+      },
+    );
 
     return MaterialApp.router(
       title: 'Yokuli',

@@ -7,7 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/connection_provider.dart';
 import '../../../core/providers/locale_provider.dart';
-import '../../../core/providers/device_provider.dart';
+import '../../../core/providers/device_provider.dart' show DeviceInfo, deviceProvider;
 import '../../../core/services/lan_sync/lan_sync_service.dart';
 import '../../../core/services/lan_sync/lan_sync_platform_base.dart' show DiscoveredHost;
 import '../../../core/services/data_export_service.dart';
@@ -487,6 +487,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             const SizedBox(height: 24),
 
+            // --- Devices ---
+            _SectionHeader('DEVICES'),
+            const SizedBox(height: 8),
+            _DevicesPanel(
+              device: device,
+              peers: discoveredPeers,
+              peerCount: conn.peerCount,
+            ),
+            const SizedBox(height: 24),
+
             // --- Display ---
             _SectionHeader('DISPLAY'),
             const SizedBox(height: 8),
@@ -829,6 +839,159 @@ class _LanConnectButtonState extends ConsumerState<_LanConnectButton> {
           style:
               const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Devices Panel
+// ---------------------------------------------------------------------------
+
+class _DevicesPanel extends StatelessWidget {
+  final DeviceInfo device;
+  final List<DiscoveredHost> peers;
+  final int peerCount;
+
+  const _DevicesPanel({
+    required this.device,
+    required this.peers,
+    required this.peerCount,
+  });
+
+  String _fmtSv(int svMs) {
+    if (svMs == 0) return '—';
+    final dt = DateTime.fromMillisecondsSinceEpoch(svMs);
+    final mo = dt.month.toString().padLeft(2, '0');
+    final d  = dt.day.toString().padLeft(2, '0');
+    final h  = dt.hour.toString().padLeft(2, '0');
+    final mi = dt.minute.toString().padLeft(2, '0');
+    final s  = dt.second.toString().padLeft(2, '0');
+    return '$mo-$d $h:$mi:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ownSvMs = device.stateVersion.millisecondsSinceEpoch;
+    final ownIdShort = device.deviceId.length >= 8
+        ? device.deviceId.substring(0, 8)
+        : device.deviceId;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          // Header row
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+            child: Row(
+              children: [
+                const Icon(Icons.devices_rounded,
+                    size: 15, color: AppColors.cyan),
+                const SizedBox(width: 6),
+                const Text('设备信息',
+                    style: TextStyle(
+                        color: AppColors.cyan,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700)),
+                const Spacer(),
+                if (peerCount > 0)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.teal.withAlpha(40),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '$peerCount 台设备连入',
+                      style: const TextStyle(
+                          color: AppColors.teal,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.divider),
+          // Own device row
+          _DeviceRow(
+            label: '本机  $ownIdShort',
+            svLabel: _fmtSv(ownSvMs),
+            isOwn: true,
+          ),
+          // Peer rows
+          ...peers.asMap().entries.map((e) {
+            final h = e.value;
+            final idShort = h.deviceId.isEmpty
+                ? h.host
+                : h.deviceId.length >= 8
+                    ? h.deviceId.substring(0, 8)
+                    : h.deviceId;
+            return Column(
+              children: [
+                const Divider(height: 1, color: AppColors.divider),
+                _DeviceRow(
+                  label: '${h.name}  $idShort',
+                  svLabel: _fmtSv(h.stateVersionMs),
+                  isOwn: false,
+                ),
+              ],
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeviceRow extends StatelessWidget {
+  final String label;
+  final String svLabel;
+  final bool isOwn;
+
+  const _DeviceRow({
+    required this.label,
+    required this.svLabel,
+    required this.isOwn,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        children: [
+          Icon(
+            isOwn ? Icons.smartphone_rounded : Icons.tablet_rounded,
+            size: 15,
+            color: isOwn ? AppColors.cyan : AppColors.textMuted,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color:
+                    isOwn ? AppColors.textPrimary : AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: isOwn ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+          Text(
+            svLabel,
+            style: const TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 11,
+                fontFamily: 'monospace'),
+          ),
+        ],
       ),
     );
   }

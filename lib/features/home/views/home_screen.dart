@@ -291,7 +291,9 @@ class _Header extends ConsumerWidget {
               icon: Icons.wifi_rounded,
               active: conn.isLanSyncActive,
               color: AppColors.teal,
-              label: 'LAN',
+              label: conn.isLanSyncActive && conn.peerCount > 0
+                  ? 'LAN ×${conn.peerCount}'
+                  : 'LAN',
             ),
             const SizedBox(width: 8),
             // Notification bell
@@ -595,11 +597,18 @@ class _DraggableMobFabState extends ConsumerState<_DraggableMobFab> {
       left: clamped.dx,
       top: clamped.dy,
       child: GestureDetector(
+        // DragStartBehavior.down = tracking starts from first touch, not after threshold
+        dragStartBehavior: DragStartBehavior.down,
         onPanStart: (_) => setState(() => _isDragging = true),
-        onPanUpdate: (d) => setState(() => _pos = Offset(
-              (clamped.dx + d.delta.dx),
-              (clamped.dy + d.delta.dy),
-            )),
+        onPanUpdate: (d) {
+          // Use _pos directly (always current) rather than the closure-captured
+          // `clamped`, which is stale when multiple events fire before a rebuild.
+          final cur = _pos ?? Offset(size.width - 100, size.height - 160);
+          setState(() => _pos = Offset(
+                cur.dx + d.delta.dx,
+                cur.dy + d.delta.dy,
+              ));
+        },
         onPanEnd: (_) => setState(() => _isDragging = false),
         child: _MobButton(
           label: s.mob,
