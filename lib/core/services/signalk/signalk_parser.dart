@@ -51,6 +51,7 @@ class SignalKParser {
                      updateContext == 'vessels.self' ||
                      (selfContext != null && updateContext == selfContext);
       if (!isSelf && updateContext!.startsWith('vessels.')) {
+        // Other vessel — delegate entirely to AIS parser.
         state = SignalKAisParser.applyVesselDelta(
           state,
           updateContext,
@@ -58,6 +59,16 @@ class SignalKParser {
           typedValues,
         );
         continue;
+      }
+      // For own-vessel context: also update aisOwnShip identity data
+      // (MMSI, name, callsign, etc.) so the AIS "Own Ship" tab is populated.
+      if (isSelf && updateContext != null && updateContext.startsWith('vessels.')) {
+        state = SignalKAisParser.applyVesselDelta(
+          state,
+          updateContext,
+          selfContext,
+          typedValues,
+        );
       }
 
       // Otherwise, apply each path individually to the own-vessel state.

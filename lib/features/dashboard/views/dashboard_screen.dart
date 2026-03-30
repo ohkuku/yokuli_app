@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/vessel_provider.dart';
+import '../../../core/providers/locale_provider.dart';
+import '../../../core/l10n/strings.dart';
 import '../widgets/instrument_card.dart';
 
 class DashboardScreen extends ConsumerWidget {
@@ -12,17 +14,18 @@ class DashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final vessel = ref.watch(vesselProvider);
     final isTablet = MediaQuery.of(context).size.width > 600;
+    final s = ref.watch(stringsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: Text(s.dashboard),
         actions: [
           // Last update indicator
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: Center(
-              child: _DataAgeIndicator(lastUpdated: vessel.lastUpdated),
+              child: _DataAgeIndicator(lastUpdated: vessel.lastUpdated, s: s),
             ),
           ),
         ],
@@ -36,7 +39,7 @@ class DashboardScreen extends ConsumerWidget {
                 delegate: SliverChildListDelegate([
                   // Speed Over Ground
                   InstrumentCard(
-                    label: 'SPEED OVER GROUND',
+                    label: s.speedSOG.toUpperCase(),
                     value: vessel.speedOverGround?.toStringAsFixed(1) ?? '—',
                     unit: 'kn',
                     icon: Icons.speed_rounded,
@@ -54,7 +57,7 @@ class DashboardScreen extends ConsumerWidget {
 
                   // True Wind Speed
                   InstrumentCard(
-                    label: 'TRUE WIND SPEED',
+                    label: s.trueWind.toUpperCase(),
                     value: vessel.trueWindSpeed?.toStringAsFixed(1) ?? '—',
                     unit: 'kn',
                     icon: Icons.air_rounded,
@@ -74,7 +77,7 @@ class DashboardScreen extends ConsumerWidget {
 
                   // Depth
                   InstrumentCard(
-                    label: 'DEPTH BELOW KEEL',
+                    label: s.depthKeel.toUpperCase(),
                     value: vessel.depthBelowKeel?.toStringAsFixed(1) ?? '—',
                     unit: 'm',
                     icon: Icons.water_rounded,
@@ -89,6 +92,7 @@ class DashboardScreen extends ConsumerWidget {
                   _GpsCard(
                     lat: vessel.position?.latitude,
                     lon: vessel.position?.longitude,
+                    s: s,
                   ),
                 ]),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -106,7 +110,7 @@ class DashboardScreen extends ConsumerWidget {
                 padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
                 sliver: SliverToBoxAdapter(
                   child: Text(
-                    'POWER',
+                    s.power.toUpperCase(),
                     style: TextStyle(
                       color: AppColors.textMuted,
                       fontSize: 11,
@@ -175,8 +179,9 @@ class DashboardScreen extends ConsumerWidget {
 class _GpsCard extends StatelessWidget {
   final double? lat;
   final double? lon;
+  final S s;
 
-  const _GpsCard({this.lat, this.lon});
+  const _GpsCard({this.lat, this.lon, required this.s});
 
   String _formatDMS(double deg, bool isLat) {
     final dir = isLat ? (deg >= 0 ? 'N' : 'S') : (deg >= 0 ? 'E' : 'W');
@@ -200,11 +205,11 @@ class _GpsCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(children: [
-            Icon(Icons.gps_fixed_rounded, size: 14, color: AppColors.success),
-            SizedBox(width: 6),
-            Text('POSITION',
-                style: TextStyle(
+          Row(children: [
+            const Icon(Icons.gps_fixed_rounded, size: 14, color: AppColors.success),
+            const SizedBox(width: 6),
+            Text(s.position.toUpperCase(),
+                style: const TextStyle(
                     color: AppColors.textMuted,
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
@@ -232,8 +237,8 @@ class _GpsCard extends StatelessWidget {
               ),
             ),
           ] else
-            const Text('No fix',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 16)),
+            Text(s.noFix,
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 16)),
         ],
       ),
     );
@@ -242,8 +247,9 @@ class _GpsCard extends StatelessWidget {
 
 class _DataAgeIndicator extends StatelessWidget {
   final DateTime lastUpdated;
+  final S s;
 
-  const _DataAgeIndicator({required this.lastUpdated});
+  const _DataAgeIndicator({required this.lastUpdated, required this.s});
 
   @override
   Widget build(BuildContext context) {
@@ -284,10 +290,10 @@ class _DataAgeIndicator extends StatelessWidget {
         const SizedBox(width: 5),
         Text(
           isVeryStale
-              ? 'Stale'
+              ? s.dataStale
               : isStale
-                  ? 'Slow'
-                  : 'Live',
+                  ? s.dataSlow
+                  : s.dataLive,
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,

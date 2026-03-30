@@ -88,17 +88,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (kIsWeb) {
       final jsonStr = ref.read(dataExportServiceProvider).exportAsJsonString();
       if (!mounted) return;
+      final s = ref.read(stringsProvider);
       await showDialog(
         context: context,
         builder: (_) => AlertDialog(
           backgroundColor: AppColors.surface,
-          title: const Text('Export Backup'),
+          title: Text(s.exportBackup),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Copy the JSON below to save your backup.',
+                '复制以下 JSON 以保存备份。',
                 style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
               ),
               const SizedBox(height: 12),
@@ -126,14 +127,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 Clipboard.setData(ClipboardData(text: jsonStr));
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Copied to clipboard')),
+                  SnackBar(content: Text(s.copy == '复制' ? '已复制到剪贴板' : 'Copied to clipboard')),
                 );
               },
-              child: const Text('Copy'),
+              child: Text(s.copy),
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
+              child: Text(s.close),
             ),
           ],
         ),
@@ -146,8 +147,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await ref.read(dataExportServiceProvider).exportAndShare();
     } catch (e) {
       if (mounted) {
+        final s = ref.read(stringsProvider);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export failed: $e')),
+          SnackBar(content: Text('${s.exportBackup} failed: $e')),
         );
       }
     } finally {
@@ -156,19 +158,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _importData() async {
+    final s = ref.read(stringsProvider);
     final ctrl = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: const Text('Import Backup'),
+        title: Text(s.importBackup),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'This will REPLACE all local data. Export first to keep a backup.',
-              style: TextStyle(
+            Text(
+              s.importBackup == '导入备份'
+                  ? '这将替换所有本地数据。请先导出以保留备份。'
+                  : 'This will REPLACE all local data. Export first to keep a backup.',
+              style: const TextStyle(
                   color: AppColors.warning,
                   fontSize: 13,
                   fontWeight: FontWeight.w600),
@@ -177,8 +182,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             TextField(
               controller: ctrl,
               maxLines: 8,
-              decoration: const InputDecoration(
-                hintText: 'Paste JSON backup here…',
+              decoration: InputDecoration(
+                hintText: s.importBackup == '导入备份' ? '在此粘贴 JSON 备份…' : 'Paste JSON backup here…',
                 border: OutlineInputBorder(),
               ),
               style: const TextStyle(fontSize: 12),
@@ -188,11 +193,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(s.cancel),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Import'),
+            child: Text(s.importBackup),
           ),
         ],
       ),
@@ -206,13 +211,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await ref.read(dataExportServiceProvider).importFromJsonString(json);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Import successful')),
+          SnackBar(content: Text(s.importSuccess)),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Import failed: $e')),
+          SnackBar(content: Text('${s.importSuccess == '导入成功' ? '导入失败' : 'Import failed'}: $e')),
         );
       }
     }
@@ -279,6 +284,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(stringsProvider);
     final settings = ref.watch(settingsProvider);
     final conn = ref.watch(connectionProvider);
     ref.watch(lanSyncServiceProvider); // ensure provider is alive
@@ -288,7 +294,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text(ref.watch(stringsProvider).settings),
+        title: Text(s.settings),
       ),
       body: SafeArea(
         child: ListView(
@@ -301,19 +307,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ],
 
             // --- Language ---
-            _SectionHeader('LANGUAGE'),
+            _SectionHeader(s.language.toUpperCase()),
             const SizedBox(height: 8),
             _LanguageSelector(),
             const SizedBox(height: 24),
 
             // --- Vessel ---
-            _SectionHeader('VESSEL'),
+            _SectionHeader(s.sectionVessel),
             const SizedBox(height: 8),
             TextField(
               controller: _nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Vessel name',
-                prefixIcon: Icon(Icons.directions_boat_rounded),
+              decoration: InputDecoration(
+                labelText: s.vesselNameLabel,
+                prefixIcon: const Icon(Icons.directions_boat_rounded),
               ),
               onEditingComplete: _save,
               textInputAction: TextInputAction.done,
@@ -321,7 +327,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 24),
 
             // --- LAN Sync ---
-            _SectionHeader('LAN SYNC'),
+            _SectionHeader(s.lanSync.toUpperCase()),
             const SizedBox(height: 8),
 
             // Server info (native, when active)
@@ -339,8 +345,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     Row(children: [
                       const Icon(Icons.router_rounded, size: 16, color: AppColors.cyan),
                       const SizedBox(width: 6),
-                      const Text('This device is serving',
-                          style: TextStyle(
+                      Text(s.thisDeviceServing,
+                          style: const TextStyle(
                               color: AppColors.cyan,
                               fontSize: 13,
                               fontWeight: FontWeight.w600)),
@@ -368,10 +374,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             if (!kIsWeb) ...[
               TextField(
                 controller: _hostPortCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Server port',
+                decoration: InputDecoration(
+                  labelText: s.serverPort,
                   hintText: '8765',
-                  prefixIcon: Icon(Icons.lan_rounded),
+                  prefixIcon: const Icon(Icons.lan_rounded),
                 ),
                 keyboardType: TextInputType.number,
                 textInputAction: TextInputAction.done,
@@ -381,8 +387,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
               // Discovered peers (auto-found via UDP)
               if (discoveredPeers.isNotEmpty) ...[
-                const Text('Discovered on this network',
-                    style: TextStyle(
+                Text(s.discoveredOnNetwork,
+                    style: const TextStyle(
                         color: AppColors.textMuted,
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
@@ -406,7 +412,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             height: 14,
                             child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.search_rounded),
-                    label: Text(_scanning ? 'Scanning…' : 'Scan subnet'),
+                    label: Text(_scanning ? s.scanning : s.scanSubnet),
                   ),
                 ),
               ]),
@@ -422,7 +428,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               TextField(
                 controller: _hostIpCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'Host IP address',
+                  labelText: '主机 IP 地址',
                   hintText: '192.168.1.100',
                   prefixIcon: Icon(Icons.wifi_rounded),
                 ),
@@ -434,7 +440,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               TextField(
                 controller: _hostPortCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'Host port',
+                  labelText: '主机端口',
                   hintText: '8765',
                   prefixIcon: Icon(Icons.lan_rounded),
                 ),
@@ -468,7 +474,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 24),
 
             // --- Devices ---
-            _SectionHeader('DEVICES'),
+            _SectionHeader(s.sectionDevices),
             const SizedBox(height: 8),
             _DevicesPanel(
               device: device,
@@ -478,10 +484,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 24),
 
             // --- Display ---
-            _SectionHeader('DISPLAY'),
+            _SectionHeader(s.sectionDisplay),
             const SizedBox(height: 8),
             _ToggleTile(
-              title: 'Keep screen on',
+              title: s.keepScreenOn,
               value: settings.keepScreenOn,
               onChanged: (v) async {
                 await ref
@@ -493,7 +499,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 24),
 
             // --- Data Management ---
-            _SectionHeader('DATA MANAGEMENT'),
+            _SectionHeader(s.sectionDataMgmt),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -507,7 +513,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.upload_rounded),
-                    label: Text(_exporting ? 'Exporting…' : 'Export Backup'),
+                    label: Text(_exporting ? 'Exporting…' : s.exportBackup),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -515,7 +521,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _importData,
                     icon: const Icon(Icons.download_rounded),
-                    label: const Text('Import Backup'),
+                    label: Text(s.importBackup),
                   ),
                 ),
               ],
@@ -523,7 +529,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 24),
 
             // --- About ---
-            _SectionHeader('ABOUT'),
+            _SectionHeader(s.about),
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.all(14),

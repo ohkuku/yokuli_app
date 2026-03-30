@@ -51,6 +51,15 @@ class S {
   String get mobRecoveredBtn => _m['mobRecoveredBtn']!;
   String get alarmLabel      => _m['alarmLabel']!;
 
+  // --- Safety alarms ---
+  String get depthAlarmSection   => _m['depthAlarmSection']!;
+  String get shallowWaterAlarm   => _m['shallowWaterAlarm']!;
+  String get shallowWaterAlarmHint => _m['shallowWaterAlarmHint']!;
+  String get speedAlarmSection   => _m['speedAlarmSection']!;
+  String get overSpeedAlarm      => _m['overSpeedAlarm']!;
+  String get overSpeedAlarmHint  => _m['overSpeedAlarmHint']!;
+  String get mobPosition         => _m['mobPosition']!;
+
   // --- Signal K ---
   String get signalKUrl     => _m['signalKUrl']!;
   String get signalKHostLabel => _m['signalKHostLabel']!;
@@ -77,6 +86,22 @@ class S {
   String get batteries   => _m['batteries']!;
   String get noData      => _m['noData']!;
 
+  // --- Power screen ---
+  String get summary          => _m['summary']!;
+  String get solar            => _m['solar']!;
+  String get waitingPowerData => _m['waitingPowerData']!;
+  String get noBatteryData    => _m['noBatteryData']!;
+  String get noSolarData      => _m['noSolarData']!;
+  String get powerCharging    => _m['powerCharging']!;
+  String get powerDischarging => _m['powerDischarging']!;
+  String get powerIdle        => _m['powerIdle']!;
+
+  // --- Dashboard ---
+  String get noFix      => _m['noFix']!;
+  String get dataLive   => _m['dataLive']!;
+  String get dataSlow   => _m['dataSlow']!;
+  String get dataStale  => _m['dataStale']!;
+
   // --- Settings ---
   String get language         => _m['language']!;
   String get vesselName       => _m['vesselName']!;
@@ -96,6 +121,23 @@ class S {
   String get restartLanSync   => _m['restartLanSync']!;
   String get hostingStatus    => _m['hostingStatus']!;
   String get webModeLabel     => _m['webModeLabel']!;
+
+  // --- Settings (additional) ---
+  String get sectionVessel        => _m['sectionVessel']!;
+  String get sectionDevices       => _m['sectionDevices']!;
+  String get sectionDisplay       => _m['sectionDisplay']!;
+  String get sectionDataMgmt      => _m['sectionDataMgmt']!;
+  String get serverPort           => _m['serverPort']!;
+  String get thisDeviceServing    => _m['thisDeviceServing']!;
+  String get discoveredOnNetwork  => _m['discoveredOnNetwork']!;
+  String get scanSubnet           => _m['scanSubnet']!;
+  String get scanning             => _m['scanning']!;
+  String get exportBackup         => _m['exportBackup']!;
+  String get importBackup         => _m['importBackup']!;
+  String get copy                 => _m['copy']!;
+  String get close                => _m['close']!;
+  String get importSuccess        => _m['importSuccess']!;
+  String get vesselNameLabel      => _m['vesselNameLabel']!;
 
   // --- Logbook ---
   String get addEntry    => _m['addEntry']!;
@@ -386,6 +428,45 @@ const _en = <String, String>{
   'filterAlarm':        'Alarm',
   'filterSafety':       'Safety',
   'filterMaintenance':  'Maintenance',
+
+  // Safety alarms
+  'depthAlarmSection':    'DEPTH ALARM',
+  'shallowWaterAlarm':    'Shallow water alarm',
+  'shallowWaterAlarmHint': 'Alert when depth below keel < threshold',
+  'speedAlarmSection':    'SPEED ALARM',
+  'overSpeedAlarm':       'Over-speed alarm',
+  'overSpeedAlarmHint':   'Alert when SOG exceeds threshold',
+  'mobPosition':          'MOB POSITION',
+  // Settings additional
+  'sectionVessel':        'VESSEL',
+  'sectionDevices':       'DEVICES',
+  'sectionDisplay':       'DISPLAY',
+  'sectionDataMgmt':      'DATA MANAGEMENT',
+  'serverPort':           'Server port',
+  'thisDeviceServing':    'This device is serving',
+  'discoveredOnNetwork':  'Discovered on this network',
+  'scanSubnet':           'Scan subnet',
+  'scanning':             'Scanning\u2026',
+  'exportBackup':         'Export Backup',
+  'importBackup':         'Import Backup',
+  'copy':                 'Copy',
+  'close':                'Close',
+  'importSuccess':        'Import successful',
+  'vesselNameLabel':      'Vessel name',
+  // Dashboard
+  'noFix':      'No fix',
+  'dataLive':   'Live',
+  'dataSlow':   'Slow',
+  'dataStale':  'Stale',
+  // Power
+  'summary':          'Summary',
+  'solar':            'Solar',
+  'waitingPowerData': 'Waiting for power data',
+  'noBatteryData':    'No battery data',
+  'noSolarData':      'No solar data',
+  'powerCharging':    'Charging',
+  'powerDischarging': 'Discharging',
+  'powerIdle':        'Idle',
 };
 
 const _zh = <String, String>{
@@ -567,4 +648,43 @@ const _zh = <String, String>{
   'filterAlarm':        '警报',
   'filterSafety':       '安全',
   'filterMaintenance':  '维保',
+
+  // Safety alarms
+  'depthAlarmSection':    '水深报警',
+  'shallowWaterAlarm':    '浅水报警',
+  'shallowWaterAlarmHint': '龙骨水深低于阈值时报警',
+  'speedAlarmSection':    '航速报警',
+  'overSpeedAlarm':       '超速报警',
+  'overSpeedAlarmHint':   '对地航速超过阈值时报警',
+  'mobPosition':          'MOB 位置',
+  // Settings additional
+  'sectionVessel':        '船只',
+  'sectionDevices':       '设备',
+  'sectionDisplay':       '显示',
+  'sectionDataMgmt':      '数据管理',
+  'serverPort':           '服务端口',
+  'thisDeviceServing':    '本设备正在提供服务',
+  'discoveredOnNetwork':  '在此网络中发现',
+  'scanSubnet':           '扫描局域网',
+  'scanning':             '扫描中\u2026',
+  'exportBackup':         '导出备份',
+  'importBackup':         '导入备份',
+  'copy':                 '复制',
+  'close':                '关闭',
+  'importSuccess':        '导入成功',
+  'vesselNameLabel':      '船名',
+  // Dashboard
+  'noFix':      '无定位',
+  'dataLive':   '实时',
+  'dataSlow':   '延迟',
+  'dataStale':  '陈旧',
+  // Power
+  'summary':          '概览',
+  'solar':            '光伏',
+  'waitingPowerData': '等待电力数据',
+  'noBatteryData':    '暂无电池数据',
+  'noSolarData':      '暂无光伏数据',
+  'powerCharging':    '充电中',
+  'powerDischarging': '放电中',
+  'powerIdle':        '空闲',
 };

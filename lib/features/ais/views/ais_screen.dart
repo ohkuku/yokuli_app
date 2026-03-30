@@ -1488,15 +1488,15 @@ class _TargetDetailSheetState extends State<_TargetDetailSheet> {
                       t.name != _apiVesselName)
                     _DetailRow('AIS 船名', t.name!),
                   _DetailRow('MMSI', t.mmsi),
-                  if (t.callSign != null) _DetailRow('Call Sign', t.callSign!),
+                  if (t.callSign != null) _DetailRow('呼号', t.callSign!),
                   if (_apiVesselType != null)
-                    _DetailRow('Ship Type', _apiVesselType!)
+                    _DetailRow('船型', _apiVesselType!)
                   else if (t.shipType != null)
-                    _DetailRow('Ship Type', t.shipType.toString()),
+                    _DetailRow('船型', t.shipType.toString()),
                   if (t.navStatus != null)
-                    _DetailRow('Nav Status', t.navStatus!),
+                    _DetailRow('航行状态', t.navStatus!),
                   if (t.destination != null)
-                    _DetailRow('Destination', t.destination!),
+                    _DetailRow('目的港', t.destination!),
                   if (t.eta != null)
                     _DetailRow('ETA',
                         '${t.eta!.day}/${t.eta!.month} '
@@ -1504,9 +1504,9 @@ class _TargetDetailSheetState extends State<_TargetDetailSheet> {
                         '${t.eta!.minute.toString().padLeft(2, '0')}'),
                   const Divider(color: AppColors.border, height: 24),
                   if (t.position != null) ...[
-                    _DetailRow('Latitude',
+                    _DetailRow('纬度',
                         '${t.position!.latitude.toStringAsFixed(5)}°'),
-                    _DetailRow('Longitude',
+                    _DetailRow('经度',
                         '${t.position!.longitude.toStringAsFixed(5)}°'),
                   ],
                   if (t.sog != null)
@@ -1514,13 +1514,13 @@ class _TargetDetailSheetState extends State<_TargetDetailSheet> {
                   if (t.cog != null)
                     _DetailRow('COG', '${t.cog!.toStringAsFixed(1)}°'),
                   if (t.heading != null)
-                    _DetailRow('Heading', '${t.heading!.toStringAsFixed(1)}°'),
+                    _DetailRow('船首向', '${t.heading!.toStringAsFixed(1)}°'),
                   const Divider(color: AppColors.border, height: 24),
                   if (t.relativeDistanceNm != null)
-                    _DetailRow('Distance',
+                    _DetailRow('距离',
                         '${t.relativeDistanceNm!.toStringAsFixed(2)} NM'),
                   if (t.relativeBearingDeg != null)
-                    _DetailRow('Bearing',
+                    _DetailRow('方位',
                         '${t.relativeBearingDeg!.toStringAsFixed(1)}°'),
                   if (t.closestPointNm != null)
                     _DetailRow('CPA',

@@ -112,7 +112,7 @@ jobs:
         run: |
           BRANCH="${{ steps.ver.outputs.branch }}"
           SHA="${{ steps.ver.outputs.short_sha }}"
-          DEST="docs/preview/${BRANCH}/${SHA}"
+          DEST="preview/${BRANCH}/${SHA}"
 
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -129,7 +129,7 @@ jobs:
           fi
 
           # ── Clean: remove ALL previous SHA subdirs for this branch ──
-          rm -rf "/tmp/gh-pages/docs/preview/${BRANCH}"
+          rm -rf "/tmp/gh-pages/preview/${BRANCH}"
 
           # ── Deploy: copy fresh build into the new unique path ──
           mkdir -p "/tmp/gh-pages/${DEST}"

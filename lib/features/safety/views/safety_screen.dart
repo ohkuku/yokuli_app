@@ -101,12 +101,12 @@ class _SafetyScreenState extends ConsumerState<SafetyScreen> {
             const SizedBox(height: 24),
 
             // Depth alarm
-            _SectionHeader('DEPTH ALARM'),
+            _SectionHeader(s.depthAlarmSection),
             const SizedBox(height: 8),
             _AlarmTile(
               icon: Icons.water_rounded,
-              title: 'Shallow water alarm',
-              subtitle: 'Alert when depth below keel < threshold',
+              title: s.shallowWaterAlarm,
+              subtitle: s.shallowWaterAlarmHint,
               enabled: safety.depthAlarmEnabled,
               triggered: safety.depthAlarmTriggered,
               threshold: safety.depthAlarmThreshold,
@@ -124,12 +124,12 @@ class _SafetyScreenState extends ConsumerState<SafetyScreen> {
             const SizedBox(height: 24),
 
             // Speed alarm
-            _SectionHeader('SPEED ALARM'),
+            _SectionHeader(s.speedAlarmSection),
             const SizedBox(height: 8),
             _AlarmTile(
               icon: Icons.speed_rounded,
-              title: 'Over-speed alarm',
-              subtitle: 'Alert when SOG exceeds threshold',
+              title: s.overSpeedAlarm,
+              subtitle: s.overSpeedAlarmHint,
               enabled: safety.speedAlarmEnabled,
               triggered: safety.speedAlarmTriggered,
               threshold: safety.speedAlarmThreshold,
@@ -228,7 +228,7 @@ class _MobActiveScreen extends StatelessWidget {
               if (mobPos != null)
                 _InfoRow(
                   icon: Icons.location_on_rounded,
-                  label: 'MOB POSITION',
+                  label: s.mobPosition,
                   value:
                       '${mobPos.latitude.toStringAsFixed(5)}°, ${mobPos.longitude.toStringAsFixed(5)}°',
                 ),
@@ -236,14 +236,14 @@ class _MobActiveScreen extends StatelessWidget {
               if (distNm != null)
                 _InfoRow(
                   icon: Icons.social_distance_rounded,
-                  label: 'DISTANCE',
+                  label: s.mobDistance,
                   value: '${distNm.toStringAsFixed(2)} nm',
                 ),
 
               if (bearing != null)
                 _InfoRow(
                   icon: Icons.navigation_rounded,
-                  label: 'BEARING TO MOB',
+                  label: s.mobBearing,
                   value: '${bearing.toStringAsFixed(0)}°',
                 ),
 

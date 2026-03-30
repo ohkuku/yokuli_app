@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/power_provider.dart';
+import '../../../core/providers/locale_provider.dart';
 import '../../../core/models/vessel_state.dart';
 import '../../../core/models/solar_state.dart';
 
@@ -11,20 +12,21 @@ class PowerScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     return DefaultTabController(
       length: 3,
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
-          title: const Text('Power'),
+          title: Text(s.power),
           bottom: TabBar(
             indicatorColor: AppColors.cyan,
             labelColor: AppColors.cyan,
             unselectedLabelColor: AppColors.textSecondary,
-            tabs: const [
-              Tab(text: 'Summary'),
-              Tab(text: 'Batteries'),
-              Tab(text: 'Solar'),
+            tabs: [
+              Tab(text: s.summary),
+              Tab(text: s.batteries),
+              Tab(text: s.solar),
             ],
           ),
         ),
@@ -51,6 +53,7 @@ class _SummaryTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     final power = ref.watch(powerProvider);
     final summary = power.summary;
     final hasData = summary.batteryVoltageMain != null ||
@@ -59,18 +62,18 @@ class _SummaryTab extends ConsumerWidget {
         summary.solarInputPowerTotal != null;
 
     if (!hasData) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.bolt_rounded, size: 64, color: AppColors.inactive),
-            SizedBox(height: 16),
+            const Icon(Icons.bolt_rounded, size: 64, color: AppColors.inactive),
+            const SizedBox(height: 16),
             Text(
-              'Waiting for power data',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 16),
+              s.waitingPowerData,
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 16),
             ),
-            SizedBox(height: 8),
-            Text(
+            const SizedBox(height: 8),
+            const Text(
               'Connect to Signal K to receive\nbattery and power data.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textMuted, fontSize: 13),
@@ -105,16 +108,16 @@ class _ChargeStatusCard extends StatelessWidget {
     switch (chargeState) {
       case ChargeState.charging:
         icon = Icons.bolt_rounded;
-        label = 'Charging';
+        label = '充电中';
         color = AppColors.success;
       case ChargeState.discharging:
         icon = Icons.bolt_rounded;
-        label = 'Discharging';
+        label = '放电中';
         color = AppColors.danger;
       case ChargeState.neutral:
       case ChargeState.unknown:
         icon = Icons.bolt_rounded;
-        label = chargeState == ChargeState.neutral ? 'Idle' : 'Unknown';
+        label = chargeState == ChargeState.neutral ? '空闲' : '未知';
         color = AppColors.inactive;
     }
 
@@ -141,7 +144,7 @@ class _ChargeStatusCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'SYSTEM STATUS',
+                '系统状态',
                 style: TextStyle(
                   color: AppColors.textMuted,
                   fontSize: 9,
@@ -187,19 +190,19 @@ class _SummaryStatsGrid extends StatelessWidget {
       childAspectRatio: 1.7,
       children: [
         _StatCard(
-          label: 'MAIN VOLTAGE',
+          label: '主电压',
           value: summary.batteryVoltageMain?.toStringAsFixed(2),
           unit: 'V',
           color: AppColors.cyan,
         ),
         _StatCard(
-          label: 'NET CURRENT',
+          label: '净电流',
           value: net?.toStringAsFixed(1),
           unit: 'A',
           color: netColor,
         ),
         _StatCard(
-          label: 'MAIN SOC',
+          label: '主电量',
           value: summary.batterySocMain != null
               ? '${(summary.batterySocMain! * 100).toStringAsFixed(0)}'
               : null,
@@ -207,13 +210,13 @@ class _SummaryStatsGrid extends StatelessWidget {
           color: _socColor(summary.batterySocMain ?? 0),
         ),
         _StatCard(
-          label: 'SOLAR INPUT',
+          label: '光伏输入',
           value: summary.solarInputPowerTotal?.toStringAsFixed(0),
           unit: 'W',
           color: AppColors.warning,
         ),
         _StatCard(
-          label: 'SOLAR CHARGE',
+          label: '光伏充电',
           value: summary.solarChargeCurrentTotal?.toStringAsFixed(1),
           unit: 'A',
           color: AppColors.teal,
@@ -289,20 +292,21 @@ class _BatteriesTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     final batteries = ref.watch(powerProvider).batteries;
 
     if (batteries.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.battery_unknown_rounded,
+            const Icon(Icons.battery_unknown_rounded,
                 size: 64, color: AppColors.inactive),
-            SizedBox(height: 16),
-            Text('No battery data',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
-            SizedBox(height: 8),
-            Text(
+            const SizedBox(height: 16),
+            Text(s.noBatteryData,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 16)),
+            const SizedBox(height: 8),
+            const Text(
               'Connect to Signal K to receive\nbattery data.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textMuted, fontSize: 13),
@@ -385,16 +389,16 @@ class _BatteryCard extends StatelessWidget {
           Row(
             children: [
               _Stat(
-                  label: 'VOLTAGE',
+                  label: 'V',
                   value: battery.voltage?.toStringAsFixed(2),
                   unit: 'V'),
               _Stat(
-                  label: 'CURRENT',
+                  label: 'A',
                   value: battery.current?.toStringAsFixed(1),
                   unit: 'A'),
               if (battery.temperature != null)
                 _Stat(
-                    label: 'TEMP',
+                    label: '°C',
                     value: battery.temperature?.toStringAsFixed(1),
                     unit: '°C'),
             ],
@@ -420,19 +424,20 @@ class _SolarTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     final solar = ref.watch(powerProvider).solar;
 
     if (solar.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.wb_sunny_rounded, size: 64, color: AppColors.inactive),
-            SizedBox(height: 16),
-            Text('No solar data',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
-            SizedBox(height: 8),
-            Text(
+            const Icon(Icons.wb_sunny_rounded, size: 64, color: AppColors.inactive),
+            const SizedBox(height: 16),
+            Text(s.noSolarData,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 16)),
+            const SizedBox(height: 8),
+            const Text(
               'No solar charge controllers found.\nCheck your Signal K paths for\nelectrical.solar.* data.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textMuted, fontSize: 13),
@@ -500,15 +505,15 @@ class _SolarControllerCard extends StatelessWidget {
               Row(
                 children: [
                   _Stat(
-                      label: 'PV POWER',
+                      label: 'PV 功率',
                       value: controller.effectiveInputPower?.toStringAsFixed(0),
                       unit: 'W'),
                   _Stat(
-                      label: 'CHG VOLTAGE',
-                      value: controller.outputVoltage?.toStringAsFixed(2),
+                      label: controller.inputVoltage != null ? 'PV V' : 'CHG V',
+                      value: (controller.inputVoltage ?? controller.outputVoltage)?.toStringAsFixed(2),
                       unit: 'V'),
                   _Stat(
-                      label: 'CHG CURRENT',
+                      label: '充电 A',
                       value: controller.outputCurrent?.toStringAsFixed(1),
                       unit: 'A'),
                 ],
@@ -524,7 +529,7 @@ class _SolarControllerCard extends StatelessWidget {
               if (controller.yieldTodayWh != null) ...[
                 const SizedBox(height: 10),
                 Text(
-                  'Today: ${controller.yieldTodayWh!.toStringAsFixed(1)} Wh',
+                  '今日: ${controller.yieldTodayWh!.toStringAsFixed(1)} Wh',
                   style: const TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 12,
@@ -545,7 +550,7 @@ class _SolarControllerCard extends StatelessWidget {
                 color: AppColors.background.withAlpha(180),
                 child: const Center(
                   child: Text(
-                    'Data stale',
+                    '数据陈旧',
                     style: TextStyle(
                       color: AppColors.textMuted,
                       fontSize: 13,
@@ -574,19 +579,19 @@ class _SolarStatusBadge extends StatelessWidget {
     switch (status) {
       case SolarStatus.charging:
         color = AppColors.success;
-        label = 'Charging';
+        label = '充电中';
       case SolarStatus.idle:
         color = AppColors.inactive;
-        label = 'Idle';
+        label = '空闲';
       case SolarStatus.fault:
         color = AppColors.danger;
-        label = 'Fault';
+        label = '故障';
       case SolarStatus.stale:
         color = AppColors.warning;
-        label = 'Stale';
+        label = '数据陈旧';
       case SolarStatus.noData:
         color = AppColors.inactive;
-        label = 'No Data';
+        label = '无数据';
     }
 
     return Container(
@@ -621,22 +626,22 @@ class _ChargerStateChip extends StatelessWidget {
     switch (state) {
       case SolarChargerState.bulk:
         color = const Color(0xFF0A84FF);
-        label = 'Bulk';
+        label = '大电流充电';
       case SolarChargerState.absorption:
         color = AppColors.cyan;
-        label = 'Absorption';
+        label = '恒压充电';
       case SolarChargerState.float:
         color = AppColors.success;
-        label = 'Float';
+        label = '浮充';
       case SolarChargerState.idle:
         color = AppColors.inactive;
-        label = 'Idle';
+        label = '空闲';
       case SolarChargerState.fault:
         color = AppColors.danger;
-        label = 'Fault';
+        label = '故障';
       case SolarChargerState.unknown:
         color = AppColors.inactive;
-        label = 'Unknown';
+        label = '未知';
     }
 
     return Container(
