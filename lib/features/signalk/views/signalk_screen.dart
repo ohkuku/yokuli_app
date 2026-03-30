@@ -5,9 +5,43 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/connection_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
+import '../../../core/providers/locale_provider.dart';
 import '../../../core/services/signalk/signalk_client.dart';
 import '../../../core/services/signalk/signalk_auth.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
+
+/// Strips scheme, path, and any embedded port from a host string so only
+/// the bare hostname or IP address remains. Returns the sanitized host and
+/// the extracted port (or [defaultPort] if none was embedded).
+///
+/// Examples:
+///   'http://signalk.local:3000/signalk/v1/stream' → ('signalk.local', 3000)
+///   '192.168.1.10:3000'                          → ('192.168.1.10', 3000)
+///   'signalk.local'                               → ('signalk.local', 3000)
+(String, int) _parseHostPort(String raw, int defaultPort) {
+  var s = raw.trim();
+  if (s.isEmpty) return ('', defaultPort);
+  // Strip scheme
+  s = s.replaceFirst(RegExp(r'^(wss?|https?)://'), '');
+  // Strip path/query
+  final slash = s.indexOf('/');
+  if (slash >= 0) s = s.substring(0, slash);
+  final q = s.indexOf('?');
+  if (q >= 0) s = s.substring(0, q);
+  // Extract embedded port (skip IPv6 addresses like [::1])
+  int port = defaultPort;
+  if (!s.startsWith('[')) {
+    final colon = s.lastIndexOf(':');
+    if (colon > 0) {
+      final maybePort = int.tryParse(s.substring(colon + 1));
+      if (maybePort != null && maybePort > 0 && maybePort < 65536) {
+        port = maybePort;
+        s = s.substring(0, colon);
+      }
+    }
+  }
+  return (s.trim(), port);
+}
 
 class SignalKScreen extends ConsumerStatefulWidget {
   const SignalKScreen({super.key});
@@ -60,11 +94,16 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
   // ── Connect (auto-auth if credentials filled) ─────────────────────────────
 
   Future<void> _connect() async {
-    final host = _hostCtrl.text.trim();
-    final port = int.tryParse(_portCtrl.text.trim()) ?? 3000;
+    final rawHost = _hostCtrl.text.trim();
+    final rawPort = int.tryParse(_portCtrl.text.trim()) ?? 3000;
+    // Normalize: strip scheme/path, extract embedded port if user pasted a URL
+    final (host, port) = _parseHostPort(rawHost, rawPort);
+    if (host.isEmpty) return;
+    // Update controllers to reflect the normalized values
+    if (host != rawHost) _hostCtrl.text = host;
+    if (port != rawPort) _portCtrl.text = '$port';
     final user = _userCtrl.text.trim();
     final pass = _passCtrl.text;
-    if (host.isEmpty) return;
 
     final url = 'ws://$host:$port/signalk/v1/stream?subscribe=all';
     setState(() { _connecting = true; _connectError = null; });
@@ -151,6 +190,8 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
       );
     }
 
+    final s = ref.watch(stringsProvider);
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(title: const Text('Signal K Hub')),
@@ -163,7 +204,7 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
             const SizedBox(height: 20),
 
             // ── Server ────────────────────────────────────────────────
-            _SectionHeader('SERVER'),
+            _SectionHeader(s.skServerSection),
             const SizedBox(height: 8),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -177,10 +218,10 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
                       color: AppColors.textPrimary,
                       fontFeatures: [FontFeature.tabularFigures()],
                     ),
-                    decoration: const InputDecoration(
-                      labelText: 'Host / Address',
-                      hintText: '192.168.1.10 or signalk.local',
-                      prefixIcon: Icon(Icons.dns_rounded),
+                    decoration: InputDecoration(
+                      labelText: s.signalKHostLabel,
+                      hintText: s.signalKHostHint,
+                      prefixIcon: const Icon(Icons.dns_rounded),
                     ),
                     keyboardType: TextInputType.url,
                     autocorrect: false,
@@ -197,8 +238,8 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
                       color: AppColors.textPrimary,
                       fontFeatures: [FontFeature.tabularFigures()],
                     ),
-                    decoration: const InputDecoration(
-                      labelText: 'Port',
+                    decoration: InputDecoration(
+                      labelText: s.signalKPortLabel,
                       hintText: '3000',
                     ),
                     keyboardType: TextInputType.number,
@@ -210,7 +251,7 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
             const SizedBox(height: 16),
 
             // ── Authentication (optional) ─────────────────────────────
-            _SectionHeader('AUTHENTICATION  (leave blank if not required)'),
+            _SectionHeader('${s.skAuthSection}  ${s.skAuthHint}'),
             const SizedBox(height: 8),
 
             if (!connected) ...[
@@ -297,7 +338,7 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
                             strokeWidth: 2,
                             color: AppColors.background))
                     : const Icon(Icons.link_rounded),
-                label: Text(_connecting ? 'Connecting…' : 'Connect'),
+                label: Text(_connecting ? s.skConnecting : s.connect),
                 style: ElevatedButton.styleFrom(
                     minimumSize: const Size.fromHeight(48)),
               ),
@@ -306,19 +347,18 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
 
             // ── Live data (when connected) ────────────────────────────
             if (connected) ...[
-              _SectionHeader('LIVE DATA'),
+              _SectionHeader(s.liveData),
               const SizedBox(height: 8),
               _DataTable(vessel: vessel),
               const SizedBox(height: 24),
             ],
 
             // ── Options ───────────────────────────────────────────────
-            _SectionHeader('OPTIONS'),
+            _SectionHeader(s.skOptionsSection),
             const SizedBox(height: 8),
             _ToggleTile(
-              title: 'Auto-connect on start',
-              subtitle:
-                  'Connect to Signal K automatically when app launches',
+              title: s.autoConnect,
+              subtitle: s.autoConnectHint,
               value: settings.autoConnectSignalK,
               onChanged: (v) => ref
                   .read(settingsProvider.notifier)

@@ -67,6 +67,35 @@ class _VoyageDetailScreenState extends ConsumerState<VoyageDetailScreen> {
     }
   }
 
+  Future<void> _confirmDelete(VoyageSession voyage) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBg,
+        title: const Text('删除航行记录',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text('确定要删除这次航行记录吗？此操作不可撤销。',
+            style: TextStyle(color: AppColors.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除',
+                style: TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await ref.read(voyageProvider.notifier).delete(voyage.id);
+      if (mounted) Navigator.of(context).pop();
+    }
+  }
+
   Future<void> _editNotes(VoyageSession voyage) async {
     final controller = TextEditingController(text: voyage.notes ?? '');
     final result = await showDialog<String?>(
@@ -195,6 +224,14 @@ class _VoyageDetailScreenState extends ConsumerState<VoyageDetailScreen> {
             ],
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline_rounded,
+                color: AppColors.danger),
+            tooltip: '删除航行记录',
+            onPressed: () => _confirmDelete(voyage!),
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),

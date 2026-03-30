@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/alarm.dart';
 import '../models/vessel_state.dart';
 import 'lan_broadcast.dart';
+import 'vessel_provider.dart';
 
 // ---------------------------------------------------------------------------
 // _JsonStore — private file-based JSON persistence helper
@@ -52,7 +53,11 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
   static const String _storeName = 'alarms';
 
   @override
-  List<Alarm> build() => const [];
+  List<Alarm> build() {
+    // Watch vessel state and check battery voltages on every update.
+    ref.listen(vesselProvider, (_, vessel) => _checkBatteries(vessel));
+    return const [];
+  }
 
   // ---- Persistence --------------------------------------------------------
 
@@ -148,23 +153,39 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
   }
 
   void _checkBatteries(VesselState vessel) {
-    for (final battery in vessel.batteries.values) {
-      final v = battery.voltage;
-      if (v == null) continue;
+    if (vessel.batteries.isEmpty) return;
 
+    String? firstLowName;
+    double? firstLowVoltage;
+    var level = AlarmLevel.warning;
+
+    for (final b in vessel.batteries.values) {
+      final v = b.voltage;
+      if (v == null) continue;
       if (v < _batteryLowVoltageThreshold) {
-        // Only trigger if no battery alarm is already active.
-        final hasActive = state.any(
-            (a) => a.type == AlarmType.battery && a.status == AlarmStatus.active);
-        if (!hasActive) {
-          trigger(
-            type: AlarmType.battery,
-            level: v < 11.5 ? AlarmLevel.critical : AlarmLevel.warning,
-            message:
-                'Battery "${battery.name}" voltage low: ${v.toStringAsFixed(1)} V',
-          );
-        }
+        firstLowName ??= b.name;
+        firstLowVoltage ??= v;
+        if (v < 11.5) level = AlarmLevel.critical;
       }
+    }
+
+    if (firstLowVoltage != null) {
+      // Rising edge: trigger only if no active/snoozed battery alarm exists.
+      final hasAlarm = state.any((a) =>
+          a.type == AlarmType.battery &&
+          (a.status == AlarmStatus.active ||
+              a.status == AlarmStatus.snoozed));
+      if (!hasAlarm) {
+        trigger(
+          type: AlarmType.battery,
+          level: level,
+          message:
+              'Battery "$firstLowName" voltage low: ${firstLowVoltage.toStringAsFixed(1)} V',
+        );
+      }
+    } else {
+      // Falling edge: all batteries recovered — clear any active battery alarm.
+      clearActiveByType(AlarmType.battery);
     }
   }
 

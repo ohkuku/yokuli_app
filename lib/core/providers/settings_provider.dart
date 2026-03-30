@@ -42,9 +42,30 @@ class AppSettings {
   /// Prefers host+port if signalKHost is set, otherwise falls back to signalKUrl.
   String get effectiveSignalKUrl {
     if (signalKHost.isNotEmpty) {
-      return 'ws://$signalKHost:$signalKPort/signalk/v1/stream?subscribe=all';
+      // Sanitise: strip any scheme/path that the user may have accidentally
+      // saved (e.g. by pasting a full URL into the host field).
+      final host = _sanitizeHost(signalKHost);
+      if (host.isNotEmpty) {
+        return 'ws://$host:$signalKPort/signalk/v1/stream?subscribe=all';
+      }
     }
     return signalKUrl;
+  }
+
+  static String _sanitizeHost(String input) {
+    var s = input.trim()
+        .replaceFirst(RegExp(r'^(wss?|https?)://'), '');
+    final slash = s.indexOf('/');
+    if (slash >= 0) s = s.substring(0, slash);
+    // Strip embedded port (leave IPv6 alone)
+    if (!s.startsWith('[')) {
+      final colon = s.lastIndexOf(':');
+      if (colon > 0) {
+        final maybePort = int.tryParse(s.substring(colon + 1));
+        if (maybePort != null) s = s.substring(0, colon);
+      }
+    }
+    return s.trim();
   }
 
   AppSettings copyWith({

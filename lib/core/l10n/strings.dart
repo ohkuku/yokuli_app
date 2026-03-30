@@ -54,7 +54,14 @@ class S {
   // --- Signal K ---
   String get signalKUrl     => _m['signalKUrl']!;
   String get signalKHostLabel => _m['signalKHostLabel']!;
+  String get signalKHostHint  => _m['signalKHostHint']!;
   String get signalKPortLabel => _m['signalKPortLabel']!;
+  String get skServerSection  => _m['skServerSection']!;
+  String get skAuthSection    => _m['skAuthSection']!;
+  String get skAuthHint       => _m['skAuthHint']!;
+  String get skOptionsSection => _m['skOptionsSection']!;
+  String get skConnecting     => _m['skConnecting']!;
+  String get autoConnectHint  => _m['autoConnectHint']!;
   String get connect        => _m['connect']!;
   String get disconnect     => _m['disconnect']!;
   String get liveData       => _m['liveData']!;
@@ -241,8 +248,15 @@ const _en = <String, String>{
   'alarmLabel':     'ALARM',
 
   'signalKUrl':       'Signal K URL',
-  'signalKHostLabel': 'Host IP',
+  'signalKHostLabel': 'Host / Address',
+  'signalKHostHint':  '192.168.1.10 or signalk.local',
   'signalKPortLabel': 'Port',
+  'skServerSection':  'SERVER',
+  'skAuthSection':    'AUTHENTICATION',
+  'skAuthHint':       '(leave blank if not required)',
+  'skOptionsSection': 'OPTIONS',
+  'skConnecting':     'Connecting…',
+  'autoConnectHint':  'Connect to Signal K automatically when the app launches',
   'connect':       'Connect',
   'disconnect':    'Disconnect',
   'liveData':      'Live Data',
@@ -413,8 +427,15 @@ const _zh = <String, String>{
   'alarmLabel':     '警报',
 
   'signalKUrl':       'Signal K 地址',
-  'signalKHostLabel': '主机 IP',
+  'signalKHostLabel': '主机 / 地址',
+  'signalKHostHint':  '192.168.1.10 或 signalk.local',
   'signalKPortLabel': '端口',
+  'skServerSection':  '服务器',
+  'skAuthSection':    '认证',
+  'skAuthHint':       '（无需认证可留空）',
+  'skOptionsSection': '选项',
+  'skConnecting':     '连接中…',
+  'autoConnectHint':  '应用启动时自动连接到 Signal K',
   'connect':       '连接',
   'disconnect':    '断开',
   'liveData':      '实时数据',

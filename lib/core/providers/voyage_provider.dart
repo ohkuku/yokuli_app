@@ -167,6 +167,21 @@ class VoyageNotifier extends Notifier<VoyageState> {
         {'type': 'voyage_upsert', 'data': ended.toJson()});
   }
 
+  // ---- Delete -------------------------------------------------------------
+
+  /// Permanently delete a voyage by ID.
+  Future<void> delete(String id) async {
+    if (state.active?.id == id) {
+      state = VoyageState(active: null, history: state.history);
+    } else {
+      state = VoyageState(
+        active: state.active,
+        history: state.history.where((v) => v.id != id).toList(),
+      );
+    }
+    await save();
+  }
+
   // ---- Edit metadata ------------------------------------------------------
 
   /// Set a custom name/alias for a voyage.

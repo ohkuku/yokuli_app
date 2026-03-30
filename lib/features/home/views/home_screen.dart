@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -172,22 +173,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         accentColor: AppColors.modMaintenance,
         route: '/kanban',
         badge: kanbanCount > 0 ? '$kanbanCount' : null,
-      ),
-      AppTileData(
-        id: 'weather',
-        label: s.weather,
-        icon: Icons.cloud_rounded,
-        accentColor: AppColors.modWeather,
-        route: '/settings',
-        isStub: true,
-      ),
-      AppTileData(
-        id: 'tools',
-        label: s.tools,
-        icon: Icons.handyman_rounded,
-        accentColor: AppColors.modTools,
-        route: '/settings',
-        isStub: true,
       ),
       AppTileData(
         id: 'ais',
@@ -591,6 +576,7 @@ class _DraggableMobFab extends ConsumerStatefulWidget {
 
 class _DraggableMobFabState extends ConsumerState<_DraggableMobFab> {
   Offset? _pos; // null = use default bottom-right
+  bool _isDragging = false;
 
   @override
   Widget build(BuildContext context) {
@@ -601,10 +587,10 @@ class _DraggableMobFabState extends ConsumerState<_DraggableMobFab> {
     // Default position: bottom-right
     final pos = _pos ?? Offset(size.width - 100, size.height - 160);
 
-    // Clamp to screen bounds (leave 80px margin)
+    // Clamp to screen bounds
     final clamped = Offset(
       pos.dx.clamp(0, size.width - 80),
-      pos.dy.clamp(0, size.height - 60),
+      pos.dy.clamp(0, size.height - 80),
     );
 
     if (isMobActive) return const SizedBox.shrink(); // hide when MOB active
@@ -613,68 +599,190 @@ class _DraggableMobFabState extends ConsumerState<_DraggableMobFab> {
       left: clamped.dx,
       top: clamped.dy,
       child: GestureDetector(
+        onPanStart: (_) => setState(() => _isDragging = true),
         onPanUpdate: (d) => setState(() => _pos = Offset(
               (clamped.dx + d.delta.dx),
               (clamped.dy + d.delta.dy),
             )),
-        child: _MobButton(label: s.mob, onTap: () => _triggerMob(context)),
+        onPanEnd: (_) => setState(() => _isDragging = false),
+        child: _MobButton(
+          label: s.mob,
+          isDragging: _isDragging,
+          onTrigger: () => _triggerMob(context),
+        ),
       ),
     );
   }
 
   void _triggerMob(BuildContext context) {
     ref.read(safetyProvider.notifier).triggerMob();
-    // Navigate to safety screen to show active MOB
     context.push('/safety');
   }
 }
 
-class _MobButton extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// MOB Button — press-and-hold 1.2 s, spring scale, progress ring, haptics
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _MobButton extends StatefulWidget {
   final String label;
-  final VoidCallback onTap;
-  const _MobButton({required this.label, required this.onTap});
+  final bool isDragging;
+  final VoidCallback onTrigger;
+  const _MobButton({
+    required this.label,
+    required this.isDragging,
+    required this.onTrigger,
+  });
+
+  @override
+  State<_MobButton> createState() => _MobButtonState();
+}
+
+class _MobButtonState extends State<_MobButton>
+    with TickerProviderStateMixin {
+  static const _holdDuration = Duration(milliseconds: 1200);
+
+  late AnimationController _holdCtrl;   // 0→1 over holdDuration while pressing
+  late AnimationController _scaleCtrl;  // spring-bounce on release
+  late Animation<double> _scaleAnim;
+
+  Timer? _triggerTimer;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _holdCtrl = AnimationController(vsync: this, duration: _holdDuration);
+
+    _scaleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _scaleAnim = Tween<double>(begin: 1.0, end: 1.0).animate(
+      CurvedAnimation(parent: _scaleCtrl, curve: Curves.elasticOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _holdCtrl.dispose();
+    _scaleCtrl.dispose();
+    _triggerTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onPressStart() {
+    if (widget.isDragging) return;
+    HapticFeedback.lightImpact();
+    _holdCtrl.forward(from: 0);
+
+    // Compress scale slightly while holding
+    _scaleAnim = Tween<double>(begin: 0.88, end: 1.0).animate(
+      CurvedAnimation(parent: _scaleCtrl, curve: Curves.elasticOut),
+    );
+    _scaleCtrl.value = 0; // start compressed
+    _scaleCtrl.forward();
+
+    // Schedule trigger at end of hold
+    _triggerTimer = Timer(_holdDuration, () {
+      HapticFeedback.heavyImpact();
+      _holdCtrl.reset();
+      widget.onTrigger();
+    });
+  }
+
+  void _onPressEnd() {
+    _triggerTimer?.cancel();
+    _triggerTimer = null;
+    _holdCtrl.stop();
+    _holdCtrl.reset();
+
+    // Spring-bounce back to full size
+    _scaleAnim = Tween<double>(begin: _scaleCtrl.value * 0.95, end: 1.0).animate(
+      CurvedAnimation(parent: _scaleCtrl, curve: Curves.elasticOut),
+    );
+    _scaleCtrl.forward(from: 0);
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-                color: AppColors.danger.withOpacity(0.45),
-                blurRadius: 20,
-                spreadRadius: -4)
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: BoxDecoration(
-                color: AppColors.danger.withOpacity(0.85),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+      onTapDown: (_) => _onPressStart(),
+      onTapUp: (_) => _onPressEnd(),
+      onTapCancel: _onPressEnd,
+      child: AnimatedBuilder(
+        animation: Listenable.merge([_holdCtrl, _scaleCtrl]),
+        builder: (context, _) {
+          final progress = _holdCtrl.value;
+          final scale = _scaleAnim.value;
+
+          return Transform.scale(
+            scale: scale,
+            child: SizedBox(
+              width: 72,
+              height: 72,
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  const Icon(Icons.person_off_rounded,
-                      size: 20, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Text(label,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.5)),
+                  // ── Progress ring ──────────────────────────────────
+                  SizedBox(
+                    width: 72,
+                    height: 72,
+                    child: CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 3.5,
+                      backgroundColor: AppColors.danger.withOpacity(0.2),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                          AppColors.danger),
+                    ),
+                  ),
+
+                  // ── Core circle ────────────────────────────────────
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.danger
+                          .withOpacity(0.75 + progress * 0.25),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.danger
+                              .withOpacity(0.35 + progress * 0.4),
+                          blurRadius: 18 + progress * 12,
+                          spreadRadius: -2,
+                        ),
+                      ],
+                    ),
+                    child: ClipOval(
+                      child: BackdropFilter(
+                        filter:
+                            ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.person_off_rounded,
+                                size: 20, color: Colors.white),
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.label,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
