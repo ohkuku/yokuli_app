@@ -9,6 +9,7 @@ import '../../models/vessel_state.dart';
 import '../../providers/connection_provider.dart'
     show ConnectionNotifier, ConnectionStatus, connectionProvider;
 import '../../providers/vessel_provider.dart';
+import 'signalk_auth.dart';
 import 'signalk_parser.dart';
 
 /// Manages the WebSocket connection to a Signal K server.
@@ -19,6 +20,7 @@ class SignalKClient {
   WebSocketChannel? _channel;
   StreamSubscription? _sub;
   String? _currentUrl;
+  String? _currentToken;
   bool _intentionalDisconnect = false;
   Timer? _reconnectTimer;
 
@@ -26,17 +28,21 @@ class SignalKClient {
 
   ConnectionNotifier get _conn => _ref.read(connectionProvider.notifier);
 
-  Future<void> connect(String wsUrl) async {
+  Future<void> connect(String wsUrl, {String? token}) async {
     await disconnect();
     _intentionalDisconnect = false;
-    _currentUrl = wsUrl;
-    _doConnect(wsUrl);
+    _currentUrl  = wsUrl;
+    _currentToken = token;
+    _doConnect(wsUrl, token: token);
   }
 
-  void _doConnect(String wsUrl) {
+  void _doConnect(String wsUrl, {String? token}) {
     _conn.setSignalKStatus(ConnectionStatus.connecting);
     try {
-      _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      final uri = token != null && token.isNotEmpty
+          ? Uri.parse(SignalKAuth.withToken(wsUrl, token))
+          : Uri.parse(wsUrl);
+      _channel = WebSocketChannel.connect(uri);
       _sub = _channel!.stream.listen(
         _onMessage,
         onError: _onError,
@@ -88,7 +94,7 @@ class SignalKClient {
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(const Duration(seconds: 5), () {
       if (!_intentionalDisconnect && _currentUrl != null) {
-        _doConnect(_currentUrl!);
+        _doConnect(_currentUrl!, token: _currentToken);
       }
     });
   }
