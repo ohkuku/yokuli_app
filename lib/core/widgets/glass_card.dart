@@ -99,25 +99,27 @@ class AuroraBackground extends StatelessWidget {
           ),
         ),
         // Cyan glow — top-left
-        _blob(-120, -80, 500, const Color(0xFF00D9FF), 0.13),
+        _blob(size: 500, color: const Color(0xFF00D9FF), opacity: 0.13,
+            top: -120, left: -80),
         // Blue glow — top-right
-        _blob(null, -60, 320, const Color(0xFF0A84FF), 0.11, right: -60),
+        _blob(size: 320, color: const Color(0xFF0A84FF), opacity: 0.11,
+            top: -60, right: -60),
         // Teal glow — bottom-right
-        _blob(null, null, 400, const Color(0xFF00B4A0), 0.10,
+        _blob(size: 400, color: const Color(0xFF00B4A0), opacity: 0.10,
             right: -80, bottom: 80),
         // Purple hint — bottom-left
-        _blob(null, null, 280, const Color(0xFF5E5CE6), 0.08,
+        _blob(size: 280, color: const Color(0xFF5E5CE6), opacity: 0.08,
             left: -40, bottom: 160),
       ],
     );
   }
 
-  Widget _blob(
+  Widget _blob({
+    required double size,
+    required Color color,
+    required double opacity,
     double? top,
     double? left,
-    double size,
-    Color color,
-    double opacity, {
     double? right,
     double? bottom,
   }) {
