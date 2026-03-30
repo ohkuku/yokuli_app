@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/kanban.dart';
+import '../utils/id_gen.dart';
 import 'device_provider.dart';
 import 'lan_broadcast.dart';
 
@@ -148,7 +149,7 @@ class KanbanNotifier extends Notifier<KanbanState> {
         ? 0
         : state.columns.map((c) => c.order).reduce((a, b) => a > b ? a : b) + 1;
     final col = KanbanColumn(
-      id: now.millisecondsSinceEpoch.toString(),
+      id: generateId(),
       title: title,
       order: newOrder,
       updatedAt: now,

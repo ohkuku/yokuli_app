@@ -70,15 +70,18 @@ class _SafetyScreenState extends ConsumerState<SafetyScreen> {
 
     if (safety.isMobActive) {
       final s = ref.watch(stringsProvider);
-      return _MobActiveScreen(
-        s: s,
-        safety: safety,
-        vessel: vessel,
-        elapsed: _formatElapsed(_elapsedSeconds),
-        onCancel: () {
-          ref.read(safetyProvider.notifier).cancelMob();
-          _stopTimer();
-        },
+      return PopScope(
+        canPop: false,
+        child: _MobActiveScreen(
+          s: s,
+          safety: safety,
+          vessel: vessel,
+          elapsed: _formatElapsed(_elapsedSeconds),
+          onCancel: () {
+            ref.read(safetyProvider.notifier).cancelMob();
+            _stopTimer();
+          },
+        ),
       );
     }
 

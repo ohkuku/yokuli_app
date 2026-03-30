@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/log_entry.dart';
 import '../models/vessel_state.dart';
 import '../models/voyage.dart';
+import '../utils/id_gen.dart';
 import 'log_provider.dart';
 import 'vessel_provider.dart';
 import 'lan_broadcast.dart';
@@ -77,7 +78,7 @@ class VoyageNotifier extends Notifier<VoyageState> {
     final List<VoyageSession> history = [];
 
     for (final s in all) {
-      if (s.isActive) {
+      if (s.isActive && !s.deleted) {
         // In the unlikely case of multiple active sessions (e.g. crash),
         // keep only the most recent one and close the others.
         if (active == null ||
@@ -134,7 +135,7 @@ class VoyageNotifier extends Notifier<VoyageState> {
     }
 
     final session = VoyageSession(
-      id: now.millisecondsSinceEpoch.toString(),
+      id: generateId(),
       startTime: now,
       startPosition: position,
       status: VoyageStatus.active,

@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/log_entry.dart';
 import '../models/vessel_state.dart';
+import '../utils/id_gen.dart';
 import 'vessel_provider.dart';
 import 'lan_broadcast.dart';
 
@@ -129,7 +130,7 @@ class LogNotifier extends Notifier<List<LogEntry>> {
     );
 
     final entry = LogEntry(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: generateId(),
       type: type,
       subtype: subtype,
       timestamp: DateTime.now(),

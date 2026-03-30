@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/task.dart';
+import '../utils/id_gen.dart';
 import 'lan_broadcast.dart';
 
 // ---------------------------------------------------------------------------
@@ -129,7 +130,7 @@ class TaskNotifier extends Notifier<TaskState> {
 
     final now = DateTime.now();
     final instance = TaskInstance(
-      id: now.millisecondsSinceEpoch.toString(),
+      id: generateId(),
       templateId: templateId,
       voyageId: voyageId,
       status: TaskStatus.open,

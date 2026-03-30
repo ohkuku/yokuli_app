@@ -1,4 +1,5 @@
 import 'vessel_state.dart';
+import '../utils/id_gen.dart';
 
 /// Type of logbook entry
 enum LogbookEntryType {
@@ -44,7 +45,7 @@ class LogbookEntry {
     String notes = '',
   }) =>
       LogbookEntry(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: generateId(),
         timestamp: DateTime.now(),
         type: type,
         position: state.position,

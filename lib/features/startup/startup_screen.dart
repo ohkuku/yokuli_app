@@ -50,6 +50,8 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
   final _vesselNameCtrl = TextEditingController();
   final _skHostCtrl = TextEditingController();
   final _skPortCtrl = TextEditingController(text: '3000');
+  final _skUserCtrl = TextEditingController();
+  final _skPassCtrl = TextEditingController();
   bool _wizardConnecting = false;
   String? _wizardError;
 
@@ -73,6 +75,8 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     _vesselNameCtrl.dispose();
     _skHostCtrl.dispose();
     _skPortCtrl.dispose();
+    _skUserCtrl.dispose();
+    _skPassCtrl.dispose();
     super.dispose();
   }
 
@@ -83,8 +87,6 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     _setStep('加载本地数据…');
     await _loadLocalData();
     _markStep(0);
-
-    final settings = ref.read(settingsProvider);
 
     // Step 1: Start LAN sync (always on native)
     if (!kIsWeb) {
@@ -110,10 +112,12 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     }
 
     // Step 3: Connect Signal K if configured
-    final url = settings.effectiveSignalKUrl;
+    // Re-read settings here: LAN sync may have updated them from a peer.
+    final latestSettings = ref.read(settingsProvider);
+    final url = latestSettings.effectiveSignalKUrl;
     if (url.isNotEmpty) {
       _setStep('连接 Signal K…');
-      await _connectSK(settings);
+      await _connectSK(latestSettings);
       _markStep(3);
     } else {
       _markStep(3);
@@ -122,8 +126,8 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     if (!mounted) return;
 
     // Decide: first-time wizard or go straight to app
-    final isFirstTime = settings.vesselName == 'My Vessel' &&
-        settings.signalKHost.isEmpty &&
+    final isFirstTime = latestSettings.vesselName == 'My Vessel' &&
+        latestSettings.signalKHost.isEmpty &&
         _peersFound == 0;
 
     if (isFirstTime) {
@@ -227,6 +231,8 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
             ref.read(settingsProvider).copyWith(
                   signalKHost: host,
                   signalKPort: port,
+                  signalKUsername: _skUserCtrl.text.trim(),
+                  signalKPassword: _skPassCtrl.text,
                 ),
           );
       try {
@@ -385,6 +391,8 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
               _WizardPageSignalK(
                 hostCtrl: _skHostCtrl,
                 portCtrl: _skPortCtrl,
+                userCtrl: _skUserCtrl,
+                passCtrl: _skPassCtrl,
                 connecting: _wizardConnecting,
                 error: _wizardError,
                 onFinish: _wizardFinish,
@@ -565,12 +573,16 @@ class _WizardPageVessel extends StatelessWidget {
 class _WizardPageSignalK extends StatelessWidget {
   final TextEditingController hostCtrl;
   final TextEditingController portCtrl;
+  final TextEditingController userCtrl;
+  final TextEditingController passCtrl;
   final bool connecting;
   final String? error;
   final VoidCallback onFinish;
   const _WizardPageSignalK({
     required this.hostCtrl,
     required this.portCtrl,
+    required this.userCtrl,
+    required this.passCtrl,
     required this.connecting,
     this.error,
     required this.onFinish,
@@ -624,11 +636,33 @@ class _WizardPageSignalK extends StatelessWidget {
                   style: const TextStyle(color: AppColors.textPrimary),
                   decoration: const InputDecoration(labelText: '端口'),
                   keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => onFinish(),
+                  textInputAction: TextInputAction.next,
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: userCtrl,
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: const InputDecoration(
+              labelText: '用户名（可选）',
+              prefixIcon: Icon(Icons.person_rounded),
+            ),
+            autocorrect: false,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: passCtrl,
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: const InputDecoration(
+              labelText: '密码（可选）',
+              prefixIcon: Icon(Icons.lock_rounded),
+            ),
+            obscureText: true,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => onFinish(),
           ),
           if (error != null) ...[
             const SizedBox(height: 10),

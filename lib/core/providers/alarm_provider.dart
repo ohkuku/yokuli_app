@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/alarm.dart';
 import '../models/vessel_state.dart';
+import '../utils/id_gen.dart';
 import 'lan_broadcast.dart';
 import 'vessel_provider.dart';
 
@@ -97,7 +98,7 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
 
     final now = DateTime.now();
     final alarm = Alarm(
-      id: now.millisecondsSinceEpoch.toString(),
+      id: generateId(),
       type: type,
       level: level,
       status: AlarmStatus.active,

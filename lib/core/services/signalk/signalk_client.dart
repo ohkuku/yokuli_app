@@ -2,15 +2,18 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as ws_status;
 
+import '../../models/ais_state.dart';
 import '../../models/vessel_state.dart';
 import '../../providers/connection_provider.dart'
     show ConnectionNotifier, ConnectionStatus, connectionProvider;
 import '../../providers/vessel_provider.dart';
 import 'signalk_auth.dart';
 import 'signalk_parser.dart';
+import 'signalk_parser_ais.dart';
 
 /// Manages the WebSocket connection to a Signal K server.
 /// Notifies [connectionProvider] of status changes.
@@ -31,6 +34,8 @@ class SignalKClient {
   /// identity updates from other vessel targets.
   String? _selfContext;
 
+  String? _httpBaseUrl; // e.g. http://host:port — derived from wsUrl on connect
+
   SignalKClient(this._ref);
 
   ConnectionNotifier get _conn => _ref.read(connectionProvider.notifier);
@@ -40,6 +45,10 @@ class SignalKClient {
     _intentionalDisconnect = false;
     _currentUrl  = wsUrl;
     _currentToken = token;
+    // Derive HTTP base URL from the WebSocket URL for REST API calls.
+    _httpBaseUrl = wsUrl
+        .replaceFirst(RegExp(r'^wss?'), 'http')
+        .replaceFirst(RegExp(r'/signalk/.*'), '');
     _doConnect(wsUrl, token: token);
   }
 
@@ -81,6 +90,8 @@ class SignalKClient {
           jsonEncode(SignalKParser.buildAisSubscribeMessage()),
         );
         _startWatchdog();
+        // Fetch static own-vessel info (name, MMSI) from REST API.
+        _fetchSelfInfo(token: _currentToken);
         return;
       }
 
@@ -137,6 +148,74 @@ class SignalKClient {
     });
   }
 
+  /// Fetch own-vessel static configuration (name, MMSI, callsign) from
+  /// the Signal K REST API and apply it to [vesselProvider.aisOwnShip].
+  Future<void> _fetchSelfInfo({String? token}) async {
+    final base = _httpBaseUrl;
+    if (base == null) return;
+    try {
+      final uri = Uri.parse('$base/signalk/v1/api/vessels/self');
+      final headers = <String, String>{};
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+      final response = await http.get(uri, headers: headers)
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      String? mmsi;
+      String? name;
+      String? callSign;
+
+      // MMSI from the context field or mmsi path
+      if (data.containsKey('mmsi')) {
+        mmsi = data['mmsi']?.toString();
+      }
+      // Try to extract MMSI from the vessel context key if not directly present
+      if (mmsi == null && _selfContext != null) {
+        mmsi = SignalKAisParser.extractMmsi(_selfContext!);
+      }
+
+      // Name: vessels/self/name or vessels/self/name/value
+      final nameVal = data['name'];
+      if (nameVal is String) {
+        name = nameVal;
+      } else if (nameVal is Map) {
+        name = nameVal['value']?.toString();
+      }
+
+      // Callsign
+      final comms = data['communication'];
+      if (comms is Map) {
+        final vhf = comms['callsignVhf'];
+        if (vhf is String) callSign = vhf;
+        else if (vhf is Map) callSign = vhf['value']?.toString();
+      }
+
+      if (mmsi != null || name != null || callSign != null) {
+        final current = _ref.read(vesselProvider).aisOwnShip;
+        final updated = (current ?? const AisOwnShipState()).copyWith(
+          mmsi: mmsi ?? current?.mmsi,
+          name: name ?? current?.name,
+          callSign: callSign ?? current?.callSign,
+          lastUpdated: DateTime.now(),
+        );
+        _ref.read(vesselProvider.notifier).applyPartial(
+          VesselState(
+            aisOwnShip: updated,
+            batteries: const {},
+            solar: const {},
+            aisTargets: const {},
+            lastUpdated: DateTime.now(),
+          ),
+        );
+      }
+    } catch (_) {
+      // Non-fatal — own-ship info may be populated later via WS deltas.
+    }
+  }
+
   Future<void> disconnect() async {
     _intentionalDisconnect = true;
     _reconnectTimer?.cancel();
@@ -148,6 +227,7 @@ class SignalKClient {
     _channel = null;
     _sub = null;
     _selfContext = null;
+    _httpBaseUrl = null;
     _conn.setSignalKStatus(ConnectionStatus.disconnected);
   }
 

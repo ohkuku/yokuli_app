@@ -488,7 +488,9 @@ class _SolarControllerCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      controller.id,
+                      controller.id.isEmpty
+                          ? controller.id
+                          : controller.id[0].toUpperCase() + controller.id.substring(1),
                       style: const TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 15,

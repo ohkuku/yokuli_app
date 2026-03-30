@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/models/kanban.dart';
 import '../../../core/providers/kanban_provider.dart';
+import '../../../core/utils/id_gen.dart';
 
 class KanbanScreen extends ConsumerStatefulWidget {
   const KanbanScreen({super.key});
@@ -570,7 +571,7 @@ class _CardSheetState extends ConsumerState<_CardSheet> {
     final notifier = ref.read(kanbanProvider.notifier);
     if (widget.card == null) {
       await notifier.addCard(KanbanCard(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: generateId(),
         columnId: targetColumnId,
         title: title,
         description: _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),

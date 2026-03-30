@@ -11,6 +11,8 @@ import '../../../core/providers/device_provider.dart' show DeviceInfo, devicePro
 import '../../../core/services/lan_sync/lan_sync_service.dart';
 import '../../../core/services/lan_sync/lan_sync_platform_base.dart' show DiscoveredHost;
 import '../../../core/services/data_export_service.dart';
+import '../../../core/services/signalk/signalk_auth.dart';
+import '../../../core/services/signalk/signalk_client.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -23,10 +25,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late TextEditingController _nameCtrl;
   late TextEditingController _hostIpCtrl;
   late TextEditingController _hostPortCtrl;
+  late TextEditingController _skHostCtrl;
+  late TextEditingController _skPortCtrl;
+  late TextEditingController _skUserCtrl;
+  late TextEditingController _skPassCtrl;
 
   List<DiscoveredHost> _scannedHosts = [];
   bool _scanning = false;
   bool _exporting = false;
+  bool _skConnecting = false;
+  String? _skConnectError;
   String? _localIp;
 
   @override
@@ -36,6 +44,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _nameCtrl = TextEditingController(text: s.vesselName);
     _hostIpCtrl = TextEditingController(text: s.hostIp);
     _hostPortCtrl = TextEditingController(text: s.hostPort.toString());
+    _skHostCtrl = TextEditingController(text: s.signalKHost);
+    _skPortCtrl = TextEditingController(text: s.signalKPort.toString());
+    _skUserCtrl = TextEditingController(text: s.signalKUsername);
+    _skPassCtrl = TextEditingController(text: s.signalKPassword);
     if (!kIsWeb) _loadLocalIp();
   }
 
@@ -44,6 +56,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _nameCtrl.dispose();
     _hostIpCtrl.dispose();
     _hostPortCtrl.dispose();
+    _skHostCtrl.dispose();
+    _skPortCtrl.dispose();
+    _skUserCtrl.dispose();
+    _skPassCtrl.dispose();
     super.dispose();
   }
 
@@ -273,6 +289,55 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _saveSkSettings() async {
+    final host = _skHostCtrl.text.trim();
+    final port = int.tryParse(_skPortCtrl.text.trim()) ?? 3000;
+    final username = _skUserCtrl.text.trim();
+    final password = _skPassCtrl.text;
+    await ref.read(settingsProvider.notifier).update(
+          ref.read(settingsProvider).copyWith(
+                signalKHost: host,
+                signalKPort: port,
+                signalKUsername: username,
+                signalKPassword: password,
+              ),
+        );
+  }
+
+  Future<void> _connectSK() async {
+    await _saveSkSettings();
+    final settings = ref.read(settingsProvider);
+    final url = settings.effectiveSignalKUrl;
+    if (url.isEmpty) return;
+
+    setState(() {
+      _skConnecting = true;
+      _skConnectError = null;
+    });
+    try {
+      String? token;
+      if (settings.hasCredentials) {
+        try {
+          token = await SignalKAuth.login(
+            url,
+            settings.signalKUsername,
+            settings.signalKPassword,
+          );
+        } catch (_) {}
+      }
+      await ref.read(signalKClientProvider).connect(url, token: token);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Signal K 已连接')),
+        );
+      }
+    } catch (e) {
+      if (mounted) setState(() => _skConnectError = '连接失败：$e');
+    } finally {
+      if (mounted) setState(() => _skConnecting = false);
+    }
+  }
+
   Future<void> _restartLanSync() async {
     await ref.read(lanSyncServiceProvider).restart();
     if (mounted) {
@@ -326,6 +391,98 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             const SizedBox(height: 24),
 
+            // --- Signal K ---
+            const SizedBox(height: 24),
+            _SectionHeader('SIGNAL K'),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: _skHostCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '主机 / 地址',
+                      hintText: '192.168.1.10',
+                      prefixIcon: Icon(Icons.dns_rounded),
+                    ),
+                    keyboardType: TextInputType.url,
+                    autocorrect: false,
+                    textInputAction: TextInputAction.next,
+                    onEditingComplete: _saveSkSettings,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 90,
+                  child: TextField(
+                    controller: _skPortCtrl,
+                    decoration: const InputDecoration(labelText: '端口'),
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.next,
+                    onEditingComplete: _saveSkSettings,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _skUserCtrl,
+              decoration: const InputDecoration(
+                labelText: '用户名',
+                prefixIcon: Icon(Icons.person_rounded),
+              ),
+              autocorrect: false,
+              textInputAction: TextInputAction.next,
+              onEditingComplete: _saveSkSettings,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _skPassCtrl,
+              decoration: const InputDecoration(
+                labelText: '密码',
+                prefixIcon: Icon(Icons.lock_rounded),
+              ),
+              obscureText: true,
+              textInputAction: TextInputAction.done,
+              onEditingComplete: _saveSkSettings,
+            ),
+            if (_skConnectError != null) ...[
+              const SizedBox(height: 6),
+              Row(children: [
+                const Icon(Icons.error_outline_rounded,
+                    size: 14, color: AppColors.danger),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(_skConnectError!,
+                      style: const TextStyle(
+                          color: AppColors.danger, fontSize: 12)),
+                ),
+              ]),
+            ],
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _skConnecting ? null : _connectSK,
+                icon: _skConnecting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppColors.background),
+                      )
+                    : const Icon(Icons.link_rounded),
+                label: Text(_skConnecting ? '连接中…' : '连接 Signal K'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.cyan,
+                  foregroundColor: AppColors.background,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+
             // --- LAN Sync ---
             _SectionHeader(s.lanSync.toUpperCase()),
             const SizedBox(height: 8),
@@ -372,19 +529,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
             // Port config (native only)
             if (!kIsWeb) ...[
-              TextField(
-                controller: _hostPortCtrl,
-                decoration: InputDecoration(
-                  labelText: s.serverPort,
-                  hintText: '8765',
-                  prefixIcon: const Icon(Icons.lan_rounded),
-                ),
-                keyboardType: TextInputType.number,
-                textInputAction: TextInputAction.done,
-                onEditingComplete: _save,
-              ),
-              const SizedBox(height: 12),
-
               // Discovered peers (auto-found via UDP)
               if (discoveredPeers.isNotEmpty) ...[
                 Text(s.discoveredOnNetwork,

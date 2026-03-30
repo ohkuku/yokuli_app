@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/issue.dart';
+import '../utils/id_gen.dart';
 import 'lan_broadcast.dart';
 
 // ---------------------------------------------------------------------------
@@ -75,7 +76,7 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
   }) async {
     final now = DateTime.now();
     final ticket = IssueTicket(
-      id: now.millisecondsSinceEpoch.toString(),
+      id: generateId(),
       title: title,
       source: source,
       severity: severity,

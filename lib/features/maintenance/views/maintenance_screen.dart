@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/models/maintenance_record.dart';
+import '../../../core/utils/id_gen.dart';
 
 final _maintenanceProvider = Provider<Box>((ref) => Hive.box('maintenance'));
 
@@ -179,7 +180,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
                       onPressed: () async {
                         if (titleCtrl.text.trim().isEmpty) return;
                         final record = (existing ?? MaintenanceRecord(
-                          id: DateTime.now().millisecondsSinceEpoch.toString(),
+                          id: generateId(),
                           title: '',
                         )).copyWith(
                           title: titleCtrl.text.trim(),

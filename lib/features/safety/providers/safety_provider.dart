@@ -9,6 +9,7 @@ import '../../../core/providers/log_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/providers/lan_broadcast.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
+import '../../../core/utils/id_gen.dart';
 
 class SafetyState {
   final MobAlert? activeMob;
@@ -86,7 +87,7 @@ class SafetyNotifier extends Notifier<SafetyState> {
   void triggerMob() {
     final vessel = ref.read(vesselProvider);
     final alert = MobAlert(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: generateId(),
       triggeredAt: DateTime.now(),
       position: vessel.position,
       triggeredByDevice: 'this device',

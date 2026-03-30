@@ -24,7 +24,7 @@ class YokulApp extends ConsumerWidget {
       safetyProvider.select((s) => s.isMobActive),
       (prev, isActive) {
         if (isActive == true && prev != true) {
-          router.go('/safety');
+          router.push('/safety');
         }
       },
     );
