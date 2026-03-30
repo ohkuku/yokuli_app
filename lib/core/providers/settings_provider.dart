@@ -9,9 +9,8 @@ class AppSettings {
   final String signalKUrl; // legacy; use signalKHost+signalKPort for new setups
   final String signalKHost; // e.g. 192.168.1.10
   final int signalKPort;    // default 3000
-  final String signalKUsername; // optional; empty = no auth
-  final String signalKPassword; // stored for convenience (no secrets on device)
-  final String signalKToken;    // JWT; empty = not logged in
+  final String signalKUsername;
+  final String signalKPassword; // stored in plain text (no security requirement)
   final DeviceRole deviceRole;
   final String hostIp; // when role == client
   final int hostPort;
@@ -27,7 +26,6 @@ class AppSettings {
     this.signalKPort = 3000,
     this.signalKUsername = '',
     this.signalKPassword = '',
-    this.signalKToken = '',
     this.deviceRole = DeviceRole.standalone,
     this.hostIp = '',
     this.hostPort = 8765,
@@ -37,7 +35,8 @@ class AppSettings {
     this.tileOrder = const [],
   });
 
-  bool get hasToken => signalKToken.isNotEmpty;
+  bool get hasCredentials =>
+      signalKUsername.isNotEmpty && signalKPassword.isNotEmpty;
 
   /// The WebSocket URL to connect to Signal K.
   /// Prefers host+port if signalKHost is set, otherwise falls back to signalKUrl.
@@ -55,7 +54,6 @@ class AppSettings {
     int? signalKPort,
     String? signalKUsername,
     String? signalKPassword,
-    String? signalKToken,
     DeviceRole? deviceRole,
     String? hostIp,
     int? hostPort,
@@ -71,7 +69,6 @@ class AppSettings {
         signalKPort: signalKPort ?? this.signalKPort,
         signalKUsername: signalKUsername ?? this.signalKUsername,
         signalKPassword: signalKPassword ?? this.signalKPassword,
-        signalKToken: signalKToken ?? this.signalKToken,
         deviceRole: deviceRole ?? this.deviceRole,
         hostIp: hostIp ?? this.hostIp,
         hostPort: hostPort ?? this.hostPort,
@@ -83,20 +80,19 @@ class AppSettings {
 }
 
 class SettingsNotifier extends Notifier<AppSettings> {
-  static const _keyVesselName    = 'vessel_name';
-  static const _keySignalKUrl    = 'signalk_url';
-  static const _keySignalKHost   = 'signalk_host';
-  static const _keySignalKPort2  = 'signalk_port2'; // port2 to avoid clash
-  static const _keySignalKUser   = 'signalk_username';
-  static const _keySignalKPass   = 'signalk_password';
-  static const _keySignalKToken  = 'signalk_token';
-  static const _keyDeviceRole    = 'device_role';
-  static const _keyHostIp        = 'host_ip';
-  static const _keyHostPort      = 'host_port';
-  static const _keyAutoConnectSK = 'auto_connect_sk';
+  static const _keyVesselName     = 'vessel_name';
+  static const _keySignalKUrl     = 'signalk_url';
+  static const _keySignalKHost    = 'signalk_host';
+  static const _keySignalKPort2   = 'signalk_port2';
+  static const _keySignalKUser    = 'signalk_username';
+  static const _keySignalKPass    = 'signalk_password';
+  static const _keyDeviceRole     = 'device_role';
+  static const _keyHostIp         = 'host_ip';
+  static const _keyHostPort       = 'host_port';
+  static const _keyAutoConnectSK  = 'auto_connect_sk';
   static const _keyAutoConnectLan = 'auto_connect_lan';
-  static const _keyKeepScreenOn  = 'keep_screen_on';
-  static const _keyTileOrder     = 'tile_order';
+  static const _keyKeepScreenOn   = 'keep_screen_on';
+  static const _keyTileOrder      = 'tile_order';
 
   @override
   AppSettings build() {
@@ -111,22 +107,21 @@ class SettingsNotifier extends Notifier<AppSettings> {
     final prefs = await SharedPreferences.getInstance();
     final tileOrderStr = prefs.getString(_keyTileOrder) ?? '';
     state = AppSettings(
-      vesselName:      prefs.getString(_keyVesselName)   ?? 'My Vessel',
-      signalKUrl:      prefs.getString(_keySignalKUrl)   ?? '',
-      signalKHost:     prefs.getString(_keySignalKHost)  ?? '',
-      signalKPort:     prefs.getInt(_keySignalKPort2)    ?? 3000,
-      signalKUsername: prefs.getString(_keySignalKUser)  ?? '',
-      signalKPassword: prefs.getString(_keySignalKPass)  ?? '',
-      signalKToken:    prefs.getString(_keySignalKToken) ?? '',
+      vesselName:      prefs.getString(_keyVesselName)  ?? 'My Vessel',
+      signalKUrl:      prefs.getString(_keySignalKUrl)  ?? '',
+      signalKHost:     prefs.getString(_keySignalKHost) ?? '',
+      signalKPort:     prefs.getInt(_keySignalKPort2)   ?? 3000,
+      signalKUsername: prefs.getString(_keySignalKUser) ?? '',
+      signalKPassword: prefs.getString(_keySignalKPass) ?? '',
       deviceRole: DeviceRole.values.firstWhere(
         (e) => e.name == prefs.getString(_keyDeviceRole),
         orElse: () => DeviceRole.standalone,
       ),
-      hostIp: prefs.getString(_keyHostIp) ?? '',
-      hostPort: prefs.getInt(_keyHostPort) ?? 8765,
-      autoConnectSignalK: prefs.getBool(_keyAutoConnectSK) ?? false,
-      autoConnectLan: prefs.getBool(_keyAutoConnectLan) ?? false,
-      keepScreenOn: prefs.getBool(_keyKeepScreenOn) ?? true,
+      hostIp:            prefs.getString(_keyHostIp)      ?? '',
+      hostPort:          prefs.getInt(_keyHostPort)       ?? 8765,
+      autoConnectSignalK: prefs.getBool(_keyAutoConnectSK)  ?? false,
+      autoConnectLan:    prefs.getBool(_keyAutoConnectLan) ?? false,
+      keepScreenOn:      prefs.getBool(_keyKeepScreenOn)  ?? true,
       tileOrder: tileOrderStr.isEmpty
           ? const []
           : tileOrderStr.split(',').where((s) => s.isNotEmpty).toList(),
@@ -136,20 +131,19 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> update(AppSettings updated) async {
     state = updated;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyVesselName,   updated.vesselName);
-    await prefs.setString(_keySignalKUrl,   updated.signalKUrl);
-    await prefs.setString(_keySignalKHost,  updated.signalKHost);
-    await prefs.setInt(_keySignalKPort2,    updated.signalKPort);
-    await prefs.setString(_keySignalKUser,  updated.signalKUsername);
-    await prefs.setString(_keySignalKPass,  updated.signalKPassword);
-    await prefs.setString(_keySignalKToken, updated.signalKToken);
-    await prefs.setString(_keyDeviceRole, updated.deviceRole.name);
-    await prefs.setString(_keyHostIp, updated.hostIp);
-    await prefs.setInt(_keyHostPort, updated.hostPort);
-    await prefs.setBool(_keyAutoConnectSK, updated.autoConnectSignalK);
-    await prefs.setBool(_keyAutoConnectLan, updated.autoConnectLan);
-    await prefs.setBool(_keyKeepScreenOn, updated.keepScreenOn);
-    await prefs.setString(_keyTileOrder, updated.tileOrder.join(','));
+    await prefs.setString(_keyVesselName,    updated.vesselName);
+    await prefs.setString(_keySignalKUrl,    updated.signalKUrl);
+    await prefs.setString(_keySignalKHost,   updated.signalKHost);
+    await prefs.setInt(_keySignalKPort2,     updated.signalKPort);
+    await prefs.setString(_keySignalKUser,   updated.signalKUsername);
+    await prefs.setString(_keySignalKPass,   updated.signalKPassword);
+    await prefs.setString(_keyDeviceRole,    updated.deviceRole.name);
+    await prefs.setString(_keyHostIp,        updated.hostIp);
+    await prefs.setInt(_keyHostPort,         updated.hostPort);
+    await prefs.setBool(_keyAutoConnectSK,   updated.autoConnectSignalK);
+    await prefs.setBool(_keyAutoConnectLan,  updated.autoConnectLan);
+    await prefs.setBool(_keyKeepScreenOn,    updated.keepScreenOn);
+    await prefs.setString(_keyTileOrder,     updated.tileOrder.join(','));
   }
 }
 

@@ -12,6 +12,11 @@ permissions:
   pages: write        # needed for GitHub Pages deployment
   id-token: write     # needed for GitHub Pages OIDC
 
+# Serialise gh-pages deployments so concurrent branch pushes don't conflict
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
 jobs:
   dev-build:
     runs-on: ubuntu-latest

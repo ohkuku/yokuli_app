@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'app.dart';
 import 'core/providers/settings_provider.dart';
 import 'core/providers/locale_provider.dart';
+import 'core/services/signalk/signalk_auth.dart';
 import 'core/providers/voyage_provider.dart';
 import 'core/providers/task_provider.dart';
 import 'core/providers/issue_provider.dart';
@@ -83,7 +84,18 @@ class _AppInitState extends ConsumerState<_AppInit> {
     final settings = ref.read(settingsProvider);
 
     if (settings.autoConnectSignalK && settings.effectiveSignalKUrl.isNotEmpty) {
-      final token = settings.hasToken ? settings.signalKToken : null;
+      String? token;
+      if (settings.hasCredentials) {
+        try {
+          token = await SignalKAuth.login(
+            settings.effectiveSignalKUrl,
+            settings.signalKUsername,
+            settings.signalKPassword,
+          );
+        } catch (_) {
+          // Proceed without token if login fails
+        }
+      }
       await ref.read(signalKClientProvider).connect(
         settings.effectiveSignalKUrl,
         token: token,

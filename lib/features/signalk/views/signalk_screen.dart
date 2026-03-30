@@ -70,19 +70,10 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
 
     String? token;
 
-    // Step 1: login if credentials are provided
+    // Step 1: login fresh if credentials are provided
     if (user.isNotEmpty && pass.isNotEmpty) {
       try {
         token = await SignalKAuth.login(url, user, pass);
-        await ref.read(settingsProvider.notifier).update(
-          ref.read(settingsProvider).copyWith(
-            signalKHost:     host,
-            signalKPort:     port,
-            signalKUsername: user,
-            signalKPassword: pass,
-            signalKToken:    token,
-          ),
-        );
       } on SignalKAuthException catch (e) {
         if (mounted) setState(() { _connecting = false; _connectError = e.message; });
         return;
@@ -90,14 +81,17 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
         if (mounted) setState(() { _connecting = false; _connectError = e.toString(); });
         return;
       }
-    } else {
-      // No credentials entered — use saved token if available
-      final saved = ref.read(settingsProvider);
-      token = saved.hasToken ? saved.signalKToken : null;
-      await ref.read(settingsProvider.notifier).update(
-        saved.copyWith(signalKHost: host, signalKPort: port),
-      );
     }
+
+    // Save host/port/credentials
+    await ref.read(settingsProvider.notifier).update(
+      ref.read(settingsProvider).copyWith(
+        signalKHost:     host,
+        signalKPort:     port,
+        signalKUsername: user,
+        signalKPassword: pass,
+      ),
+    );
 
     // Step 2: open WebSocket (with token if we have one)
     await ref.read(signalKClientProvider).connect(url, token: token);
@@ -107,16 +101,6 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
   Future<void> _disconnect() async {
     await ref.read(signalKClientProvider).disconnect();
     ref.read(vesselProvider.notifier).reset();
-  }
-
-  Future<void> _forgetCredentials() async {
-    await ref.read(settingsProvider.notifier).update(
-      ref.read(settingsProvider).copyWith(
-        signalKUsername: '',
-        signalKToken:    '',
-      ),
-    );
-    _userCtrl.clear();
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -220,41 +204,6 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
             // ── Authentication (optional) ─────────────────────────────
             _SectionHeader('AUTHENTICATION  (leave blank if not required)'),
             const SizedBox(height: 8),
-
-            if (settings.hasToken && !connected)
-              // Saved token banner — show who is logged in
-              Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: AppColors.cyan.withAlpha(15),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.cyan.withAlpha(50)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.key_rounded,
-                        color: AppColors.cyan, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Saved token for ${settings.signalKUsername}',
-                        style: const TextStyle(
-                            color: AppColors.cyan, fontSize: 12),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _forgetCredentials,
-                      style: TextButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          minimumSize: const Size(0, 0)),
-                      child: const Text('Forget',
-                          style: TextStyle(
-                              color: AppColors.textMuted, fontSize: 12)),
-                    ),
-                  ],
-                ),
-              ),
 
             if (!connected) ...[
               TextField(
