@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/kanban.dart';
+import 'device_provider.dart';
 import 'lan_broadcast.dart';
 
 class _Store {
@@ -76,10 +77,16 @@ class KanbanNotifier extends Notifier<KanbanState> {
     });
   }
 
+  /// Bump stateVersion after any local mutation so peers detect we have newer data.
+  void _bump() {
+    ref.read(deviceProvider.notifier).bump();
+  }
+
   Future<void> addCard(KanbanCard card) async {
     state = KanbanState(columns: state.columns, cards: [...state.cards, card]);
     await _save();
     _broadcast();
+    _bump();
   }
 
   Future<void> updateCard(KanbanCard card) async {
@@ -87,6 +94,7 @@ class KanbanNotifier extends Notifier<KanbanState> {
     state = KanbanState(columns: state.columns, cards: updated);
     await _save();
     _broadcast();
+    _bump();
   }
 
   Future<void> deleteCard(String id) async {
@@ -95,6 +103,7 @@ class KanbanNotifier extends Notifier<KanbanState> {
         cards: state.cards.where((c) => c.id != id).toList());
     await _save();
     _broadcast();
+    _bump();
   }
 
   Future<void> archiveCard(String id) async {
@@ -105,6 +114,7 @@ class KanbanNotifier extends Notifier<KanbanState> {
     state = KanbanState(columns: state.columns, cards: updated);
     await _save();
     _broadcast();
+    _bump();
   }
 
   Future<void> unarchiveCard(String id) async {
@@ -115,6 +125,7 @@ class KanbanNotifier extends Notifier<KanbanState> {
     state = KanbanState(columns: state.columns, cards: updated);
     await _save();
     _broadcast();
+    _bump();
   }
 
   Future<void> moveCard(String cardId, String toColumnId) async {
@@ -125,6 +136,7 @@ class KanbanNotifier extends Notifier<KanbanState> {
     state = KanbanState(columns: state.columns, cards: updated);
     await _save();
     _broadcast();
+    _bump();
   }
 
   Future<void> addColumn(String title) async {
@@ -139,6 +151,7 @@ class KanbanNotifier extends Notifier<KanbanState> {
     state = KanbanState(columns: [...state.columns, col], cards: state.cards);
     await _save();
     _broadcast();
+    _bump();
   }
 
   Future<void> deleteColumn(String columnId) async {
@@ -153,6 +166,7 @@ class KanbanNotifier extends Notifier<KanbanState> {
     );
     await _save();
     _broadcast();
+    _bump();
   }
 
   Future<void> importAll(Map<String, dynamic> data) async {

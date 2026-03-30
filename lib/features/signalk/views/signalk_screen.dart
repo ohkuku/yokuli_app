@@ -136,11 +136,8 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
     // Step 2: open WebSocket (with token if we have one)
     await ref.read(signalKClientProvider).connect(url, token: token);
 
-    // Step 3: if host, push credentials to any connected LAN clients
-    final role = ref.read(settingsProvider).deviceRole;
-    if (role == DeviceRole.host) {
-      ref.read(lanSyncServiceProvider).broadcastSkCredentials();
-    }
+    // Step 3: push credentials to any connected LAN clients (always a server on native)
+    ref.read(lanSyncServiceProvider).broadcastSkCredentials();
 
     if (mounted) setState(() => _connecting = false);
   }
@@ -159,36 +156,6 @@ class _SignalKScreenState extends ConsumerState<SignalKScreen> {
     final settings = ref.watch(settingsProvider);
     final skStatus = conn.signalK;
     final connected = skStatus == ConnectionStatus.connected;
-
-    // Client role: data comes from LAN host, direct SK config not needed
-    if (settings.deviceRole == DeviceRole.client) {
-      return Scaffold(
-        backgroundColor: AppColors.background,
-        appBar: AppBar(title: const Text('Signal K Hub')),
-        body: const Center(
-          child: Padding(
-            padding: EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.wifi_rounded, size: 48, color: AppColors.teal),
-                SizedBox(height: 16),
-                Text(
-                  '客户端模式',
-                  style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  '当前设备为从端，Signal K 数据由主机通过局域网同步。\n如需直连 Signal K，请在设置中切换为独立或主机模式。',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
 
     final s = ref.watch(stringsProvider);
 

@@ -1,11 +1,20 @@
 import '../../models/mob_alert.dart';
 import '../../models/vessel_state.dart';
 
-/// Host discovered on the LAN
-typedef DiscoveredHost = ({String name, String host, int port, String ws});
+/// Host discovered on the LAN (via UDP or TCP scan).
+typedef DiscoveredHost = ({
+  String name,
+  String host,
+  int port,
+  String ws,
+  /// Permanent device UUID, empty string if unknown (TCP scan fallback).
+  String deviceId,
+  /// stateVersion in milliseconds since epoch; 0 if unknown.
+  int stateVersionMs,
+});
 
 /// Abstract platform interface for LAN sync.
-/// Native (mobile/desktop): can be Host or Client.
+/// Native (mobile/desktop): runs WS server + UDP discovery automatically.
 /// Web: Client only, no UDP discovery, no server.
 abstract class LanSyncPlatform {
   /// Whether this platform can act as a WebSocket host/server.
@@ -30,9 +39,18 @@ abstract class LanSyncPlatform {
   /// Host only: called when a new client connects; receives a send-to-one function
   /// that LanSyncService uses to dump all persisted module data to the new client.
   void Function(void Function(Map<String, dynamic>))? onNewClientConnected;
+  /// Called when a peer announces itself (or updates its stateVersionMs) via UDP.
+  void Function(DiscoveredHost peer)? onPeerDiscovered;
+  /// Called when client receives a sync_meta message from the server it connected to.
+  void Function(int svMs, String peerId)? onSyncMetaReceived;
 
   // --- Host operations (native only) ---
-  Future<void> startHost(int port, String vesselName);
+  Future<void> startHost(
+    int port,
+    String vesselName, {
+    String deviceId,
+    int Function()? getStateVersionMs,
+  });
   Future<void> stopHost();
   void updateHostState(VesselState state);
   void broadcastMob(MobAlert alert);
@@ -47,10 +65,13 @@ abstract class LanSyncPlatform {
   bool get isClientConnected;
 
   // --- Discovery ---
+  Future<void> startDiscovery();
+  void stopDiscovery();
+
   /// Returns this device's local IP (used to show host address in settings).
   Future<String> getLocalIp();
 
-  /// Scan a subnet for running Yokuli hosts.
+  /// Scan a subnet for running Yokuli hosts (fallback; no deviceId/sv available).
   /// Returns empty list on web.
   Future<List<DiscoveredHost>> scanForHosts(String subnet);
 }

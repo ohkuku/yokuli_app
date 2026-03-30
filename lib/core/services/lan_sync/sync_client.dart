@@ -9,7 +9,14 @@ import '../../models/vessel_state.dart';
 import '../../models/mob_alert.dart';
 import 'sync_host.dart' show SyncHost;
 
-typedef DiscoveredHost = ({String name, String host, int port, String ws});
+typedef DiscoveredHost = ({
+  String name,
+  String host,
+  int port,
+  String ws,
+  String deviceId,
+  int stateVersionMs,
+});
 
 /// Connects to a SyncHost on the LAN and receives VesselState updates.
 class SyncClient {
@@ -31,6 +38,8 @@ class SyncClient {
   void Function(Map<String, dynamic> data)? onVoyageUpsert;
   void Function(Map<String, dynamic>)? onKanbanSync;
   void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
+  /// Called when server sends sync_meta (stateVersionMs + deviceId of the server).
+  void Function(int svMs, String peerId)? onSyncMetaReceived;
 
   Future<void> connect(String wsUrl) async {
     await disconnect();
@@ -90,6 +99,10 @@ class SyncClient {
           onKanbanSync?.call(json);
         case 'sk_credentials':
           if (data != null) onSkCredentialsReceived?.call(data);
+        case 'sync_meta':
+          final svMs = json['sv'] as int?;
+          final peerId = json['id'] as String? ?? '';
+          if (svMs != null) onSyncMetaReceived?.call(svMs, peerId);
       }
     } catch (_) {}
   }
@@ -126,9 +139,11 @@ class SyncClient {
 }
 
 /// Listens on UDP for host announcements broadcast by SyncHost.
+/// Re-emits a peer whenever its stateVersionMs increases.
 class HostDiscovery {
   RawDatagramSocket? _socket;
-  final Set<String> _seen = {};
+  /// deviceId → latest stateVersionMs we've seen from this peer.
+  final Map<String, int> _seenVersions = {};
   StreamController<DiscoveredHost>? _controller;
 
   Stream<DiscoveredHost> get stream {
@@ -149,15 +164,27 @@ class HostDiscovery {
         try {
           final json = jsonDecode(utf8.decode(dg.data)) as Map<String, dynamic>;
           if (json['type'] != SyncHost.serviceType) return;
+
           final ws = json['ws'] as String;
-          if (_seen.contains(ws)) return;
-          _seen.add(ws);
-          _controller?.add((
-            name: json['name'] as String? ?? 'Unknown',
-            host: json['host'] as String,
-            port: json['port'] as int,
-            ws: ws,
-          ));
+          // Use deviceId for deduplication; fall back to ws if absent (old firmware)
+          final deviceId = (json['deviceId'] as String?)?.isNotEmpty == true
+              ? json['deviceId'] as String
+              : ws;
+          final sv = json['sv'] as int? ?? 0;
+
+          // Emit (or re-emit) only when stateVersionMs increases
+          final lastSv = _seenVersions[deviceId] ?? -1;
+          if (sv > lastSv) {
+            _seenVersions[deviceId] = sv;
+            _controller?.add((
+              name: json['name'] as String? ?? 'Unknown',
+              host: json['host'] as String,
+              port: json['port'] as int,
+              ws: ws,
+              deviceId: deviceId,
+              stateVersionMs: sv,
+            ));
+          }
         } catch (_) {}
       });
     } catch (_) {}
@@ -166,10 +193,11 @@ class HostDiscovery {
   void stop() {
     _socket?.close();
     _socket = null;
-    _seen.clear();
+    _seenVersions.clear();
   }
 
-  /// Probe a subnet for running hosts (fallback when UDP not available)
+  /// Probe a subnet for running hosts (fallback when UDP not available).
+  /// TCP scan can't retrieve deviceId or sv, so they default to empty/0.
   static Future<List<DiscoveredHost>> scanSubnet({
     required String subnet, // e.g. "192.168.1"
     int port = SyncHost.defaultPort,
@@ -189,6 +217,8 @@ class HostDiscovery {
             host: ip,
             port: port,
             ws: 'ws://$ip:$port',
+            deviceId: '',
+            stateVersionMs: 0,
           ));
         } catch (_) {}
       }());

@@ -12,7 +12,8 @@ import '../../models/issue.dart';
 import '../../models/voyage.dart';
 import '../../providers/connection_provider.dart'
     show ConnectionNotifier, ConnectionStatus, connectionProvider;
-import '../../providers/settings_provider.dart' show DeviceRole, settingsProvider;
+import '../../providers/settings_provider.dart' show settingsProvider;
+import '../../providers/device_provider.dart';
 import '../../providers/vessel_provider.dart';
 import '../../providers/log_provider.dart';
 import '../../providers/alarm_provider.dart';
@@ -24,14 +25,26 @@ import '../../providers/lan_broadcast.dart';
 import '../signalk/signalk_auth.dart';
 import '../signalk/signalk_client.dart';
 import 'lan_sync_platform.dart'; // conditional export → native or web impl
+import 'lan_sync_platform_base.dart' show DiscoveredHost;
+
+/// Discovered peers on the LAN — exposed for the settings UI.
+final discoveredPeersProvider = StateProvider<List<DiscoveredHost>>((ref) => []);
 
 /// Coordinates LAN sync using the platform-appropriate adapter.
-/// - Native: can be Host (shelf WS server + UDP) or Client
-/// - Web:    Client only (no server, no UDP discovery)
+///
+/// Native: every device runs a WS server automatically. UDP discovery finds
+/// peers. When a peer has newer stateVersion, we connect to them as a client
+/// and receive a full-state dump. Last-write-wins (LWW) at full-state level.
+///
+/// Web: client only — connect manually to a known host IP.
 class LanSyncService {
   final Ref _ref;
   final LanSyncPlatformImpl _platform = LanSyncPlatformImpl();
   Timer? _stateTimer;
+
+  /// deviceId → stateVersionMs we last successfully triggered a sync with.
+  /// Prevents duplicate connections to the same peer at the same version.
+  final Map<String, int> _peerSyncedVersions = {};
 
   void Function(MobAlert alert)? onMobAlert;
   void Function()? onMobCancelReceived;
@@ -41,20 +54,17 @@ class LanSyncService {
       _ref.read(vesselProvider.notifier).update(state);
     };
     _platform.onMobReceived = (alert) => onMobAlert?.call(alert);
+    _platform.onMobCancelReceived = () => onMobCancelReceived?.call();
     _platform.onKanbanSync = (data) {
       _ref.read(kanbanProvider.notifier).applySync(data);
     };
     _platform.onSkCredentialsReceived = _onSkCredentialsReceived;
-    _platform.onMobCancelReceived = () => onMobCancelReceived?.call();
     _platform.onClientConnectionChanged = (connected) {
       _conn.setLanSyncStatus(
         connected ? ConnectionStatus.connected : ConnectionStatus.connecting,
       );
     };
-    _platform.onPeerCountChanged = (count) {
-      _conn.setPeerCount(count);
-      // Host status stays connected regardless of client count
-    };
+    _platform.onPeerCountChanged = (count) => _conn.setPeerCount(count);
     _platform.onLogAppend = (data) {
       _ref.read(logProvider.notifier).appendRemote(data);
     };
@@ -71,56 +81,71 @@ class LanSyncService {
       _ref.read(voyageProvider.notifier).upsertRemote(data);
     };
     _platform.onNewClientConnected = _sendFullDump;
+    _platform.onPeerDiscovered = _onPeerDiscovered;
+    _platform.onSyncMetaReceived = (svMs, peerId) {
+      // After receiving a full dump from a server, adopt their stateVersion.
+      _ref.read(deviceProvider.notifier).syncTo(
+        DateTime.fromMillisecondsSinceEpoch(svMs),
+      );
+    };
   }
 
-  /// Broadcasts the host's Signal K credentials to all clients.
-  /// Call this after the host connects/reconnects to SK.
-  void broadcastSkCredentials() {
-    final s = _ref.read(settingsProvider);
-    if (s.signalKHost.isEmpty) return;
-    broadcastJson({
-      'type': 'sk_credentials',
-      'data': {
-        'host': s.signalKHost,
-        'port': s.signalKPort,
-        'username': s.signalKUsername,
-        'password': s.signalKPassword,
-      },
-    });
-  }
+  // ---------------------------------------------------------------------------
+  // P2P discovery & auto-connect
+  // ---------------------------------------------------------------------------
 
-  /// Called when the client receives SK credentials from the host.
-  Future<void> _onSkCredentialsReceived(Map<String, dynamic> data) async {
-    final host     = data['host']     as String? ?? '';
-    final port     = data['port']     as int?    ?? 3000;
-    final username = data['username'] as String? ?? '';
-    final password = data['password'] as String? ?? '';
-    if (host.isEmpty) return;
-
-    // Persist received credentials
-    await _ref.read(settingsProvider.notifier).update(
-      _ref.read(settingsProvider).copyWith(
-        signalKHost:     host,
-        signalKPort:     port,
-        signalKUsername: username,
-        signalKPassword: password,
-      ),
-    );
-
-    // Connect to SK fresh (independent of host)
-    final url = 'ws://$host:$port/signalk/v1/stream';
-    String? token;
-    if (username.isNotEmpty && password.isNotEmpty) {
-      try {
-        token = await SignalKAuth.login(url, username, password);
-      } catch (_) {}
+  void _onPeerDiscovered(DiscoveredHost peer) {
+    // Update the discovered peers list for the settings UI.
+    final current = List<DiscoveredHost>.from(_ref.read(discoveredPeersProvider));
+    final idx = current.indexWhere((p) => p.deviceId == peer.deviceId);
+    if (idx >= 0) {
+      current[idx] = peer;
+    } else {
+      current.add(peer);
     }
-    await _ref.read(signalKClientProvider).connect(url, token: token);
+    _ref.read(discoveredPeersProvider.notifier).state =
+        List.unmodifiable(current);
+
+    _checkAndConnect(peer);
   }
 
-  /// Sends all persisted module data to a newly connected client (host mode).
+  /// Connect to [peer] as a WS client if they have newer data than us.
+  void _checkAndConnect(DiscoveredHost peer) {
+    final device = _ref.read(deviceProvider);
+
+    // Never connect to ourselves.
+    if (peer.deviceId.isNotEmpty && peer.deviceId == device.deviceId) return;
+
+    final ownSvMs = device.stateVersion.millisecondsSinceEpoch;
+
+    // Only connect if peer has strictly newer data.
+    if (peer.stateVersionMs <= ownSvMs) return;
+
+    // Don't re-trigger if we already initiated a sync at this exact version.
+    final lastSynced = _peerSyncedVersions[peer.deviceId] ?? 0;
+    if (peer.stateVersionMs <= lastSynced) return;
+
+    // Record before connecting to prevent races / duplicate calls.
+    _peerSyncedVersions[peer.deviceId] = peer.stateVersionMs;
+
+    // Connect — the peer's server will call _sendFullDump for this new client.
+    _platform.connectAsClient(peer.ws);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Full dump (called by server when a new client connects)
+  // ---------------------------------------------------------------------------
+
   void _sendFullDump(void Function(Map<String, dynamic>) sendTo) {
-    // SK credentials — client uses these to connect independently
+    // First: send our stateVersion so the receiver can call syncTo().
+    final device = _ref.read(deviceProvider);
+    sendTo({
+      'type': 'sync_meta',
+      'sv': device.stateVersion.millisecondsSinceEpoch,
+      'id': device.deviceId,
+    });
+
+    // SK credentials — client uses these to connect independently.
     final s = _ref.read(settingsProvider);
     if (s.signalKHost.isNotEmpty) {
       sendTo({
@@ -166,57 +191,117 @@ class LanSyncService {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // SK credentials
+  // ---------------------------------------------------------------------------
+
+  /// Broadcasts the host's Signal K credentials to all clients.
+  void broadcastSkCredentials() {
+    final s = _ref.read(settingsProvider);
+    if (s.signalKHost.isEmpty) return;
+    broadcastJson({
+      'type': 'sk_credentials',
+      'data': {
+        'host': s.signalKHost,
+        'port': s.signalKPort,
+        'username': s.signalKUsername,
+        'password': s.signalKPassword,
+      },
+    });
+  }
+
+  Future<void> _onSkCredentialsReceived(Map<String, dynamic> data) async {
+    final host = data['host'] as String? ?? '';
+    final port = data['port'] as int? ?? 3000;
+    final username = data['username'] as String? ?? '';
+    final password = data['password'] as String? ?? '';
+    if (host.isEmpty) return;
+
+    await _ref.read(settingsProvider.notifier).update(
+          _ref.read(settingsProvider).copyWith(
+                signalKHost: host,
+                signalKPort: port,
+                signalKUsername: username,
+                signalKPassword: password,
+              ),
+        );
+
+    final url = 'ws://$host:$port/signalk/v1/stream';
+    String? token;
+    if (username.isNotEmpty && password.isNotEmpty) {
+      try {
+        token = await SignalKAuth.login(url, username, password);
+      } catch (_) {}
+    }
+    await _ref.read(signalKClientProvider).connect(url, token: token);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Lifecycle
+  // ---------------------------------------------------------------------------
+
   ConnectionNotifier get _conn => _ref.read(connectionProvider.notifier);
 
   bool get canBeHost => _platform.canBeHost;
   bool get supportsAutoDiscovery => _platform.supportsAutoDiscovery;
 
   Future<void> start() async {
-    final settings = _ref.read(settingsProvider);
-    // On web, force client mode regardless of saved role
-    final role = kIsWeb ? DeviceRole.client : settings.deviceRole;
+    if (kIsWeb) {
+      // Web: client-only — connect to manually configured host IP.
+      final settings = _ref.read(settingsProvider);
+      _ref.read(lanBroadcastProvider.notifier).state = sendJson;
 
-    // Register the appropriate broadcast function:
-    // - Host: push to all clients via broadcastJson
-    // - Client: send to host via sendJson (host will re-broadcast to others)
-    // - Standalone: no-op
-    _ref.read(lanBroadcastProvider.notifier).state = switch (role) {
-      DeviceRole.host       => broadcastJson,
-      DeviceRole.client     => sendJson,
-      DeviceRole.standalone => null,
+      if (settings.hostIp.isNotEmpty) {
+        _conn.setLanSyncStatus(ConnectionStatus.connecting);
+        await _platform.connectAsClient(
+          'ws://${settings.hostIp}:${settings.hostPort}',
+        );
+      }
+      return;
+    }
+
+    // Native: always start as WS server + UDP discovery.
+    final settings = _ref.read(settingsProvider);
+    final ownDeviceId = _ref.read(deviceProvider).deviceId;
+
+    // Broadcast function: push to our WS clients AND upstream if we're also
+    // connected as a client to a peer (so they relay it further).
+    _ref.read(lanBroadcastProvider.notifier).state = (msg) {
+      _platform.broadcastJson(msg);
+      if (_platform.isClientConnected) _platform.sendJson(msg);
     };
 
-    switch (role) {
-      case DeviceRole.host:
-        _conn.setLanSyncStatus(ConnectionStatus.connecting);
-        await _platform.startHost(settings.hostPort, settings.vesselName);
-        _conn.setLanSyncStatus(ConnectionStatus.connected);
-        // Push VesselState to connected clients at 2 Hz
-        _stateTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
-          if (_platform.isHostRunning) {
-            _platform.updateHostState(_ref.read(vesselProvider));
-          }
-        });
+    _conn.setLanSyncStatus(ConnectionStatus.connecting);
+    await _platform.startHost(
+      settings.hostPort,
+      settings.vesselName,
+      deviceId: ownDeviceId,
+      getStateVersionMs: () =>
+          _ref.read(deviceProvider).stateVersion.millisecondsSinceEpoch,
+    );
+    // startHost already starts UDP broadcast; also start discovery listener.
+    await _platform.startDiscovery();
 
-      case DeviceRole.client:
-        if (settings.hostIp.isNotEmpty) {
-          _conn.setLanSyncStatus(ConnectionStatus.connecting);
-          await _platform.connectAsClient(
-            'ws://${settings.hostIp}:${settings.hostPort}',
-          );
-        }
+    _conn.setLanSyncStatus(ConnectionStatus.connected);
 
-      case DeviceRole.standalone:
-        break;
-    }
+    // Push VesselState to connected clients at ~2 Hz.
+    _stateTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (_platform.isHostRunning) {
+        _platform.updateHostState(_ref.read(vesselProvider));
+      }
+    });
   }
 
   Future<void> stop() async {
     _stateTimer?.cancel();
+    _stateTimer = null;
     _ref.read(lanBroadcastProvider.notifier).state = null;
+    _peerSyncedVersions.clear();
+    _platform.stopDiscovery();
     await _platform.stopHost();
     await _platform.disconnectClient();
     _conn.setLanSyncStatus(ConnectionStatus.disconnected);
+    _ref.read(discoveredPeersProvider.notifier).state = [];
   }
 
   Future<void> restart() async {
@@ -225,27 +310,23 @@ class LanSyncService {
   }
 
   void triggerMob(MobAlert alert) {
-    final settings = _ref.read(settingsProvider);
-    final role = kIsWeb ? DeviceRole.client : settings.deviceRole;
-    if (role == DeviceRole.host) {
-      _platform.broadcastMob(alert);
-    } else {
-      _platform.sendMob(alert);
-    }
+    // Broadcast to our WS clients; also send upstream if connected to a peer.
+    _platform.broadcastMob(alert);
+    if (_platform.isClientConnected) _platform.sendMob(alert);
     onMobAlert?.call(alert);
   }
 
-  /// Send a JSON message from client to host (client mode only).
+  /// Send a JSON message upstream to the host we're connected to (client mode).
   void sendJson(Map<String, dynamic> message) => _platform.sendJson(message);
 
-  /// Broadcast a JSON message to all connected clients (host mode only).
+  /// Broadcast a JSON message to all connected WS clients (server mode).
   void broadcastJson(Map<String, dynamic> message) =>
       _platform.broadcastJson(message);
 
   /// Returns this device's local IP (empty string on web).
   Future<String> getLocalIp() => _platform.getLocalIp();
 
-  /// Scan LAN subnet for Yokuli hosts. Returns [] on web.
+  /// Scan LAN subnet for Yokuli hosts (TCP fallback; no sv/deviceId). Returns [] on web.
   Future<List<DiscoveredHost>> scanForHosts(String subnet) =>
       _platform.scanForHosts(subnet);
 }

@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/connection_provider.dart';
 import '../../../core/providers/locale_provider.dart';
+import '../../../core/providers/device_provider.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
 import '../../../core/services/lan_sync/lan_sync_platform_base.dart' show DiscoveredHost;
 import '../../../core/services/data_export_service.dart';
@@ -23,7 +24,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late TextEditingController _hostIpCtrl;
   late TextEditingController _hostPortCtrl;
 
-  List<DiscoveredHost> _discoveredHosts = [];
+  List<DiscoveredHost> _scannedHosts = [];
   bool _scanning = false;
   bool _exporting = false;
   String? _localIp;
@@ -55,12 +56,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (_localIp == null) return;
     setState(() {
       _scanning = true;
-      _discoveredHosts = [];
+      _scannedHosts = [];
     });
     final subnet = _localIp!.substring(0, _localIp!.lastIndexOf('.'));
     final hosts = await ref.read(lanSyncServiceProvider).scanForHosts(subnet);
     if (mounted) setState(() {
-      _discoveredHosts = hosts;
+      _scannedHosts = hosts;
       _scanning = false;
     });
   }
@@ -246,7 +247,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final newSettings = ref.read(settingsProvider).copyWith(
           hostIp: host.host,
           hostPort: host.port,
-          deviceRole: DeviceRole.client,
         );
     await ref.read(settingsProvider.notifier).update(newSettings);
     _hostIpCtrl.text = host.host;
@@ -279,7 +279,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final conn = ref.watch(connectionProvider);
-    final lanService = ref.watch(lanSyncServiceProvider);
+    ref.watch(lanSyncServiceProvider); // ensure provider is alive
+    final device = ref.watch(deviceProvider);
+    final discoveredPeers = ref.watch(discoveredPeersProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -320,29 +322,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _SectionHeader('LAN SYNC'),
             const SizedBox(height: 8),
 
-            // Role selector — web only shows Standalone / Client
-            _RoleSelector(
-              current: settings.deviceRole,
-              canBeHost: lanService.canBeHost,
-              onChanged: (role) async {
-                await ref
-                    .read(settingsProvider.notifier)
-                    .update(settings.copyWith(deviceRole: role));
-                final conn = ref.read(connectionProvider);
-                final svc = ref.read(lanSyncServiceProvider);
-                if (role == DeviceRole.standalone && conn.isLanSyncActive) {
-                  await svc.stop();
-                } else if (role != DeviceRole.standalone &&
-                    !conn.isLanSyncActive) {
-                  // Auto-start when switching to host or client
-                  await svc.start();
-                }
-              },
-            ),
-            const SizedBox(height: 12),
-
-            // Host info card (native + host role only)
-            if (!kIsWeb && settings.deviceRole == DeviceRole.host) ...[
+            // Server info (native, when active)
+            if (!kIsWeb && conn.isLanSyncActive) ...[
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -356,32 +337,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     Row(children: [
                       const Icon(Icons.router_rounded, size: 16, color: AppColors.cyan),
                       const SizedBox(width: 6),
-                      Text(ref.watch(stringsProvider).hostingStatus,
-                          style: const TextStyle(
+                      const Text('This device is serving',
+                          style: TextStyle(
                               color: AppColors.cyan,
                               fontSize: 13,
                               fontWeight: FontWeight.w600)),
                     ]),
                     const SizedBox(height: 8),
                     Text(
-                      'Other devices connect to:\nws://${_localIp ?? '…'}:${settings.hostPort}',
+                      'ws://${_localIp ?? '…'}:${settings.hostPort}',
                       style: const TextStyle(
                           color: AppColors.textSecondary, fontSize: 13),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                     Text(
-                      'Connected peers: ${conn.peerCount}',
+                      'Connected peers: ${conn.peerCount}  ·  '
+                      'Device ID: ${device.deviceId.substring(0, 8)}',
                       style: const TextStyle(
-                          color: AppColors.textPrimary, fontSize: 13),
+                          color: AppColors.textMuted, fontSize: 12),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 10),
+            ],
+
+            // Port config (native only)
+            if (!kIsWeb) ...[
               TextField(
                 controller: _hostPortCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'Host port',
+                  labelText: 'Server port',
                   hintText: '8765',
                   prefixIcon: Icon(Icons.lan_rounded),
                 ),
@@ -389,10 +375,48 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 textInputAction: TextInputAction.done,
                 onEditingComplete: _save,
               ),
-            ],
+              const SizedBox(height: 12),
 
-            // Client config
-            if (settings.deviceRole == DeviceRole.client) ...[
+              // Discovered peers (auto-found via UDP)
+              if (discoveredPeers.isNotEmpty) ...[
+                const Text('Discovered on this network',
+                    style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.2)),
+                const SizedBox(height: 6),
+                ...discoveredPeers.map((h) => _DiscoveredHostTile(
+                      host: h,
+                      onConnect: () => _connectToDiscoveredHost(h),
+                    )),
+                const SizedBox(height: 8),
+              ],
+
+              // Manual scan fallback
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _scanning ? null : _scanForHosts,
+                    icon: _scanning
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.search_rounded),
+                    label: Text(_scanning ? 'Scanning…' : 'Scan subnet'),
+                  ),
+                ),
+              ]),
+              if (_scannedHosts.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                ..._scannedHosts.map((h) => _DiscoveredHostTile(
+                      host: h,
+                      onConnect: () => _connectToDiscoveredHost(h),
+                    )),
+              ],
+            ] else ...[
+              // Web: manual IP entry only
               TextField(
                 controller: _hostIpCtrl,
                 decoration: const InputDecoration(
@@ -416,54 +440,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 textInputAction: TextInputAction.done,
                 onEditingComplete: _save,
               ),
-              // Scan button (native only)
-              if (!kIsWeb) ...[
-                const SizedBox(height: 10),
-                Row(children: [
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Row(children: [
+                  Icon(Icons.info_outline_rounded,
+                      size: 14, color: AppColors.textMuted),
+                  SizedBox(width: 8),
                   Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _scanning ? null : _scanForHosts,
-                      icon: _scanning
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.search_rounded),
-                      label: Text(_scanning ? 'Scanning…' : 'Scan for hosts'),
+                    child: Text(
+                      'Enter the IP of a native device manually. '
+                      'Auto-discovery is not available in browsers.',
+                      style: TextStyle(
+                          color: AppColors.textMuted, fontSize: 12),
                     ),
                   ),
                 ]),
-                if (_discoveredHosts.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  ...(_discoveredHosts.map((h) => _DiscoveredHostTile(
-                        host: h,
-                        onConnect: () => _connectToDiscoveredHost(h),
-                      ))),
-                ],
-              ] else ...[
-                // Web: manual IP only, no scan
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceElevated,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Row(children: [
-                    Icon(Icons.info_outline_rounded,
-                        size: 14, color: AppColors.textMuted),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Enter the IP of the Host device manually. '
-                        'Auto-discovery is not available in browsers.',
-                        style: TextStyle(
-                            color: AppColors.textMuted, fontSize: 12),
-                      ),
-                    ),
-                  ]),
-                ),
-              ],
+              ),
             ],
 
             const SizedBox(height: 12),
@@ -619,97 +616,6 @@ class _WebBanner extends ConsumerWidget {
   }
 }
 
-class _RoleSelector extends StatelessWidget {
-  final DeviceRole current;
-  final bool canBeHost;
-  final ValueChanged<DeviceRole> onChanged;
-
-  const _RoleSelector({
-    required this.current,
-    required this.canBeHost,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final roles = DeviceRole.values.where((r) {
-      // Hide Host option on web
-      if (!canBeHost && r == DeviceRole.host) return false;
-      return true;
-    }).toList();
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        children: roles.asMap().entries.map((entry) {
-          final isLast = entry.key == roles.length - 1;
-          final role = entry.value;
-          final (icon, title, desc) = switch (role) {
-            DeviceRole.standalone => (
-                Icons.smartphone_rounded,
-                'Standalone',
-                'Direct Signal K connection, no LAN sync',
-              ),
-            DeviceRole.host => (
-                Icons.router_rounded,
-                'Host (Master)',
-                'Aggregates data, serves peers on LAN',
-              ),
-            DeviceRole.client => (
-                Icons.tablet_rounded,
-                'Client',
-                'Receives all data from a Host device',
-              ),
-          };
-          return InkWell(
-            onTap: () => onChanged(role),
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                border: isLast
-                    ? null
-                    : const Border(
-                        bottom: BorderSide(color: AppColors.divider)),
-              ),
-              child: Row(children: [
-                Icon(icon,
-                    color: current == role
-                        ? AppColors.cyan
-                        : AppColors.textMuted,
-                    size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title,
-                          style: TextStyle(
-                              color: current == role
-                                  ? AppColors.textPrimary
-                                  : AppColors.textSecondary,
-                              fontWeight: FontWeight.w500)),
-                      Text(desc,
-                          style: const TextStyle(
-                              color: AppColors.textMuted, fontSize: 12)),
-                    ],
-                  ),
-                ),
-                if (current == role)
-                  const Icon(Icons.check_rounded,
-                      color: AppColors.cyan, size: 18),
-              ]),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
 
 class _SectionHeader extends StatelessWidget {
   final String text;

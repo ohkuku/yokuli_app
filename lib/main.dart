@@ -15,6 +15,7 @@ import 'core/providers/alarm_provider.dart';
 import 'core/providers/alarm_rule_provider.dart';
 import 'core/services/alarm_dispatcher.dart';
 import 'core/services/signalk/signalk_client.dart';
+import 'core/providers/device_provider.dart';
 import 'core/services/lan_sync/lan_sync_service.dart';
 import 'features/safety/providers/safety_provider.dart';
 
@@ -66,6 +67,8 @@ class _AppInitState extends ConsumerState<_AppInit> {
       // await it explicitly before reading any persisted values.
       await ref.read(settingsProvider.notifier).load();
       await ref.read(safetyProvider.notifier).load();
+      // Ensure deviceId is loaded from prefs before any P2P activity starts.
+      ref.read(deviceProvider); // triggers _load() async internally
       await ref.read(localeProvider.notifier).init();
       await ref.read(alarmRuleProvider.notifier).load();
       await ref.read(notifyChannelProvider.notifier).load();

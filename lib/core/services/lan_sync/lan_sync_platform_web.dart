@@ -28,7 +28,12 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
   // --- Host stubs (no-ops on web) ---
 
   @override
-  Future<void> startHost(int port, String vesselName) async {}
+  Future<void> startHost(
+    int port,
+    String vesselName, {
+    String deviceId = '',
+    int Function()? getStateVersionMs,
+  }) async {}
 
   @override
   Future<void> stopHost() async {}
@@ -107,6 +112,10 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
           onKanbanSync?.call(json);
         case 'sk_credentials':
           if (data != null) onSkCredentialsReceived?.call(data);
+        case 'sync_meta':
+          final svMs = json['sv'] as int?;
+          final peerId = json['id'] as String? ?? '';
+          if (svMs != null) onSyncMetaReceived?.call(svMs, peerId);
       }
     } catch (_) {}
   }
@@ -146,6 +155,12 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
   bool get isClientConnected => _connected;
 
   // --- Discovery (not available on web) ---
+
+  @override
+  Future<void> startDiscovery() async {}
+
+  @override
+  void stopDiscovery() {}
 
   @override
   Future<String> getLocalIp() async => 'web';

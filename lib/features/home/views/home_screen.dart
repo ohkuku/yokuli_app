@@ -125,11 +125,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ? '${vessel.speedOverGround!.toStringAsFixed(1)} kn'
         : null;
 
-    // For client devices, show LAN 客户端 badge instead of SK connection status
-    final settings = ref.read(settingsProvider);
-    final signalKBadge = settings.deviceRole == DeviceRole.client
-        ? 'LAN 客户端'
-        : (conn.isSignalKConnected ? s.connected : s.disconnected);
+    final signalKBadge = conn.isSignalKConnected ? s.connected : s.disconnected;
 
     return [
       AppTileData(

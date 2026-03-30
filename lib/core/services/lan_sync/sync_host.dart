@@ -28,7 +28,7 @@ class SyncHost {
   void Function(int clientCount)? onClientCountChanged;
   void Function(MobAlert alert)? onMobReceived;
   void Function()? onMobCancelReceived;
-  // New event callbacks (host receives from clients, re-broadcasts)
+  // Event callbacks (host receives from clients, applies + re-broadcasts)
   void Function(Map<String, dynamic> data)? onLogAppend;
   void Function(Map<String, dynamic> data)? onAlarmSync;
   void Function(Map<String, dynamic> data)? onTaskUpsert;
@@ -43,6 +43,10 @@ class SyncHost {
     required int port,
     required String vesselName,
     VesselState Function()? getState,
+    /// Permanent device UUID — included in UDP announcements.
+    String deviceId = '',
+    /// Returns current stateVersion in ms — rebuilt each 5s UDP tick.
+    int Function()? getStateVersionMs,
   }) async {
     final handler = webSocketHandler(
       (WebSocketChannel channel, String? protocol) {
@@ -84,31 +88,40 @@ class SyncHost {
       }
     });
 
-    // UDP discovery broadcast every 5 seconds
-    await _startUdpDiscovery(port, vesselName);
+    // UDP discovery broadcast every 5 seconds (dynamic — includes current sv)
+    await _startUdpDiscovery(port, vesselName, deviceId, getStateVersionMs);
   }
 
-  Future<void> _startUdpDiscovery(int port, String vesselName) async {
+  Future<void> _startUdpDiscovery(
+    int port,
+    String vesselName,
+    String deviceId,
+    int Function()? getStateVersionMs,
+  ) async {
     try {
       _udpSocket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
       _udpSocket!.broadcastEnabled = true;
 
       final localIp = await _getLocalIp();
-      final announcement = jsonEncode({
-        'type': serviceType,
-        'name': vesselName,
-        'host': localIp,
-        'port': port,
-        'ws': 'ws://$localIp:$port',
-      });
-      final data = utf8.encode(announcement);
 
+      void sendAnnouncement() {
+        final sv = getStateVersionMs?.call() ?? 0;
+        final data = utf8.encode(jsonEncode({
+          'type': serviceType,
+          'name': vesselName,
+          'host': localIp,
+          'port': port,
+          'ws': 'ws://$localIp:$port',
+          'deviceId': deviceId,
+          'sv': sv,
+        }));
+        _udpSocket?.send(data, InternetAddress('255.255.255.255'), discoveryPort);
+      }
+
+      // Send immediately, then every 5 seconds
+      sendAnnouncement();
       _discoveryTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-        _udpSocket?.send(
-          data,
-          InternetAddress('255.255.255.255'),
-          discoveryPort,
-        );
+        sendAnnouncement();
       });
     } catch (_) {
       // Discovery optional — continue without it
@@ -173,9 +186,7 @@ class SyncHost {
             broadcastJson(json);
           }
         case 'kanban_sync':
-          // Re-broadcast to all peers (host relays it)
           broadcastJson(json);
-          // Also apply locally via callback
           onKanbanSync?.call(json);
       }
     } catch (_) {}
