@@ -5,6 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/mob_alert.dart';
 import '../../models/vessel_state.dart';
+import '../../models/log_entry.dart';
+import '../../models/alarm.dart';
+import '../../models/task.dart';
+import '../../models/issue.dart';
+import '../../models/voyage.dart';
 import '../../providers/connection_provider.dart'
     show ConnectionNotifier, ConnectionStatus, connectionProvider;
 import '../../providers/settings_provider.dart' show DeviceRole, settingsProvider;
@@ -55,6 +60,35 @@ class LanSyncService {
     _platform.onVoyageUpsert = (data) {
       _ref.read(voyageProvider.notifier).upsertRemote(data);
     };
+    _platform.onNewClientConnected = _sendFullDump;
+  }
+
+  /// Sends all persisted module data to a newly connected client (host mode).
+  void _sendFullDump(void Function(Map<String, dynamic>) sendTo) {
+    // Log entries
+    for (final entry in _ref.read(logProvider)) {
+      sendTo({'type': 'log_append', 'data': entry.toJson()});
+    }
+    // Alarms
+    for (final alarm in _ref.read(alarmProvider)) {
+      sendTo({'type': 'alarm', 'data': alarm.toJson()});
+    }
+    // Task instances
+    for (final instance in _ref.read(taskProvider).instances) {
+      sendTo({'type': 'task_upsert', 'data': instance.toJson()});
+    }
+    // Issues
+    for (final issue in _ref.read(issueProvider)) {
+      sendTo({'type': 'issue_upsert', 'data': issue.toJson()});
+    }
+    // Voyages
+    final voyageState = _ref.read(voyageProvider);
+    if (voyageState.active != null) {
+      sendTo({'type': 'voyage_upsert', 'data': voyageState.active!.toJson()});
+    }
+    for (final vs in voyageState.history) {
+      sendTo({'type': 'voyage_upsert', 'data': vs.toJson()});
+    }
   }
 
   ConnectionNotifier get _conn => _ref.read(connectionProvider.notifier);

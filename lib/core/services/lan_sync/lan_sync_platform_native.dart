@@ -27,6 +27,7 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _host.onTaskUpsert = (data) => onTaskUpsert?.call(data);
     _host.onIssueUpsert = (data) => onIssueUpsert?.call(data);
     _host.onVoyageUpsert = (data) => onVoyageUpsert?.call(data);
+    _host.onNewClientConnected = (sendTo) => onNewClientConnected?.call(sendTo);
     await _host.start(port: port, vesselName: vesselName);
   }
 

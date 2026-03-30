@@ -33,6 +33,9 @@ class SyncHost {
   void Function(Map<String, dynamic> data)? onTaskUpsert;
   void Function(Map<String, dynamic> data)? onIssueUpsert;
   void Function(Map<String, dynamic> data)? onVoyageUpsert;
+  /// Called when a new client connects; receives a function that sends a
+  /// JSON message directly to that specific client only (for initial full dump).
+  void Function(void Function(Map<String, dynamic>))? onNewClientConnected;
 
   Future<void> start({
     required int port,
@@ -44,8 +47,13 @@ class SyncHost {
         _clients.add(channel);
         onClientCountChanged?.call(_clients.length);
 
-        // Send current state immediately on connect
+        // Send current VesselState immediately on connect
         _sendToChannel(channel, _buildStateMessage(_lastState));
+
+        // Notify LanSyncService to dump all persistent module data to this client
+        onNewClientConnected?.call(
+          (msg) => _sendToChannel(channel, jsonEncode(msg)),
+        );
 
         channel.stream.listen(
           (message) => _handleClientMessage(message as String),
