@@ -31,15 +31,20 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Generate Gradle wrapper
-        working-directory: android
-        run: gradle wrapper --gradle-version=8.9 --distribution-type=all
-
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
+
+      - name: Create local.properties
+        run: |
+          echo "flutter.sdk=$FLUTTER_ROOT"   > android/local.properties
+          echo "sdk.dir=$ANDROID_SDK_ROOT"  >> android/local.properties
+
+      - name: Generate Gradle wrapper
+        working-directory: android
+        run: gradle wrapper --gradle-version=8.9 --distribution-type=all
 
       - name: Accept Android licences
         run: yes | flutter doctor --android-licenses || true
@@ -83,9 +88,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ steps.ver.outputs.tag }}"
-          # Delete release if it exists (ignore errors)
           gh release delete "$TAG" --yes 2>/dev/null || true
-          # Delete the tag locally and remotely (ignore errors)
           git push origin ":refs/tags/$TAG" 2>/dev/null || true
 
       - name: Create & push dev tag
