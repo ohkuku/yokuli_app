@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
@@ -8,6 +9,7 @@ import '../../../core/providers/connection_provider.dart';
 import '../../../core/providers/locale_provider.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
 import '../../../core/services/lan_sync/lan_sync_platform_base.dart' show DiscoveredHost;
+import '../../../core/services/data_export_service.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -23,6 +25,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   List<DiscoveredHost> _discoveredHosts = [];
   bool _scanning = false;
+  bool _exporting = false;
   String? _localIp;
 
   @override
@@ -75,6 +78,140 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final s = ref.read(stringsProvider);
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(s.settingsSaved)));
+    }
+  }
+
+  Future<void> _exportData() async {
+    if (kIsWeb) {
+      final jsonStr = ref.read(dataExportServiceProvider).exportAsJsonString();
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: const Text('Export Backup'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Copy the JSON below to save your backup.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                height: 150,
+                decoration: BoxDecoration(
+                  color: AppColors.cardBg,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(8),
+                  child: SelectableText(
+                    jsonStr,
+                    style: const TextStyle(
+                        color: AppColors.textSecondary, fontSize: 10),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: jsonStr));
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Copied to clipboard')),
+                );
+              },
+              child: const Text('Copy'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    setState(() => _exporting = true);
+    try {
+      await ref.read(dataExportServiceProvider).exportAndShare();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  Future<void> _importData() async {
+    final ctrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Import Backup'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'This will REPLACE all local data. Export first to keep a backup.',
+              style: TextStyle(
+                  color: AppColors.warning,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              maxLines: 8,
+              decoration: const InputDecoration(
+                hintText: 'Paste JSON backup here…',
+                border: OutlineInputBorder(),
+              ),
+              style: const TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    final json = ctrl.text.trim();
+    if (json.isEmpty) return;
+
+    try {
+      await ref.read(dataExportServiceProvider).importFromJsonString(json);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Import successful')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Import failed: $e')),
+        );
+      }
     }
   }
 
@@ -302,6 +439,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               onChanged: (v) => ref
                   .read(settingsProvider.notifier)
                   .update(settings.copyWith(keepScreenOn: v)),
+            ),
+            const SizedBox(height: 24),
+
+            // --- Data Management ---
+            _SectionHeader('DATA MANAGEMENT'),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _exporting ? null : _exportData,
+                    icon: _exporting
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.upload_rounded),
+                    label: Text(_exporting ? 'Exporting…' : 'Export Backup'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _importData,
+                    icon: const Icon(Icons.download_rounded),
+                    label: const Text('Import Backup'),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 24),
 

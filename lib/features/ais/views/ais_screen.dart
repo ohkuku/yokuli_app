@@ -50,6 +50,8 @@ class AisScreen extends ConsumerWidget {
 // Radar Tab — map view (with polar-chart fallback)
 // ---------------------------------------------------------------------------
 
+enum _RadarMode { northUp, headingUp }
+
 class _RadarTab extends ConsumerStatefulWidget {
   @override
   ConsumerState<_RadarTab> createState() => _RadarTabState();
@@ -58,11 +60,90 @@ class _RadarTab extends ConsumerStatefulWidget {
 class _RadarTabState extends ConsumerState<_RadarTab> {
   bool _showMap = true;
   final _mapController = MapController();
+  _RadarMode _mode = _RadarMode.northUp;
+  double _rangeNm = 0; // 0 = auto
+
+  static const _zoomSteps = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0];
 
   @override
   void dispose() {
     _mapController.dispose();
     super.dispose();
+  }
+
+  void _zoomIn() {
+    if (_rangeNm == 0) return;
+    final idx = _zoomSteps.indexWhere((s) => s >= _rangeNm);
+    if (idx > 0) setState(() => _rangeNm = _zoomSteps[idx - 1]);
+  }
+
+  void _zoomOut() {
+    if (_rangeNm == 0) {
+      setState(() => _rangeNm = _zoomSteps[1]);
+      return;
+    }
+    final idx = _zoomSteps.lastIndexWhere((s) => s <= _rangeNm);
+    if (idx < _zoomSteps.length - 1) setState(() => _rangeNm = _zoomSteps[idx + 1]);
+  }
+
+  void _onRadarTap(BuildContext context, Offset tap, Size size) {
+    final minDim = math.min(size.width, size.height);
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = minDim / 2 - 8;
+
+    var dx = tap.dx - center.dx;
+    var dy = tap.dy - center.dy;
+
+    // Reverse heading-up rotation
+    if (_mode == _RadarMode.headingUp) {
+      final vessel = ref.read(vesselProvider);
+      final hdg = vessel.heading;
+      if (hdg != null) {
+        final rot = hdg * math.pi / 180.0;
+        final ndx = dx * math.cos(rot) - dy * math.sin(rot);
+        final ndy = dx * math.sin(rot) + dy * math.cos(rot);
+        dx = ndx;
+        dy = ndy;
+      }
+    }
+
+    // Compute effective range for scale
+    double maxDist = 3.0;
+    final targets = ref.read(aisProvider).targets
+        .where((t) => t.status != AisTargetStatus.lost)
+        .toList();
+    for (final t in targets) {
+      if (t.relativeDistanceNm != null && t.relativeDistanceNm! > maxDist) {
+        maxDist = math.min(t.relativeDistanceNm!, 20.0);
+      }
+    }
+    final effectiveRange = _rangeNm > 0
+        ? _rangeNm
+        : (maxDist <= 3
+            ? 3.0
+            : maxDist <= 6
+                ? 6.0
+                : maxDist <= 10
+                    ? 10.0
+                    : 20.0);
+    final scale = radius / effectiveRange;
+
+    AisTargetState? nearest;
+    double minDist2 = 20.0 * 20.0; // pixels^2
+
+    for (final t in targets) {
+      if (t.relativeBearingDeg == null || t.relativeDistanceNm == null) continue;
+      if (t.relativeDistanceNm! > effectiveRange) continue;
+      final bearRad = (t.relativeBearingDeg! - 90) * math.pi / 180;
+      final tx = t.relativeDistanceNm! * scale * math.cos(bearRad);
+      final ty = t.relativeDistanceNm! * scale * math.sin(bearRad);
+      final d2 = (dx - tx) * (dx - tx) + (dy - ty) * (dy - ty);
+      if (d2 < minDist2) {
+        minDist2 = d2;
+        nearest = t;
+      }
+    }
+    if (nearest != null) _showTargetDetailSheet(context, nearest);
   }
 
   @override
@@ -152,32 +233,77 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
   }
 
   Widget _buildPolarView(List<AisTargetState> targets, bool hasPosition) {
+    final vessel = ref.watch(vesselProvider);
+    final headingDeg = vessel.heading;
+    final cogDeg = vessel.courseOverGround;
+    final sog = vessel.speedOverGround;
+
     return Column(
       children: [
-        if (hasPosition)
-          Align(
-            alignment: Alignment.topRight,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(0, 8, 12, 0),
-              child: _MapIconBtn(
-                icon: Icons.map_rounded,
-                label: 'Map',
-                onTap: () => setState(() => _showMap = true),
+        // Top controls row
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: Row(
+            children: [
+              // Map button (when has position)
+              if (hasPosition) ...[
+                _MapIconBtn(
+                  icon: Icons.map_rounded,
+                  label: 'Map',
+                  onTap: () => setState(() => _showMap = true),
+                ),
+                const SizedBox(width: 8),
+              ],
+              // Mode toggle
+              _RadarModeToggle(
+                  mode: _mode, onChanged: (m) => setState(() => _mode = m)),
+              const Spacer(),
+              // Range display
+              Text(
+                _rangeNm > 0
+                    ? '${_rangeNm % 1 == 0 ? _rangeNm.toInt() : _rangeNm} NM'
+                    : 'AUTO',
+                style: const TextStyle(
+                    color: AppColors.textSecondary, fontSize: 12),
               ),
-            ),
+              const SizedBox(width: 8),
+              // Zoom buttons
+              _RadarBtn(icon: Icons.remove, onTap: _zoomOut),
+              const SizedBox(width: 4),
+              _RadarBtn(icon: Icons.add, onTap: _zoomIn),
+            ],
           ),
+        ),
+        // Radar circle
         Expanded(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(12, hasPosition ? 4 : 12, 12, 0),
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
             child: AspectRatio(
               aspectRatio: 1,
-              child: CustomPaint(
-                painter: _AisRadarPainter(targets: targets),
-                child: Container(),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final size = constraints.biggest;
+                  return GestureDetector(
+                    onTapUp: (details) =>
+                        _onRadarTap(context, details.localPosition, size),
+                    child: CustomPaint(
+                      size: size,
+                      painter: _AisRadarPainter(
+                        targets: targets,
+                        mode: _mode,
+                        rangeNm: _rangeNm,
+                        ownHeadingDeg: headingDeg,
+                        ownCogDeg: cogDeg,
+                        ownSog: sog,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
         ),
+        // Legend
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
           child: Row(
@@ -301,24 +427,51 @@ class _LegendDot extends StatelessWidget {
 
 class _AisRadarPainter extends CustomPainter {
   final List<AisTargetState> targets;
+  final _RadarMode mode;
+  final double rangeNm; // 0 = auto
+  final double? ownHeadingDeg;
+  final double? ownCogDeg;
+  final double? ownSog;
 
-  const _AisRadarPainter({required this.targets});
+  const _AisRadarPainter({
+    required this.targets,
+    required this.mode,
+    required this.rangeNm,
+    this.ownHeadingDeg,
+    this.ownCogDeg,
+    this.ownSog,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - 8;
+    final radius = math.min(size.width, size.height) / 2 - 8;
 
-    // Determine scale: fit the furthest target, min 3NM, max 20NM
+    // Determine effective range
     double maxDist = 3.0;
     for (final t in targets) {
       if (t.relativeDistanceNm != null && t.relativeDistanceNm! > maxDist) {
         maxDist = math.min(t.relativeDistanceNm!, 20.0);
       }
     }
-    // Round up to a nice ring value
-    final rangeNm = maxDist <= 3 ? 3.0 : maxDist <= 6 ? 6.0 : maxDist <= 10 ? 10.0 : 20.0;
-    final scale = radius / rangeNm;
+    final effectiveRange = rangeNm > 0
+        ? rangeNm
+        : (maxDist <= 3
+            ? 3.0
+            : maxDist <= 6
+                ? 6.0
+                : maxDist <= 10
+                    ? 10.0
+                    : 20.0);
+    final scale = radius / effectiveRange;
+
+    // --- Rotated context for heading-up mode ---
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    if (mode == _RadarMode.headingUp && ownHeadingDeg != null) {
+      canvas.rotate(-ownHeadingDeg! * math.pi / 180.0);
+    }
+    canvas.translate(-center.dx, -center.dy);
 
     // Background
     final bgPaint = Paint()..color = const Color(0xFF0A1A2F);
@@ -330,10 +483,13 @@ class _AisRadarPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.8;
 
-    final ringIntervals = rangeNm <= 3 ? [1.0, 2.0, 3.0]
-        : rangeNm <= 6 ? [2.0, 4.0, 6.0]
-        : rangeNm <= 10 ? [2.5, 5.0, 10.0]
-        : [5.0, 10.0, 20.0];
+    final ringIntervals = effectiveRange <= 3
+        ? [1.0, 2.0, 3.0]
+        : effectiveRange <= 6
+            ? [2.0, 4.0, 6.0]
+            : effectiveRange <= 10
+                ? [2.5, 5.0, 10.0]
+                : [5.0, 10.0, 20.0];
 
     final labelStyle = TextStyle(
       color: Colors.white.withOpacity(0.3),
@@ -343,7 +499,6 @@ class _AisRadarPainter extends CustomPainter {
     for (final nm in ringIntervals) {
       final r = nm * scale;
       canvas.drawCircle(center, r, ringPaint);
-      // Ring label at top
       final nmLabel = nm == nm.roundToDouble() ? '${nm.toInt()}NM' : '${nm}NM';
       final tp = TextPainter(
         text: TextSpan(text: nmLabel, style: labelStyle),
@@ -378,36 +533,45 @@ class _AisRadarPainter extends CustomPainter {
         text: TextSpan(text: entry.label, style: compassStyle),
         textDirection: TextDirection.ltr,
       )..layout();
-      tp.paint(canvas, Offset(center.dx + entry.dx - tp.width / 2, center.dy + entry.dy));
+      tp.paint(canvas,
+          Offset(center.dx + entry.dx - tp.width / 2, center.dy + entry.dy));
     }
 
-    // Own ship triangle at center
-    final ownPaint = Paint()..color = AppColors.cyan;
-    const triangleSize = 7.0;
-    final path = Path()
-      ..moveTo(center.dx, center.dy - triangleSize)
-      ..lineTo(center.dx - triangleSize * 0.6, center.dy + triangleSize * 0.6)
-      ..lineTo(center.dx + triangleSize * 0.6, center.dy + triangleSize * 0.6)
-      ..close();
-    canvas.drawPath(path, ownPaint);
+    // Own COG vector (inside rotated context)
+    if (ownCogDeg != null && ownSog != null && ownSog! > 0.3) {
+      final cogRad = (ownCogDeg! - 90) * math.pi / 180;
+      final vecNm = ownSog! * 6.0 / 60.0; // 6 minute predictor
+      final vecPx = vecNm * scale;
+      final vecPaint = Paint()
+        ..color = AppColors.cyan.withOpacity(0.6)
+        ..strokeWidth = 1.5
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(
+        center,
+        Offset(center.dx + vecPx * math.cos(cogRad),
+            center.dy + vecPx * math.sin(cogRad)),
+        vecPaint,
+      );
+    }
 
-    // Targets
+    // Targets (inside rotated context)
     for (final target in targets) {
-      if (target.relativeDistanceNm == null || target.relativeBearingDeg == null) continue;
+      if (target.relativeDistanceNm == null ||
+          target.relativeBearingDeg == null) continue;
       if (target.status == AisTargetStatus.lost) continue;
 
       final dist = target.relativeDistanceNm!;
-      if (dist > rangeNm) continue;
+      if (dist > effectiveRange) continue;
 
       final bearingRad = (target.relativeBearingDeg! - 90) * math.pi / 180;
       final tx = center.dx + dist * scale * math.cos(bearingRad);
       final ty = center.dy + dist * scale * math.sin(bearingRad);
 
-      // Color by CPA risk
       final Color dotColor;
       if (target.closestPointNm != null && target.closestPointNm! < 0.5) {
         dotColor = AppColors.danger;
-      } else if (target.closestPointNm != null && target.closestPointNm! < 1.0) {
+      } else if (target.closestPointNm != null &&
+          target.closestPointNm! < 1.0) {
         dotColor = AppColors.warning;
       } else {
         dotColor = AppColors.success;
@@ -416,7 +580,6 @@ class _AisRadarPainter extends CustomPainter {
       final dotPaint = Paint()..color = dotColor;
       canvas.drawCircle(Offset(tx, ty), 5, dotPaint);
 
-      // Heading vector (short line)
       if (target.cog != null && target.sog != null && target.sog! > 0.5) {
         final cogRad = (target.cog! - 90) * math.pi / 180;
         final vecLen = target.sog! * scale * 0.5;
@@ -426,17 +589,18 @@ class _AisRadarPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round;
         canvas.drawLine(
           Offset(tx, ty),
-          Offset(tx + vecLen * math.cos(cogRad), ty + vecLen * math.sin(cogRad)),
+          Offset(tx + vecLen * math.cos(cogRad),
+              ty + vecLen * math.sin(cogRad)),
           vecPaint,
         );
       }
 
-      // Name label
       if (target.name != null || target.mmsi.isNotEmpty) {
         final nameTp = TextPainter(
           text: TextSpan(
-            text: target.name ?? target.mmsi.substring(
-                math.max(0, target.mmsi.length - 4)),
+            text: target.name ??
+                target.mmsi
+                    .substring(math.max(0, target.mmsi.length - 4)),
             style: TextStyle(
               color: dotColor.withOpacity(0.85),
               fontSize: 9,
@@ -448,6 +612,59 @@ class _AisRadarPainter extends CustomPainter {
       }
     }
 
+    canvas.restore();
+    // --- End rotated context ---
+
+    // Own ship triangle (always screen-upright after restore)
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    if (mode == _RadarMode.northUp && ownHeadingDeg != null) {
+      canvas.rotate(ownHeadingDeg! * math.pi / 180.0);
+    }
+    // In heading-up mode the canvas was already rotated so triangle points toward heading (up)
+    final triPath = Path()
+      ..moveTo(0, -7.0)
+      ..lineTo(-4.2, 4.2)
+      ..lineTo(4.2, 4.2)
+      ..close();
+    canvas.drawPath(triPath, Paint()..color = AppColors.cyan);
+    canvas.restore();
+
+    // North indicator for heading-up mode
+    if (mode == _RadarMode.headingUp && ownHeadingDeg != null) {
+      final northRad = ownHeadingDeg! * math.pi / 180.0;
+      final northDx = math.sin(northRad);
+      final northDy = -math.cos(northRad);
+      final arrowTip = Offset(
+        center.dx + northDx * (radius - 14),
+        center.dy + northDy * (radius - 14),
+      );
+      final arrowBase = Offset(
+        center.dx + northDx * (radius - 22),
+        center.dy + northDy * (radius - 22),
+      );
+      final northPaint = Paint()
+        ..color = Colors.white.withOpacity(0.6)
+        ..strokeWidth = 1.5
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(arrowBase, arrowTip, northPaint);
+      final nTp = TextPainter(
+        text: TextSpan(
+          text: 'N',
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.7),
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      nTp.paint(
+        canvas,
+        Offset(arrowTip.dx - nTp.width / 2, arrowTip.dy - nTp.height / 2),
+      );
+    }
+
     // Outer border
     final borderPaint = Paint()
       ..color = Colors.white.withOpacity(0.12)
@@ -457,7 +674,100 @@ class _AisRadarPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_AisRadarPainter old) => old.targets != targets;
+  bool shouldRepaint(_AisRadarPainter old) =>
+      old.targets != targets ||
+      old.mode != mode ||
+      old.rangeNm != rangeNm ||
+      old.ownHeadingDeg != ownHeadingDeg ||
+      old.ownCogDeg != ownCogDeg ||
+      old.ownSog != ownSog;
+}
+
+// ---------------------------------------------------------------------------
+// Radar helper widgets
+// ---------------------------------------------------------------------------
+
+class _RadarModeToggle extends StatelessWidget {
+  final _RadarMode mode;
+  final ValueChanged<_RadarMode> onChanged;
+  const _RadarModeToggle({required this.mode, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ModeBtn(
+            label: 'N-UP',
+            selected: mode == _RadarMode.northUp,
+            onTap: () => onChanged(_RadarMode.northUp),
+          ),
+          Container(width: 1, height: 28, color: AppColors.border),
+          _ModeBtn(
+            label: 'HDG-UP',
+            selected: mode == _RadarMode.headingUp,
+            onTap: () => onChanged(_RadarMode.headingUp),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModeBtn extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ModeBtn(
+      {required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color:
+                selected ? AppColors.cyan.withAlpha(30) : Colors.transparent,
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? AppColors.cyan : AppColors.textMuted,
+              fontSize: 11,
+              fontWeight:
+                  selected ? FontWeight.w700 : FontWeight.w400,
+            ),
+          ),
+        ),
+      );
+}
+
+class _RadarBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _RadarBtn({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Icon(icon, size: 14, color: AppColors.cyan),
+        ),
+      );
 }
 
 // ---------------------------------------------------------------------------

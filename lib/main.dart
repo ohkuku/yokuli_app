@@ -64,6 +64,7 @@ class _AppInitState extends ConsumerState<_AppInit> {
       // Load settings first — build() fires _loadFromPrefs() async so we must
       // await it explicitly before reading any persisted values.
       await ref.read(settingsProvider.notifier).load();
+      await ref.read(safetyProvider.notifier).load();
       await ref.read(localeProvider.notifier).init();
       await _loadPersistentData();
       await _autoConnect();
