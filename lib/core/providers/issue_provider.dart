@@ -58,6 +58,11 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
         _storeName, state.map((i) => i.toJson()).toList());
   }
 
+  Future<void> importAll(List<Map<String, dynamic>> rows) async {
+    state = rows.map(IssueTicket.fromJson).toList();
+    await save();
+  }
+
   // ---- Actions ------------------------------------------------------------
 
   /// Create and persist a new issue ticket. Returns the created ticket.

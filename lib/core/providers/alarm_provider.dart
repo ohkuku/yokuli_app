@@ -69,6 +69,11 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
         _storeName, state.map((a) => a.toJson()).toList());
   }
 
+  Future<void> importAll(List<Map<String, dynamic>> rows) async {
+    state = rows.map(Alarm.fromJson).toList();
+    await save();
+  }
+
   // ---- Trigger / lifecycle ------------------------------------------------
 
   /// Trigger a new alarm. Returns the new alarm's ID.

@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/models/mob_alert.dart';
 import '../../../core/models/vessel_state.dart';
 import '../../../core/providers/vessel_provider.dart';
@@ -48,11 +49,34 @@ class SafetyState {
 }
 
 class SafetyNotifier extends Notifier<SafetyState> {
+  static const _keyDepthEnabled   = 'safety_depth_enabled';
+  static const _keyDepthThreshold = 'safety_depth_threshold';
+  static const _keySpeedEnabled   = 'safety_speed_enabled';
+  static const _keySpeedThreshold = 'safety_speed_threshold';
+
   @override
   SafetyState build() {
     // Watch vessel state for alarm checks
     ref.listen(vesselProvider, (prev, vessel) => _checkAlarms(vessel));
     return const SafetyState();
+  }
+
+  Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = state.copyWith(
+      depthAlarmEnabled:   prefs.getBool(_keyDepthEnabled)      ?? false,
+      depthAlarmThreshold: prefs.getDouble(_keyDepthThreshold)  ?? 2.0,
+      speedAlarmEnabled:   prefs.getBool(_keySpeedEnabled)      ?? false,
+      speedAlarmThreshold: prefs.getDouble(_keySpeedThreshold)  ?? 15.0,
+    );
+  }
+
+  Future<void> _save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyDepthEnabled,      state.depthAlarmEnabled);
+    await prefs.setDouble(_keyDepthThreshold,  state.depthAlarmThreshold);
+    await prefs.setBool(_keySpeedEnabled,      state.speedAlarmEnabled);
+    await prefs.setDouble(_keySpeedThreshold,  state.speedAlarmThreshold);
   }
 
   void triggerMob() {
@@ -93,6 +117,7 @@ class SafetyNotifier extends Notifier<SafetyState> {
       depthAlarmEnabled: enabled,
       depthAlarmThreshold: threshold,
     );
+    _save(); // fire-and-forget
   }
 
   void setSpeedAlarm({required bool enabled, double? threshold}) {
@@ -100,6 +125,7 @@ class SafetyNotifier extends Notifier<SafetyState> {
       speedAlarmEnabled: enabled,
       speedAlarmThreshold: threshold,
     );
+    _save(); // fire-and-forget
   }
 
   void _checkAlarms(VesselState vessel) {

@@ -135,6 +135,19 @@ class KanbanNotifier extends Notifier<KanbanState> {
     _broadcast();
   }
 
+  Future<void> importAll(Map<String, dynamic> data) async {
+    final cols = (data['columns'] as List? ?? [])
+        .map((c) => KanbanColumn.fromJson(c as Map<String, dynamic>)).toList()
+      ..sort((a, b) => a.order.compareTo(b.order));
+    final cards = (data['cards'] as List? ?? [])
+        .map((c) => KanbanCard.fromJson(c as Map<String, dynamic>)).toList();
+    state = KanbanState(
+      columns: cols.isEmpty ? List.from(kKanbanDefaultColumns) : cols,
+      cards: cards,
+    );
+    await _save();
+  }
+
   void applySync(Map<String, dynamic> data) {
     try {
       final cols = (data['columns'] as List<dynamic>? ?? [])

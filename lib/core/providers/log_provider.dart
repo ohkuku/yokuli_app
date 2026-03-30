@@ -65,6 +65,11 @@ class LogNotifier extends Notifier<List<LogEntry>> {
 
   // ---- Core append --------------------------------------------------------
 
+  Future<void> importAll(List<Map<String, dynamic>> rows) async {
+    state = rows.map(LogEntry.fromJson).toList();
+    await save();
+  }
+
   /// Append a [LogEntry] and immediately persist it.
   Future<void> append(LogEntry entry) async {
     // Prepend so that state[0] is always the newest entry.

@@ -103,6 +103,17 @@ class TaskNotifier extends Notifier<TaskState> {
         state.instances.map((i) => i.toJson()).toList());
   }
 
+  Future<void> importAll({
+    required List<Map<String, dynamic>> templates,
+    required List<Map<String, dynamic>> instances,
+  }) async {
+    state = TaskState(
+      templates: templates.map(TaskTemplate.fromJson).toList(),
+      instances: instances.map(TaskInstance.fromJson).toList(),
+    );
+    await save();
+  }
+
   // ---- Actions ------------------------------------------------------------
 
   /// Create a new [TaskInstance] from the given [templateId].

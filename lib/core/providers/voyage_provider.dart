@@ -105,6 +105,18 @@ class VoyageNotifier extends Notifier<VoyageState> {
         _storeName, all.map((s) => s.toJson()).toList());
   }
 
+  Future<void> importAll(List<Map<String, dynamic>> rows) async {
+    final all = rows.map(VoyageSession.fromJson).toList();
+    VoyageSession? active;
+    final history = <VoyageSession>[];
+    for (final s in all) {
+      if (s.isActive && active == null) { active = s; }
+      else { history.add(s); }
+    }
+    state = VoyageState(active: active, history: history);
+    await save();
+  }
+
   // ---- Actions ------------------------------------------------------------
 
   /// Start a new voyage. Ends any currently active voyage first.
