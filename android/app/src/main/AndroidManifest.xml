@@ -16,6 +16,9 @@
     <!-- Keep screen on -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
+    <!-- In-app update: allow installing APKs from browser download -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+
     <application
         android:label="Yokuli"
         android:name="${applicationName}"

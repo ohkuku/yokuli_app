@@ -8,6 +8,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/connection_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
+import '../../../core/services/update/update_dialog.dart';
 import '../widgets/app_tile.dart';
 import '../widgets/vessel_status_bar.dart';
 
@@ -27,6 +28,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.initState();
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _now = DateTime.now());
+    });
+    // Check for updates once after the first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) showUpdateDialogIfNeeded(context);
     });
   }
 
