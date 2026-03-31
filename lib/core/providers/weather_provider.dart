@@ -30,8 +30,23 @@ class WeatherNotifier extends Notifier<WeatherState> {
     ref.onDispose(() {
       _timer?.cancel();
     });
-    // Kick off first fetch after a short delay so startup doesn't block
-    Future.delayed(const Duration(seconds: 3), _fetch);
+
+    // When vessel position arrives from Signal K, trigger a fetch
+    // (runs once and only when position transitions from null → non-null)
+    ref.listen(
+      vesselProvider.select((v) => v.position),
+      (prev, next) {
+        if (next != null && (next.latitude != 0.0 || next.longitude != 0.0)) {
+          // Only auto-fetch if we don't have weather data yet
+          if (state.condition == null && !state.isLoading) {
+            _fetch();
+          }
+        }
+      },
+    );
+
+    // Also try on startup after a short delay (in case SK is already connected)
+    Future.delayed(const Duration(seconds: 5), _fetch);
     _timer = Timer.periodic(_refreshInterval, (_) => _fetch());
     return const WeatherState.empty();
   }
@@ -47,7 +62,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
       if (pos == null) {
         state = state.copyWith(
           isLoading: false,
-          error: '无法获取位置，请允许定位权限',
+          error: '无法获取位置，请检查定位权限（设置 → 定位服务）',
         );
         return;
       }
@@ -66,18 +81,11 @@ class WeatherNotifier extends Notifier<WeatherState> {
 
       result ??= await _fetchOpenMeteo(lat: pos.latitude, lon: pos.longitude);
 
-      if (result != null) {
-        state = result.copyWith(isLoading: false, error: null);
-      } else {
-        state = state.copyWith(
-          isLoading: false,
-          error: '天气数据获取失败，请检查网络',
-        );
-      }
+      state = result.copyWith(isLoading: false, error: null);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
-        error: '天气获取错误: $e',
+        error: e.toString(),
       );
     }
   }
@@ -87,14 +95,14 @@ class WeatherNotifier extends Notifier<WeatherState> {
   // --------------------------------------------------------------------------
 
   Future<_LatLon?> _resolvePosition() async {
-    // Prefer vessel GPS from Signal K
+    // 1. Prefer vessel GPS from Signal K (authoritative nav GPS)
     final vessel = ref.read(vesselProvider);
     final vPos = vessel.position;
-    if (vPos != null && vPos.latitude != 0.0) {
+    if (vPos != null && (vPos.latitude != 0.0 || vPos.longitude != 0.0)) {
       return _LatLon(vPos.latitude, vPos.longitude);
     }
 
-    // Fall back to device GPS
+    // 2. Try device GPS — check permission first
     try {
       LocationPermission perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
@@ -104,6 +112,12 @@ class WeatherNotifier extends Notifier<WeatherState> {
           perm == LocationPermission.denied) {
         return null;
       }
+
+      // 3. Last known position — instant, no GPS fix needed
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) return _LatLon(last.latitude, last.longitude);
+
+      // 4. Fresh GPS fix (8 s timeout)
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.low,
         timeLimit: const Duration(seconds: 8),
@@ -119,29 +133,35 @@ class WeatherNotifier extends Notifier<WeatherState> {
   // https://open-meteo.com/
   // --------------------------------------------------------------------------
 
-  Future<WeatherState?> _fetchOpenMeteo({
+  Future<WeatherState> _fetchOpenMeteo({
     required double lat,
     required double lon,
   }) async {
-    final uri = Uri.parse(
-      'https://api.open-meteo.com/v1/forecast'
-      '?latitude=${lat.toStringAsFixed(4)}'
-      '&longitude=${lon.toStringAsFixed(4)}'
-      '&current=temperature_2m,apparent_temperature,weather_code'
-      ',wind_speed_10m,wind_direction_10m,precipitation'
-      '&wind_speed_unit=knots'
-      '&timezone=auto',
-    );
+    final uri = Uri.https('api.open-meteo.com', '/v1/forecast', {
+      'latitude': lat.toStringAsFixed(4),
+      'longitude': lon.toStringAsFixed(4),
+      'current': 'temperature_2m,apparent_temperature,weather_code'
+          ',wind_speed_10m,wind_direction_10m,precipitation',
+      'wind_speed_unit': 'kn',
+      'timezone': 'auto',
+    });
 
-    final resp = await http.get(uri).timeout(const Duration(seconds: 12));
-    if (resp.statusCode != 200) return null;
+    final resp = await http
+        .get(uri, headers: {'Accept': 'application/json'})
+        .timeout(const Duration(seconds: 15));
+
+    if (resp.statusCode != 200) {
+      throw Exception('Open-Meteo HTTP ${resp.statusCode}: '
+          '${resp.body.length > 120 ? resp.body.substring(0, 120) : resp.body}');
+    }
 
     final body = jsonDecode(resp.body) as Map<String, dynamic>;
     final cur = body['current'] as Map<String, dynamic>?;
-    if (cur == null) return null;
+    if (cur == null) {
+      throw Exception('Open-Meteo: 响应中无 current 字段，body=${resp.body.substring(0, 200)}');
+    }
 
     final code = (cur['weather_code'] as num?)?.toInt() ?? 0;
-    final condition = conditionFromCode(code);
     final lat4 = lat.toStringAsFixed(2);
     final lon4 = lon.toStringAsFixed(2);
 
@@ -149,7 +169,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
       temperature: (cur['temperature_2m'] as num?)?.toDouble(),
       feelsLike: (cur['apparent_temperature'] as num?)?.toDouble(),
       weatherCode: code,
-      condition: condition,
+      condition: conditionFromCode(code),
       windSpeed: (cur['wind_speed_10m'] as num?)?.toDouble(),
       windDirection: (cur['wind_direction_10m'] as num?)?.toInt(),
       precipitation: (cur['precipitation'] as num?)?.toDouble(),
@@ -170,15 +190,14 @@ class WeatherNotifier extends Notifier<WeatherState> {
     required String apiKey,
   }) async {
     try {
-      final uri = Uri.parse(
-        'https://data.metservice.com/v1/point_forecast'
-        '?lat=${lat.toStringAsFixed(4)}'
-        '&lon=${lon.toStringAsFixed(4)}',
-      );
+      final uri = Uri.https('data.metservice.com', '/v1/point_forecast', {
+        'lat': lat.toStringAsFixed(4),
+        'lon': lon.toStringAsFixed(4),
+      });
       final resp = await http
-          .get(uri, headers: {'apikey': apiKey})
+          .get(uri, headers: {'apikey': apiKey, 'Accept': 'application/json'})
           .timeout(const Duration(seconds: 10));
-      if (resp.statusCode != 200) return null;
+      if (resp.statusCode != 200) return null; // fall through to Open-Meteo
 
       final body = jsonDecode(resp.body) as Map<String, dynamic>;
       // MetService response schema varies; extract current conditions
