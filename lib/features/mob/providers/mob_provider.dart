@@ -176,7 +176,11 @@ class MobNotifier extends Notifier<MobState> {
 
   /// Receive a MOB alert from a LAN peer.
   void receiveMob(MobAlert alert) {
-    if (state.isMobActive) return;
+    final current = state.activeMob;
+    if (current != null &&
+        !alert.triggeredAt.isAfter(current.triggeredAt)) {
+      return;
+    }
     state = state.copyWith(activeMob: alert);
     TelemetryService.instance.recordMobActivated();
     ref.read(logProvider.notifier).log(

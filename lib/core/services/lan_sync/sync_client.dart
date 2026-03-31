@@ -64,6 +64,7 @@ class SyncClient {
   void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
   void Function(Map<String, dynamic> data)? onMobRuleSync;
   void Function(Map<String, dynamic> data)? onNotifyChannelSyncReceived;
+  void Function()? onNetworkJoinSync;
   /// Called when server sends sync_meta (stateVersionMs + deviceId of the server).
   void Function(int svMs, String peerId)? onSyncMetaReceived;
   /// Called when client receives sync_hello from the server.
@@ -210,6 +211,8 @@ class SyncClient {
           if (data != null) onMobRuleSync?.call(data);
         case 'notify_channel_sync':
           if (data != null) onNotifyChannelSyncReceived?.call(data);
+        case 'network_join_sync':
+          onNetworkJoinSync?.call();
         case 'sync_hello':
           onSyncHelloReceived?.call(json);
         case 'sync_changes':

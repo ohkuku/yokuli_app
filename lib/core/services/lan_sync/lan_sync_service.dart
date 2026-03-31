@@ -71,6 +71,7 @@ class LanSyncService {
   final LanSyncPlatformImpl _platform = LanSyncPlatformImpl();
   Timer? _stateTimer;
   Timer? _skPushTimer;
+  Timer? _joinGuardTimer;
   String? _localIp;
 
   /// peerKey(deviceId or ws) → unix-ms of last connect attempt.
@@ -154,11 +155,11 @@ class LanSyncService {
         connected ? ConnectionStatus.connected : ConnectionStatus.disconnected,
       );
       if (connected) {
-        _ref.read(networkJoinInProgressProvider.notifier).state = false;
+        _setJoinInProgress(false);
         // As client: send sync_hello to server so it can push missing records to us
         _sendSyncHello(_platform.sendJson);
       } else {
-        _ref.read(networkJoinInProgressProvider.notifier).state = false;
+        _setJoinInProgress(false);
       }
     };
     _platform.onPeerCountChanged = (count) => _conn.setPeerCount(count);
@@ -190,6 +191,9 @@ class LanSyncService {
       if (skStatus != ConnectionStatus.connected) {
         _ref.read(vesselProvider.notifier).update(state);
       }
+    };
+    _platform.onNetworkJoinSync = () {
+      _setJoinInProgress(true);
     };
     // Server: when a new client connects, send sync_hello to them
     _platform.onNewClientConnected = _sendSyncHello;
@@ -238,6 +242,7 @@ class LanSyncService {
     // Push current settings, SK credentials, and active MOB to the new client
     // so it becomes fully operational without any manual configuration.
     _pushCurrentStateTo(reply);
+    _setJoinInProgress(false);
   }
 
   /// Push current settings and MOB state to a specific client (e.g. on first connect).
@@ -280,7 +285,7 @@ class LanSyncService {
   Future<void> _handleSyncHelloFromServer(Map<String, dynamic> msg) async {
     final peerCursors = _parseCursors(msg['cursors']);
     await _sendMissingRecords(peerCursors, _platform.sendJson);
-    _ref.read(networkJoinInProgressProvider.notifier).state = false;
+    _setJoinInProgress(false);
   }
 
   /// Parse cursors map from sync_hello — gracefully handles nulls.
@@ -432,7 +437,7 @@ class LanSyncService {
     if (maxUa.millisecondsSinceEpoch > 0) {
       await SyncCursorStore.advance(collection, maxUa);
     }
-    _ref.read(networkJoinInProgressProvider.notifier).state = false;
+    _setJoinInProgress(false);
   }
 
   // ---------------------------------------------------------------------------
@@ -468,11 +473,30 @@ class LanSyncService {
       current[idx] = peer;
     } else {
       current.add(peer);
+      _announceJoinSyncToAll();
     }
     _ref.read(discoveredPeersProvider.notifier).state =
         List.unmodifiable(current);
 
     _checkAndConnect(peer);
+  }
+
+  void _announceJoinSyncToAll() {
+    broadcastJson({'type': 'network_join_sync'});
+    if (_platform.isClientConnected) {
+      _platform.sendJson({'type': 'network_join_sync'});
+    }
+    _setJoinInProgress(true);
+  }
+
+  void _setJoinInProgress(bool value) {
+    _joinGuardTimer?.cancel();
+    _ref.read(networkJoinInProgressProvider.notifier).state = value;
+    if (value) {
+      _joinGuardTimer = Timer(const Duration(seconds: 12), () {
+        _ref.read(networkJoinInProgressProvider.notifier).state = false;
+      });
+    }
   }
 
   /// Connect to [peer] as a WS client (throttled), independent of peer sv.
@@ -494,7 +518,7 @@ class LanSyncService {
     _peerSyncedVersions[peerKey] = nowMs;
 
     // Mark connecting before the attempt so the UI shows the right state.
-    _ref.read(networkJoinInProgressProvider.notifier).state = true;
+    _setJoinInProgress(true);
     _conn.setLanSyncStatus(ConnectionStatus.connecting);
 
     // Connect — sync_hello exchange will happen automatically on connection
@@ -694,7 +718,7 @@ class LanSyncService {
   bool get supportsAutoDiscovery => _platform.supportsAutoDiscovery;
 
   Future<void> start() async {
-    _ref.read(networkJoinInProgressProvider.notifier).state = false;
+    _setJoinInProgress(false);
     _localIp = await _platform.getLocalIp();
     if (kIsWeb) {
       // Web: client-only — connect to manually configured host IP.
@@ -708,7 +732,7 @@ class LanSyncService {
       };
 
       if (settings.hostIp.isNotEmpty) {
-        _ref.read(networkJoinInProgressProvider.notifier).state = true;
+        _setJoinInProgress(true);
         _conn.setLanSyncStatus(ConnectionStatus.connecting);
         await _platform.connectAsClient(
           'ws://${settings.hostIp}:${settings.hostPort}',
@@ -745,7 +769,7 @@ class LanSyncService {
     await _platform.startDiscovery();
 
     _conn.setLanSyncStatus(ConnectionStatus.connected);
-    _ref.read(networkJoinInProgressProvider.notifier).state = false;
+    _setJoinInProgress(false);
 
     // Push VesselState to connected clients at ~2 Hz.
     _stateTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
@@ -774,6 +798,8 @@ class LanSyncService {
     _stateTimer = null;
     _skPushTimer?.cancel();
     _skPushTimer = null;
+    _joinGuardTimer?.cancel();
+    _joinGuardTimer = null;
     _ref.read(lanBroadcastProvider.notifier).state = null;
     _peerSyncedVersions.clear();
     _platform.stopDiscovery();
@@ -781,7 +807,7 @@ class LanSyncService {
     await _platform.disconnectClient();
     _conn.setLanSyncStatus(ConnectionStatus.disconnected);
     _ref.read(discoveredPeersProvider.notifier).state = [];
-    _ref.read(networkJoinInProgressProvider.notifier).state = false;
+    _setJoinInProgress(false);
     _localIp = null;
   }
 

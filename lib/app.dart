@@ -26,9 +26,9 @@ class YokulApp extends ConsumerWidget {
 
     // Navigate every device to the MOB screen when a MOB is triggered.
     ref.listen(
-      mobProvider.select((s) => s.isMobActive),
-      (prev, isActive) {
-        if (isActive == true && prev != true) {
+      mobProvider.select((s) => s.activeMob?.id),
+      (prev, mobId) {
+        if (mobId != null && mobId != prev) {
           router.push('/mob');
         }
       },
