@@ -66,6 +66,18 @@ class LanSyncService {
   /// Called when alarm settings arrive from a remote peer.
   void Function(Map<String, dynamic>)? onAlarmSettingsReceived;
 
+  /// Called to get alarm rules (per-type) to push to new clients.
+  Map<String, dynamic>? Function()? getAlarmRules;
+
+  /// Called to get notify channel config to push to new clients.
+  Map<String, dynamic>? Function()? getNotifyChannelCfg;
+
+  /// Called when alarm rules arrive from a remote peer.
+  void Function(Map<String, dynamic>)? onAlarmRulesReceived;
+
+  /// Called when notify channel config arrives from a remote peer.
+  void Function(Map<String, dynamic>)? onNotifyChannelReceived;
+
   LanSyncService(this._ref) {
     _platform.onStateReceived = (state) {
       // Don't overwrite local SK data with LAN broadcasts — that causes
@@ -160,6 +172,8 @@ class LanSyncService {
   void _pushCurrentStateTo(void Function(Map<String, dynamic>) sendTo) {
     final s = _ref.read(settingsProvider);
     final alarmData = getAlarmSettings?.call();
+    final alarmRules = getAlarmRules?.call();
+    final notifyChannelCfg = getNotifyChannelCfg?.call();
     sendTo({
       'type': 'settings_sync',
       'data': {
@@ -173,6 +187,8 @@ class LanSyncService {
           'skPass': s.signalKPassword,
         },
         if (alarmData != null) ...alarmData,
+        if (alarmRules != null) 'alarmRules': alarmRules,
+        if (notifyChannelCfg != null) 'notifyChannel': notifyChannelCfg,
       },
     });
     final mob = getActiveMob?.call();
@@ -442,12 +458,26 @@ class LanSyncService {
         if (speedThreshold != null) 'speedAlarmThreshold': speedThreshold,
       });
     }
+
+    // Apply alarm rules if present
+    final alarmRulesRaw = data['alarmRules'] as Map<String, dynamic>?;
+    if (alarmRulesRaw != null) {
+      onAlarmRulesReceived?.call(alarmRulesRaw);
+    }
+
+    // Apply notify channel config if present
+    final notifyChannelRaw = data['notifyChannel'] as Map<String, dynamic>?;
+    if (notifyChannelRaw != null) {
+      onNotifyChannelReceived?.call(notifyChannelRaw);
+    }
   }
 
   /// Broadcast current settings to all peers (call after any settings change).
   void broadcastSettings() {
     final s = _ref.read(settingsProvider);
     final alarmData = getAlarmSettings?.call();
+    final alarmRules = getAlarmRules?.call();
+    final notifyChannelCfg = getNotifyChannelCfg?.call();
     broadcastJson({
       'type': 'settings_sync',
       'data': {
@@ -461,6 +491,8 @@ class LanSyncService {
           'skPass': s.signalKPassword,
         },
         if (alarmData != null) ...alarmData,
+        if (alarmRules != null) 'alarmRules': alarmRules,
+        if (notifyChannelCfg != null) 'notifyChannel': notifyChannelCfg,
       },
     });
   }

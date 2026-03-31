@@ -195,6 +195,21 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     lanSync.onAlarmSettingsReceived = (data) {
       ref.read(safetyProvider.notifier).applyAlarmSync(data);
     };
+    // Wire alarm rule + notify channel sync
+    lanSync.getAlarmRules = () {
+      final rules = ref.read(alarmRuleProvider);
+      final map = <String, dynamic>{};
+      for (final entry in rules.entries) {
+        map[entry.key.index.toString()] = entry.value.toJson();
+      }
+      return map;
+    };
+    lanSync.getNotifyChannelCfg = () =>
+        ref.read(notifyChannelProvider).toJson();
+    lanSync.onAlarmRulesReceived = (data) =>
+        ref.read(alarmRuleProvider.notifier).applySync(data);
+    lanSync.onNotifyChannelReceived = (data) =>
+        ref.read(notifyChannelProvider.notifier).applySync(data);
   }
 
   Future<void> _connectSK(AppSettings settings) async {

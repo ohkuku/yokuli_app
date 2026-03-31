@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/alarm.dart';
 import '../models/alarm_rule.dart';
+import 'lan_broadcast.dart';
 
 // ---------------------------------------------------------------------------
 // Default rules
@@ -57,7 +58,6 @@ class AlarmRuleNotifier extends Notifier<Map<AlarmType, AlarmRuleConfig>> {
 
   @override
   Map<AlarmType, AlarmRuleConfig> build() {
-    // Return defaults immediately; load from prefs in background.
     load(); // unawaited
     return _defaultRules();
   }
@@ -82,16 +82,46 @@ class AlarmRuleNotifier extends Notifier<Map<AlarmType, AlarmRuleConfig>> {
 
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
+    final map = _toJsonMap();
+    await prefs.setString(_prefsKey, jsonEncode(map));
+  }
+
+  Map<String, dynamic> _toJsonMap() {
     final map = <String, dynamic>{};
     for (final entry in state.entries) {
       map[entry.key.index.toString()] = entry.value.toJson();
     }
-    await prefs.setString(_prefsKey, jsonEncode(map));
+    return map;
   }
 
+  /// Update a single rule and broadcast the full rules set to all peers.
   void updateRule(AlarmType type, AlarmRuleConfig config) {
     state = {...state, type: config};
-    save(); // fire-and-forget
+    save();
+    _broadcast();
+  }
+
+  /// Apply rules received from a remote peer — saves locally, no re-broadcast.
+  void applySync(Map<String, dynamic> rulesJson) {
+    final result = Map<AlarmType, AlarmRuleConfig>.from(_defaultRules());
+    for (final entry in rulesJson.entries) {
+      final typeIndex = int.tryParse(entry.key);
+      if (typeIndex == null || typeIndex >= AlarmType.values.length) continue;
+      final type = AlarmType.values[typeIndex];
+      try {
+        result[type] = AlarmRuleConfig.fromJson(
+            type, entry.value as Map<String, dynamic>);
+      } catch (_) {}
+    }
+    state = result;
+    save();
+  }
+
+  void _broadcast() {
+    ref.read(lanBroadcastProvider)?.call({
+      'type': 'settings_sync',
+      'data': {'alarmRules': _toJsonMap()},
+    });
   }
 }
 
@@ -123,9 +153,26 @@ class NotifyChannelNotifier extends Notifier<NotifyChannelConfig> {
     await prefs.setString(_prefsKey, jsonEncode(state.toJson()));
   }
 
+  /// Update config and broadcast to all peers.
   void update(NotifyChannelConfig config) {
     state = config;
-    save(); // fire-and-forget
+    save();
+    _broadcast();
+  }
+
+  /// Apply config received from a remote peer — saves locally, no re-broadcast.
+  void applySync(Map<String, dynamic> json) {
+    try {
+      state = NotifyChannelConfig.fromJson(json);
+      save();
+    } catch (_) {}
+  }
+
+  void _broadcast() {
+    ref.read(lanBroadcastProvider)?.call({
+      'type': 'settings_sync',
+      'data': {'notifyChannel': state.toJson()},
+    });
   }
 }
 

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -77,6 +78,30 @@ class AlarmManagementScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Web: read-only banner
+          if (kIsWeb) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: AppColors.textMuted.withAlpha(20),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.textMuted.withAlpha(50)),
+              ),
+              child: const Row(children: [
+                Icon(Icons.visibility_rounded,
+                    size: 14, color: AppColors.textMuted),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '只读模式 — 告警配置由主机设备管理，自动同步到此设备',
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  ),
+                ),
+              ]),
+            ),
+          ],
+
           // ── Section 1: Alarm Rules ──────────────────────────────────
           _SectionHeader(label: 'ALARM RULES'),
           const SizedBox(height: 8),
@@ -97,7 +122,9 @@ class AlarmManagementScreen extends ConsumerWidget {
                   children: [
                     _AlarmRuleRow(
                       rule: rule,
-                      onTap: () => _showEditSheet(context, ref, rule),
+                      onTap: kIsWeb
+                          ? null
+                          : () => _showEditSheet(context, ref, rule),
                     ),
                     if (!isLast)
                       const Divider(
@@ -133,9 +160,11 @@ class AlarmManagementScreen extends ConsumerWidget {
                       style: TextStyle(
                           color: AppColors.textSecondary, fontSize: 12)),
                   value: channelCfg.soundEnabled,
-                  onChanged: (v) => ref
-                      .read(notifyChannelProvider.notifier)
-                      .update(channelCfg.copyWith(soundEnabled: v)),
+                  onChanged: kIsWeb
+                      ? null
+                      : (v) => ref
+                          .read(notifyChannelProvider.notifier)
+                          .update(channelCfg.copyWith(soundEnabled: v)),
                 ),
                 const Divider(
                     color: AppColors.divider, height: 1, indent: 16),
@@ -151,14 +180,16 @@ class AlarmManagementScreen extends ConsumerWidget {
                       style: TextStyle(
                           color: AppColors.textSecondary, fontSize: 12)),
                   value: channelCfg.discordEnabled,
-                  onChanged: (v) => ref
-                      .read(notifyChannelProvider.notifier)
-                      .update(channelCfg.copyWith(discordEnabled: v)),
+                  onChanged: kIsWeb
+                      ? null
+                      : (v) => ref
+                          .read(notifyChannelProvider.notifier)
+                          .update(channelCfg.copyWith(discordEnabled: v)),
                 ),
                 if (channelCfg.discordEnabled) ...[
                   const Divider(
                       color: AppColors.divider, height: 1, indent: 16),
-                  _DiscordUrlField(channelCfg: channelCfg),
+                  _DiscordUrlField(channelCfg: channelCfg, readOnly: kIsWeb),
                 ],
               ],
             ),
@@ -210,7 +241,7 @@ class _SectionHeader extends StatelessWidget {
 
 class _AlarmRuleRow extends ConsumerWidget {
   final AlarmRuleConfig rule;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _AlarmRuleRow({required this.rule, required this.onTap});
 
@@ -252,12 +283,15 @@ class _AlarmRuleRow extends ConsumerWidget {
           Switch(
             value: rule.enabled,
             activeColor: AppColors.cyan,
-            onChanged: (v) => ref
-                .read(alarmRuleProvider.notifier)
-                .updateRule(rule.type, rule.copyWith(enabled: v)),
+            onChanged: kIsWeb
+                ? null
+                : (v) => ref
+                    .read(alarmRuleProvider.notifier)
+                    .updateRule(rule.type, rule.copyWith(enabled: v)),
           ),
-          const Icon(Icons.chevron_right_rounded,
-              color: AppColors.textMuted, size: 18),
+          if (!kIsWeb)
+            const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textMuted, size: 18),
         ],
       ),
       onTap: onTap,
@@ -539,7 +573,8 @@ class _ChannelCheckRow extends StatelessWidget {
 
 class _DiscordUrlField extends ConsumerStatefulWidget {
   final NotifyChannelConfig channelCfg;
-  const _DiscordUrlField({required this.channelCfg});
+  final bool readOnly;
+  const _DiscordUrlField({required this.channelCfg, this.readOnly = false});
 
   @override
   ConsumerState<_DiscordUrlField> createState() => _DiscordUrlFieldState();
@@ -572,6 +607,7 @@ class _DiscordUrlFieldState extends ConsumerState<_DiscordUrlField> {
         children: [
           TextField(
             controller: _controller,
+            readOnly: widget.readOnly,
             style: const TextStyle(
                 color: AppColors.textPrimary, fontSize: 13),
             decoration: InputDecoration(
@@ -595,13 +631,15 @@ class _DiscordUrlFieldState extends ConsumerState<_DiscordUrlField> {
                 borderSide:
                     const BorderSide(color: AppColors.cyan),
               ),
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.check_rounded,
-                    color: AppColors.success),
-                onPressed: _saveUrl,
-              ),
+              suffixIcon: widget.readOnly
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.check_rounded,
+                          color: AppColors.success),
+                      onPressed: _saveUrl,
+                    ),
             ),
-            onSubmitted: (_) => _saveUrl(),
+            onSubmitted: widget.readOnly ? null : (_) => _saveUrl(),
           ),
           const SizedBox(height: 8),
           Row(
@@ -619,6 +657,7 @@ class _DiscordUrlFieldState extends ConsumerState<_DiscordUrlField> {
                   ),
                 ),
               const Spacer(),
+              if (!widget.readOnly)
               TextButton(
                 onPressed: _testing ? null : _sendTest,
                 child: _testing
