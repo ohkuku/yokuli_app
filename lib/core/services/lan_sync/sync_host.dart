@@ -41,6 +41,7 @@ class SyncHost {
   void Function(Map<String, dynamic> data)? onNotificationSync;
   void Function(Map<String, dynamic> data)? onNotifReceiptSync;
   void Function(Map<String, dynamic> data)? onMobRuleSync;
+  void Function(Map<String, dynamic> data)? onNotifyChannelSync;
   void Function(VesselState state)? onVesselStatePush;
   /// Called when a new client connects; receives a function that sends a
   /// JSON message directly to that specific client only.
@@ -237,6 +238,11 @@ class SyncHost {
         case 'mob_rule_sync':
           if (data != null) {
             onMobRuleSync?.call(data);
+            broadcastJson(json);
+          }
+        case 'notify_channel_sync':
+          if (data != null) {
+            onNotifyChannelSync?.call(data);
             broadcastJson(json);
           }
         case 'vessel_state_push':

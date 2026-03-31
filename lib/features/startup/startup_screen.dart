@@ -107,9 +107,9 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
       await ref.read(lanSyncServiceProvider).start();
       _markStep(1);
 
-      // Step 2: Peer discovery window (4 s)
+      // Step 2: Peer discovery window (8 s — UDP broadcast is every 5 s)
       _setStep('搜索设备中…');
-      const searchDuration = Duration(seconds: 4);
+      const searchDuration = Duration(seconds: 8);
       const tick = Duration(milliseconds: 500);
       var elapsed = Duration.zero;
       while (elapsed < searchDuration) {
@@ -203,11 +203,25 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     // Start alarm evaluator (watches vessel state and fires alarm instances)
     ref.read(alarmEvaluatorProvider).start();
 
-    // Wire LAN sync callbacks for MOB
+    // Wire LAN sync callbacks
     final lanSync = ref.read(lanSyncServiceProvider);
     lanSync.onMobAlert = (alert) => ref.read(mobProvider.notifier).receiveMob(alert);
     lanSync.onMobCancelReceived = () => ref.read(mobProvider.notifier).receiveMobCancel();
     lanSync.getActiveMob = () => ref.read(mobProvider).activeMob;
+    lanSync.getMobRules = () =>
+        ref.read(mobProvider).rules.map((r) => r.toJson()).toList();
+    lanSync.getAlarmSettings = () => {
+          'depthAlarmEnabled': ref.read(safetyProvider).depthAlarmEnabled,
+          'depthAlarmThreshold': ref.read(safetyProvider).depthAlarmThreshold,
+          'speedAlarmEnabled': ref.read(safetyProvider).speedAlarmEnabled,
+          'speedAlarmThreshold': ref.read(safetyProvider).speedAlarmThreshold,
+        };
+    lanSync.onAlarmSettingsReceived = (data) =>
+        ref.read(safetyProvider.notifier).applyAlarmSync(data);
+    lanSync.getNotifyChannelCfg = () =>
+        ref.read(notifyChannelProvider).toJson();
+    lanSync.onNotifyChannelReceived = (data) =>
+        ref.read(notifyChannelProvider.notifier).applySync(data);
 
     // Wire MOB watcher to SignalK raw delta stream
     final mobWatcher = MobWatcherService();

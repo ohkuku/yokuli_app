@@ -109,6 +109,9 @@ class LanSyncService {
   /// Called when a mob_rule_sync message arrives from a remote peer.
   void Function(Map<String, dynamic>)? onMobRuleSync;
 
+  /// Called to get current MOB trigger rules to push to new clients.
+  List<Map<String, dynamic>> Function()? getMobRules;
+
   LanSyncService(this._ref) {
     _platform.onStateReceived = (state) {
       // Don't overwrite local SK data with LAN broadcasts — that causes
@@ -158,6 +161,7 @@ class LanSyncService {
     _platform.onNotificationSync = (data) => onNotificationSync?.call(data);
     _platform.onNotifReceiptSync = (data) => onNotifReceiptSync?.call(data);
     _platform.onMobRuleSync = (data) => onMobRuleSync?.call(data);
+    _platform.onNotifyChannelSyncReceived = (data) => onNotifyChannelReceived?.call(data);
     _platform.onVesselStatePush = (state) {
       // A client is sharing their SK vessel state — apply only if we have no SK.
       final skStatus = _ref.read(connectionProvider).signalK;
@@ -240,6 +244,11 @@ class LanSyncService {
     final mob = getActiveMob?.call();
     if (mob != null) {
       sendTo({'type': 'mob', 'data': mob.toJson()});
+    }
+    // Push each MOB trigger rule individually so new client has full rule set.
+    final mobRules = getMobRules?.call() ?? [];
+    for (final rule in mobRules) {
+      sendTo({'type': 'mob_rule_sync', 'data': rule});
     }
   }
 
@@ -490,7 +499,7 @@ class LanSyncService {
               ),
         );
 
-    final url = 'ws://$host:$port/signalk/v1/stream';
+    final url = 'ws://$host:$port/signalk/v1/stream?subscribe=all';
     String? token;
     if (username.isNotEmpty && password.isNotEmpty) {
       try {
