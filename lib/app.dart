@@ -34,12 +34,12 @@ class YokulApp extends ConsumerWidget {
       },
     );
 
-    // While a device is joining/resyncing, bring user to Settings sync page.
+    // During join sync, return to the main waiting page (home) for all devices.
     ref.listen(
       networkJoinInProgressProvider,
       (prev, next) {
         if (next == true && prev != true) {
-          router.go('/settings');
+          router.go('/');
         }
       },
     );
@@ -129,7 +129,7 @@ class _AlarmBannerOverlay extends ConsumerWidget {
                       ),
                       SizedBox(width: 10),
                       Text(
-                        '正在同步网络数据，暂时禁止编辑…',
+                        '新设备加入中，请等待其完成配置…',
                         style: TextStyle(color: AppColors.textPrimary, fontSize: 13),
                       ),
                     ],

@@ -138,8 +138,14 @@ class MobNotifier extends Notifier<MobState> {
           : 'MOB ALERT — 自动规则触发: $triggerRuleName',
     );
 
-    // Broadcast to LAN peers
-    ref.read(lanSyncServiceProvider).triggerMob(alert);
+    // Broadcast to LAN peers (broadcast + upstream relay through lanBroadcast).
+    final lanBroadcast = ref.read(lanBroadcastProvider);
+    if (lanBroadcast != null) {
+      lanBroadcast({'type': 'mob', 'data': alert.toJson()});
+    } else {
+      // Fallback path when LAN sync service has not yet attached broadcaster.
+      ref.read(lanSyncServiceProvider).triggerMob(alert);
+    }
     ref.read(deviceProvider.notifier).bump();
   }
 

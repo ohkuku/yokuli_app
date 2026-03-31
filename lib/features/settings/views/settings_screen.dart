@@ -7,6 +7,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/locale_provider.dart';
 import '../../../core/l10n/strings.dart' show S;
 import '../../../core/providers/device_provider.dart' show deviceProvider;
+import '../../../core/providers/connection_provider.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
 import '../../../core/services/lan_sync/lan_sync_platform_base.dart' show DiscoveredHost;
 import '../../../core/services/lan_sync/lan_sync_service.dart' show syncCursorStatusProvider;
@@ -193,6 +194,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ref.watch(lanSyncServiceProvider); // ensure provider is alive
     final device = ref.watch(deviceProvider);
     final discoveredPeers = ref.watch(discoveredPeersProvider);
+    final conn = ref.watch(connectionProvider);
+    final inferredPeerCount = [
+      discoveredPeers.length,
+      conn.peerCount,
+      conn.lanSync == ConnectionStatus.connected ? 1 : 0,
+    ].reduce((a, b) => a > b ? a : b);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -267,7 +274,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             // --- LAN Devices ---
             _SectionHeader(s.sectionLanDevices),
             const SizedBox(height: 8),
-            _LanDevicesPanel(peers: discoveredPeers),
+            _LanDevicesPanel(
+              peers: discoveredPeers,
+              inferredPeerCount: inferredPeerCount,
+            ),
             const SizedBox(height: 24),
 
             // --- Sync Status ---
@@ -509,13 +519,17 @@ class _InfoRow extends StatelessWidget {
 
 class _LanDevicesPanel extends ConsumerWidget {
   final List<DiscoveredHost> peers;
+  final int inferredPeerCount;
 
-  const _LanDevicesPanel({required this.peers});
+  const _LanDevicesPanel({
+    required this.peers,
+    required this.inferredPeerCount,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(stringsProvider);
-    final totalDevices = peers.length + 1; // include this device
+    final totalDevices = inferredPeerCount + 1; // include this device
     if (peers.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(16),
@@ -554,7 +568,7 @@ class _LanDevicesPanel extends ConsumerWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                '已发现 ${peers.length} 台其他设备（当前共 $totalDevices 台，含本机）',
+                '已发现/连接 ${inferredPeerCount} 台其他设备（当前共 $totalDevices 台，含本机）',
                 style: const TextStyle(
                   color: AppColors.textMuted,
                   fontSize: 12,

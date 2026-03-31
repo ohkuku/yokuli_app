@@ -186,6 +186,15 @@ class SettingsNotifier extends Notifier<AppSettings> {
     if (updated.autoConnectSignalK != previous.autoConnectSignalK) {
       data['autoConnectSignalK'] = updated.autoConnectSignalK;
     }
+    if (updated.autoConnectLan != previous.autoConnectLan) {
+      data['autoConnectLan'] = updated.autoConnectLan;
+    }
+    if (updated.hostIp != previous.hostIp) {
+      data['hostIp'] = updated.hostIp;
+    }
+    if (updated.hostPort != previous.hostPort) {
+      data['hostPort'] = updated.hostPort;
+    }
     if (updated.signalKUrl != previous.signalKUrl) {
       data['skUrl'] = updated.signalKUrl;
     }

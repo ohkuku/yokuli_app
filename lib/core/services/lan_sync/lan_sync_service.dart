@@ -257,6 +257,9 @@ class LanSyncService {
         'vesselName': s.vesselName,
         'tileOrder': s.tileOrder,
         'keepScreenOn': s.keepScreenOn,
+        'autoConnectLan': s.autoConnectLan,
+        if (s.hostIp.isNotEmpty) 'hostIp': s.hostIp,
+        'hostPort': s.hostPort,
         if (s.signalKUrl.isNotEmpty) 'skUrl': s.signalKUrl,
         'autoConnectSignalK': s.autoConnectSignalK,
         if (s.signalKHost.isNotEmpty) ...{
@@ -384,44 +387,58 @@ class LanSyncService {
         for (final r in records) {
           await _ref.read(logProvider.notifier).appendRemote(r);
         }
+        break;
       case SyncCollections.alarms:
         for (final r in records) {
           await _ref.read(alarmProvider.notifier).upsertRemote(r);
         }
+        break;
       case SyncCollections.tasks:
         for (final r in records) {
           await _ref.read(taskProvider.notifier).upsertInstanceRemote(r);
         }
+        break;
       case SyncCollections.issues:
         for (final r in records) {
           await _ref.read(issueProvider.notifier).upsertRemote(r);
         }
+        break;
       case SyncCollections.voyages:
         for (final r in records) {
           await _ref.read(voyageProvider.notifier).upsertRemote(r);
         }
+        break;
       case SyncCollections.kanbanColumns:
         _ref.read(kanbanProvider.notifier).applySyncColumns(records);
+        break;
       case SyncCollections.kanbanCards:
         _ref.read(kanbanProvider.notifier).applySyncCards(records);
+        break;
       case SyncCollections.alarmRules:
         await _ref.read(alarmRuleProvider.notifier).applyRemote(records);
+        break;
       case SyncCollections.alarmInstances:
         for (final r in records) {
           await _ref.read(alarmInstanceProvider.notifier).upsertRemote(r);
         }
+        break;
       case SyncCollections.alarmActions:
         for (final r in records) {
           await _ref.read(alarmActionProvider.notifier).applyRemote(r);
         }
+        break;
       case SyncCollections.notifications:
         for (final r in records) {
           await _ref.read(notificationProvider.notifier).applyRemote(r);
         }
+        break;
       case SyncCollections.notifReceipts:
         for (final r in records) {
           await _ref.read(notificationReceiptProvider.notifier).applyRemote(r);
         }
+        break;
+      default:
+        break;
     }
 
     // Advance local cursor to max ua across received records
@@ -573,9 +590,20 @@ class LanSyncService {
   Future<void> _onSettingsSyncReceived(Map<String, dynamic> data) async {
     final current = _ref.read(settingsProvider);
     final vesselName = data['vesselName'] as String?;
+    final normalizedVesselName = vesselName?.trim();
+    final shouldApplyVesselName = normalizedVesselName != null &&
+        normalizedVesselName.isNotEmpty &&
+        // Guard against a newly joined device pushing defaults over
+        // an already configured vessel name.
+        !(normalizedVesselName == 'My Vessel' &&
+            current.vesselName.trim().isNotEmpty &&
+            current.vesselName != 'My Vessel');
     final tileOrder = (data['tileOrder'] as List?)?.cast<String>();
     final keepScreenOn = data['keepScreenOn'] as bool?;
     final autoConnectSignalK = data['autoConnectSignalK'] as bool?;
+    final autoConnectLan = data['autoConnectLan'] as bool?;
+    final hostIp = data['hostIp'] as String?;
+    final hostPort = data['hostPort'] as int?;
     final skUrl = data['skUrl'] as String?;
     final skHost = data['skHost'] as String?;
     final skPort = data['skPort'] as int?;
@@ -584,11 +612,15 @@ class LanSyncService {
 
     await _ref.read(settingsProvider.notifier).applyRemote(
           current.copyWith(
-            vesselName: vesselName ?? current.vesselName,
+            vesselName:
+                shouldApplyVesselName ? normalizedVesselName : current.vesselName,
             tileOrder: tileOrder ?? current.tileOrder,
             keepScreenOn: keepScreenOn ?? current.keepScreenOn,
             autoConnectSignalK:
                 autoConnectSignalK ?? current.autoConnectSignalK,
+            autoConnectLan: autoConnectLan ?? current.autoConnectLan,
+            hostIp: hostIp ?? current.hostIp,
+            hostPort: hostPort ?? current.hostPort,
             signalKUrl: skUrl ?? current.signalKUrl,
             signalKHost: skHost ?? current.signalKHost,
             signalKPort: skPort ?? current.signalKPort,
@@ -669,6 +701,9 @@ class LanSyncService {
         'vesselName': s.vesselName,
         'tileOrder': s.tileOrder,
         'keepScreenOn': s.keepScreenOn,
+        'autoConnectLan': s.autoConnectLan,
+        if (s.hostIp.isNotEmpty) 'hostIp': s.hostIp,
+        'hostPort': s.hostPort,
         if (s.signalKUrl.isNotEmpty) 'skUrl': s.signalKUrl,
         'autoConnectSignalK': s.autoConnectSignalK,
         if (s.signalKHost.isNotEmpty) ...{
