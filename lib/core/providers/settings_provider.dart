@@ -167,6 +167,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
         'vesselName': updated.vesselName,
         'tileOrder': updated.tileOrder,
         'keepScreenOn': updated.keepScreenOn,
+        // Keep legacy URL in sync too, so peers still using old config path
+        // can connect without manual re-entry.
+        if (updated.signalKUrl.isNotEmpty) 'skUrl': updated.signalKUrl,
+        // Vessel-level auto connect preference should be shared across devices.
+        'autoConnectSignalK': updated.autoConnectSignalK,
         if (updated.signalKHost.isNotEmpty) ...{
           'skHost': updated.signalKHost,
           'skPort': updated.signalKPort,
