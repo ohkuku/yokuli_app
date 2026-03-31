@@ -54,6 +54,23 @@ extension AlarmOperatorExt on AlarmOperator {
         return value < threshold;
     }
   }
+
+  /// Whether [value] has recovered past the hysteresis band.
+  ///
+  /// For high-side alarms (>= / >) recovery requires the value to drop below
+  /// threshold − hysteresis. For low-side alarms (<= / <) recovery requires
+  /// the value to rise above threshold + hysteresis. If [hysteresis] is 0 any
+  /// value that no longer satisfies [evaluate] counts as recovered.
+  bool isRecovered(double value, double threshold, double hysteresis) {
+    switch (this) {
+      case AlarmOperator.greaterEqual:
+      case AlarmOperator.greaterThan:
+        return value < threshold - hysteresis;
+      case AlarmOperator.lessEqual:
+      case AlarmOperator.lessThan:
+        return value > threshold + hysteresis;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

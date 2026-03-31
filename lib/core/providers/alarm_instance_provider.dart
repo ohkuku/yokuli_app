@@ -10,7 +10,9 @@ import '../models/alarm_rule.dart';
 import '../sync/sync_engine.dart';
 import '../utils/id_gen.dart';
 import 'alarm_action_provider.dart';
+import 'device_provider.dart';
 import 'lan_broadcast.dart';
+import 'settings_provider.dart';
 
 // ---------------------------------------------------------------------------
 // _JsonStore — private file-based JSON persistence helper
@@ -224,6 +226,7 @@ class AlarmInstanceNotifier extends Notifier<List<AlarmInstance>> {
     final now = DateTime.now();
     final updated = state[idx].copyWith(
       status: AlarmInstanceStatus.cleared,
+      clearedAt: now,
       updatedAt: now,
       sourceDeviceId: deviceId,
     );
@@ -254,6 +257,34 @@ class AlarmInstanceNotifier extends Notifier<List<AlarmInstance>> {
     await ref.read(alarmActionProvider.notifier).append(action);
   }
 
+  /// System-triggered clear when a rule's condition recovers automatically.
+  ///
+  /// Transitions the instance to [AlarmInstanceStatus.cleared] and sets
+  /// [clearedAt] without creating an [AlarmAction] — the evaluator appends
+  /// the `autoClear` action separately so it can supply the device name.
+  Future<void> autoClear(
+    String instanceId, {
+    required String deviceId,
+  }) async {
+    final idx = state.indexWhere((i) => i.id == instanceId);
+    if (idx < 0) return;
+    final now = DateTime.now();
+    final updated = state[idx].copyWith(
+      status: AlarmInstanceStatus.cleared,
+      clearedAt: now,
+      updatedAt: now,
+      sourceDeviceId: deviceId,
+    );
+    final list = List<AlarmInstance>.from(state);
+    list[idx] = updated;
+    state = list;
+    await _save();
+    ref.read(lanBroadcastProvider)?.call({
+      'type': 'alarm_instance_sync',
+      'data': updated.toJson(),
+    });
+  }
+
   /// Apply an instance record received from a remote peer (LWW merge, no rebroadcast).
   Future<void> upsertRemote(Map<String, dynamic> json) async {
     try {
@@ -274,25 +305,54 @@ class AlarmInstanceNotifier extends Notifier<List<AlarmInstance>> {
   }
 
   /// Check for snoozed instances whose snooze period has expired and
-  /// transition them back to active. Call this periodically (e.g. every 30s).
+  /// transition them back to active. Writes a [AlarmActionType.reactivate]
+  /// action for each reactivated instance.
   Future<void> checkSnoozedExpired() async {
     final now = DateTime.now();
-    bool changed = false;
+    final deviceId = ref.read(deviceProvider).deviceId;
+    final deviceName = ref.read(settingsProvider).deviceName;
+    final reactivatedIds = <String>[];
+
     final list = state.map((instance) {
       if (instance.status != AlarmInstanceStatus.snoozed) return instance;
       final until = instance.snoozedUntil;
       if (until == null || now.isBefore(until)) return instance;
-      changed = true;
+      reactivatedIds.add(instance.id);
       return instance.copyWith(
         status: AlarmInstanceStatus.active,
         snoozedUntil: null,
         updatedAt: now,
+        sourceDeviceId: deviceId,
       );
     }).toList();
 
-    if (!changed) return;
+    if (reactivatedIds.isEmpty) return;
     state = list;
     await _save();
+
+    // Broadcast each reactivated instance and append a reactivate action.
+    for (final id in reactivatedIds) {
+      final inst = state.firstWhere((i) => i.id == id);
+      ref.read(lanBroadcastProvider)?.call({
+        'type': 'alarm_instance_sync',
+        'data': inst.toJson(),
+      });
+      final action = AlarmAction(
+        id: generateId(),
+        instanceId: id,
+        action: AlarmActionType.reactivate,
+        deviceId: deviceId,
+        deviceName: deviceName,
+        at: now,
+        note: '静音时间已到期',
+        updatedAt: now,
+        deleted: false,
+        scope: 'global',
+        sourceDeviceId: deviceId,
+        schemaVersion: 1,
+      );
+      await ref.read(alarmActionProvider.notifier).append(action);
+    }
   }
 }
 

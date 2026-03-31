@@ -2,14 +2,17 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/alarm_action.dart';
 import '../models/alarm_instance.dart';
 import '../models/alarm_rule.dart';
 import '../models/notification_record.dart';
 import '../models/vessel_state.dart';
+import '../providers/alarm_action_provider.dart';
 import '../providers/alarm_instance_provider.dart';
 import '../providers/alarm_rule_provider.dart';
 import '../providers/device_provider.dart';
 import '../providers/notification_provider.dart';
+import '../providers/settings_provider.dart';
 import '../providers/vessel_provider.dart';
 import '../utils/id_gen.dart';
 
@@ -26,6 +29,10 @@ class AlarmEvaluator {
   /// Tracks when a rule's condition first became continuously true.
   /// Used to implement the [AlarmCondition.sustainMs] feature.
   final Map<String, DateTime> _conditionFirstTrueAt = {};
+
+  /// Tracks when a rule's condition first became continuously false after
+  /// previously being true. Used to implement hysteresis-based auto-clear.
+  final Map<String, DateTime> _conditionFirstFalseAt = {};
 
   ProviderSubscription<VesselState>? _vesselSub;
   Timer? _snoozeCheckTimer;
@@ -60,6 +67,7 @@ class AlarmEvaluator {
     _snoozeCheckTimer?.cancel();
     _snoozeCheckTimer = null;
     _conditionFirstTrueAt.clear();
+    _conditionFirstFalseAt.clear();
   }
 
   // ---- Core evaluation loop ------------------------------------------------
@@ -87,11 +95,13 @@ class AlarmEvaluator {
           rule.condition.operator.evaluate(value, rule.condition.threshold);
 
       if (conditionMet) {
+        _conditionFirstFalseAt.remove(rule.id);
         _handleConditionTrue(rule, value);
       } else {
         // Condition not met — clear sustain tracking so the timer resets if
         // the condition becomes true again later.
         _conditionFirstTrueAt.remove(rule.id);
+        _handleConditionFalse(rule, value);
       }
     }
   }
@@ -135,6 +145,78 @@ class AlarmEvaluator {
     // All guards passed — trigger.
     final device = _ref.read(deviceProvider);
     _triggerAlarm(rule, value, device.deviceId);
+  }
+
+  // ---- Condition-false / recovery path -------------------------------------
+
+  void _handleConditionFalse(AlarmRule rule, double value) {
+    // Check hysteresis: the value must have moved far enough past the threshold
+    // before we consider the condition "recovered" and auto-clear.
+    final hysteresis = rule.condition.hysteresis ?? 0.0;
+    final recovered = rule.condition.operator.isRecovered(
+      value,
+      rule.condition.threshold,
+      hysteresis,
+    );
+    if (!recovered) {
+      // Value is in the hysteresis band — don't auto-clear yet.
+      _conditionFirstFalseAt.remove(rule.id);
+      return;
+    }
+
+    // Track when recovery first started. With sustainMs we could delay
+    // auto-clear; for now we auto-clear immediately once hysteresis passes.
+    _conditionFirstFalseAt.putIfAbsent(rule.id, () => DateTime.now());
+
+    // Find active or acknowledged instances to auto-clear.
+    final instances = _ref.read(alarmInstanceProvider);
+    final toAutoClear = instances.where((i) =>
+        i.ruleId == rule.id &&
+        !i.deleted &&
+        (i.status == AlarmInstanceStatus.active ||
+            i.status == AlarmInstanceStatus.acknowledged));
+
+    if (toAutoClear.isEmpty) {
+      _conditionFirstFalseAt.remove(rule.id);
+      return;
+    }
+
+    final deviceId = _ref.read(deviceProvider).deviceId;
+    final deviceName = _ref.read(settingsProvider).deviceName;
+    for (final instance in toAutoClear) {
+      _autoClearInstance(instance, deviceId, deviceName);
+    }
+    _conditionFirstFalseAt.remove(rule.id);
+  }
+
+  Future<void> _autoClearInstance(
+    AlarmInstance instance,
+    String deviceId,
+    String deviceName,
+  ) async {
+    final now = DateTime.now();
+    // Delegate the state change to the notifier.
+    await _ref.read(alarmInstanceProvider.notifier).autoClear(
+      instance.id,
+      deviceId: deviceId,
+    );
+
+    // Record the auto-clear action for audit.
+    final action = AlarmAction(
+      id: generateId(),
+      instanceId: instance.id,
+      action: AlarmActionType.autoClear,
+      deviceId: deviceId,
+      deviceName: deviceName,
+      at: now,
+      note: '条件自动恢复',
+      updatedAt: now,
+      deleted: false,
+      scope: 'global',
+      sourceDeviceId: deviceId,
+      schemaVersion: 1,
+    );
+    await _ref.read(alarmActionProvider.notifier).append(action);
   }
 
   // ---- Trigger -------------------------------------------------------------

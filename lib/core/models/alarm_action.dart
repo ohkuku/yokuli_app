@@ -1,6 +1,16 @@
 import 'alarm_rule.dart';
 
-enum AlarmActionType { acknowledged, snoozed, cleared }
+enum AlarmActionType {
+  acknowledged,
+  snoozed,
+  cleared,
+
+  /// System-triggered clear when the alarm condition recovers automatically.
+  autoClear,
+
+  /// System-triggered reactivation when a snooze period expires.
+  reactivate,
+}
 
 class AlarmAction {
   final String id;

@@ -19,6 +19,9 @@ class AlarmInstance {
   /// Set when status == snoozed.
   final DateTime? snoozedUntil;
 
+  /// Set when the instance transitions to cleared (manually or by auto-clear).
+  final DateTime? clearedAt;
+
   /// The sensor value that caused the alarm to trigger, for display purposes.
   final double? triggeredValue;
 
@@ -44,6 +47,7 @@ class AlarmInstance {
     required this.status,
     required this.triggeredAt,
     this.snoozedUntil,
+    this.clearedAt,
     this.triggeredValue,
     required this.message,
     required this.updatedAt,
@@ -61,6 +65,7 @@ class AlarmInstance {
     AlarmInstanceStatus? status,
     DateTime? triggeredAt,
     Object? snoozedUntil = _instanceSentinel,
+    Object? clearedAt = _instanceSentinel,
     Object? triggeredValue = _instanceSentinel,
     String? message,
     DateTime? updatedAt,
@@ -79,6 +84,9 @@ class AlarmInstance {
       snoozedUntil: snoozedUntil == _instanceSentinel
           ? this.snoozedUntil
           : snoozedUntil as DateTime?,
+      clearedAt: clearedAt == _instanceSentinel
+          ? this.clearedAt
+          : clearedAt as DateTime?,
       triggeredValue: triggeredValue == _instanceSentinel
           ? this.triggeredValue
           : triggeredValue as double?,
@@ -99,6 +107,7 @@ class AlarmInstance {
         'st': status.index,
         'ta': triggeredAt.toIso8601String(),
         if (snoozedUntil != null) 'su': snoozedUntil!.toIso8601String(),
+        if (clearedAt != null) 'clAt': clearedAt!.toIso8601String(),
         if (triggeredValue != null) 'tv': triggeredValue,
         'msg': message,
         'ua': updatedAt.toIso8601String(),
@@ -120,6 +129,9 @@ class AlarmInstance {
       triggeredAt: triggeredAt,
       snoozedUntil: json['su'] != null
           ? DateTime.parse(json['su'] as String)
+          : null,
+      clearedAt: json['clAt'] != null
+          ? DateTime.parse(json['clAt'] as String)
           : null,
       triggeredValue: json['tv'] != null ? (json['tv'] as num).toDouble() : null,
       message: json['msg'] as String? ?? '',

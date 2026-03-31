@@ -98,7 +98,7 @@ class _AlarmCenterScreenState extends ConsumerState<AlarmCenterScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -162,8 +162,10 @@ class _AlarmCenterScreenState extends ConsumerState<AlarmCenterScreen>
             fontWeight: FontWeight.w400,
           ),
           tabs: const [
-            Tab(text: '活动告警'),
-            Tab(text: '告警规则'),
+            Tab(text: '活动'),
+            Tab(text: '规则'),
+            Tab(text: '历史'),
+            Tab(text: '审计'),
           ],
         ),
       ),
@@ -172,6 +174,8 @@ class _AlarmCenterScreenState extends ConsumerState<AlarmCenterScreen>
         children: const [
           _ActiveAlarmsTab(),
           _AlarmRulesTab(),
+          _HistoryTab(),
+          _AuditTab(),
         ],
       ),
     );
@@ -1350,5 +1354,429 @@ class _SectionHeader extends StatelessWidget {
         letterSpacing: 1.5,
       ),
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tab 3 — History Timeline
+// ---------------------------------------------------------------------------
+
+class _HistoryTab extends ConsumerWidget {
+  const _HistoryTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final all = ref.watch(alarmInstanceProvider);
+    final settled = all
+        .where((i) =>
+            !i.deleted &&
+            (i.status == AlarmInstanceStatus.cleared ||
+                i.status == AlarmInstanceStatus.acknowledged))
+        .toList()
+      ..sort((a, b) => b.triggeredAt.compareTo(a.triggeredAt));
+
+    if (settled.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.history_rounded, size: 48, color: AppColors.textMuted),
+            SizedBox(height: 12),
+            Text('暂无历史记录',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 14)),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: settled.length,
+      itemBuilder: (_, idx) => _HistoryInstanceCard(instance: settled[idx]),
+    );
+  }
+}
+
+class _HistoryInstanceCard extends ConsumerWidget {
+  final AlarmInstance instance;
+  const _HistoryInstanceCard({required this.instance});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final actions = ref.watch(alarmActionsForInstanceProvider(instance.id));
+    final borderColor = _levelColor(instance.level).withOpacity(0.6);
+
+    return GestureDetector(
+      onTap: () => _showActionChain(context, ref),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border(left: BorderSide(color: borderColor, width: 3)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        _LevelBadge(level: instance.level),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            instance.ruleName,
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      instance.message,
+                      style: const TextStyle(
+                          color: AppColors.textMuted, fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text(
+                          '触发 ${_formatDateTime(instance.triggeredAt)}',
+                          style: const TextStyle(
+                              color: AppColors.textMuted, fontSize: 11),
+                        ),
+                        if (instance.clearedAt != null) ...[
+                          const Text(' · ',
+                              style: TextStyle(
+                                  color: AppColors.textMuted, fontSize: 11)),
+                          Text(
+                            '结束 ${_formatDateTime(instance.clearedAt!)}',
+                            style: const TextStyle(
+                                color: AppColors.textMuted, fontSize: 11),
+                          ),
+                        ],
+                        const Spacer(),
+                        Text(
+                          '${actions.length} 条操作',
+                          style: const TextStyle(
+                              color: AppColors.textMuted, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.chevron_right_rounded,
+                  color: AppColors.textMuted, size: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showActionChain(BuildContext context, WidgetRef ref) {
+    final actions = List<AlarmAction>.from(
+        ref.read(alarmActionsForInstanceProvider(instance.id)))
+      ..sort((a, b) => a.at.compareTo(b.at));
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              instance.ruleName,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              instance.message,
+              style:
+                  const TextStyle(color: AppColors.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            if (actions.isEmpty)
+              const Text('无操作记录',
+                  style:
+                      TextStyle(color: AppColors.textMuted, fontSize: 13))
+            else
+              ...actions.map((a) => _ActionRow(action: a)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _formatDateTime(DateTime dt) {
+    return '${dt.month.toString().padLeft(2, '0')}-'
+        '${dt.day.toString().padLeft(2, '0')} '
+        '${dt.hour.toString().padLeft(2, '0')}:'
+        '${dt.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _ActionRow extends StatelessWidget {
+  final AlarmAction action;
+  const _ActionRow({required this.action});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(_actionIcon(action.action), size: 14, color: _actionColor(action.action)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${_actionLabel(action.action)}  ${action.deviceName.isNotEmpty ? action.deviceName : action.deviceId}',
+              style: const TextStyle(
+                  color: AppColors.textPrimary, fontSize: 13),
+            ),
+          ),
+          Text(
+            '${action.at.hour.toString().padLeft(2, '0')}:${action.at.minute.toString().padLeft(2, '0')}',
+            style:
+                const TextStyle(color: AppColors.textMuted, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static IconData _actionIcon(AlarmActionType t) {
+    switch (t) {
+      case AlarmActionType.acknowledged:
+        return Icons.check_circle_outline_rounded;
+      case AlarmActionType.snoozed:
+        return Icons.snooze_rounded;
+      case AlarmActionType.cleared:
+        return Icons.cancel_outlined;
+      case AlarmActionType.autoClear:
+        return Icons.auto_mode_rounded;
+      case AlarmActionType.reactivate:
+        return Icons.alarm_on_rounded;
+    }
+  }
+
+  static Color _actionColor(AlarmActionType t) {
+    switch (t) {
+      case AlarmActionType.acknowledged:
+        return AppColors.cyan;
+      case AlarmActionType.snoozed:
+        return AppColors.warning;
+      case AlarmActionType.cleared:
+      case AlarmActionType.autoClear:
+        return AppColors.textMuted;
+      case AlarmActionType.reactivate:
+        return AppColors.danger;
+    }
+  }
+
+  static String _actionLabel(AlarmActionType t) {
+    switch (t) {
+      case AlarmActionType.acknowledged:
+        return '确认';
+      case AlarmActionType.snoozed:
+        return '静音';
+      case AlarmActionType.cleared:
+        return '清除';
+      case AlarmActionType.autoClear:
+        return '自动恢复';
+      case AlarmActionType.reactivate:
+        return '重新激活';
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tab 4 — Audit Trail
+// ---------------------------------------------------------------------------
+
+class _AuditTab extends ConsumerStatefulWidget {
+  const _AuditTab();
+
+  @override
+  ConsumerState<_AuditTab> createState() => _AuditTabState();
+}
+
+class _AuditTabState extends ConsumerState<_AuditTab> {
+  AlarmActionType? _filterType;
+
+  @override
+  Widget build(BuildContext context) {
+    final allActions = List<AlarmAction>.from(ref.watch(alarmActionProvider))
+      ..sort((a, b) => b.at.compareTo(a.at));
+    final filtered = _filterType == null
+        ? allActions
+        : allActions.where((a) => a.action == _filterType).toList();
+
+    return Column(
+      children: [
+        // Filter chips
+        SizedBox(
+          height: 44,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            children: [
+              _FilterChip(
+                label: '全部',
+                selected: _filterType == null,
+                onTap: () => setState(() => _filterType = null),
+              ),
+              ...AlarmActionType.values.map((t) => _FilterChip(
+                    label: _ActionRow._actionLabel(t),
+                    selected: _filterType == t,
+                    onTap: () => setState(() =>
+                        _filterType = _filterType == t ? null : t),
+                  )),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: AppColors.border),
+        // Action list
+        Expanded(
+          child: filtered.isEmpty
+              ? Center(
+                  child: Text(
+                    '暂无操作记录',
+                    style: const TextStyle(
+                        color: AppColors.textMuted, fontSize: 14),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: filtered.length,
+                  itemBuilder: (_, idx) =>
+                      _AuditActionTile(action: filtered[idx]),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterChip(
+      {required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.cyan.withOpacity(0.15) : AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? AppColors.cyan : AppColors.border,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? AppColors.cyan : AppColors.textMuted,
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AuditActionTile extends ConsumerWidget {
+  final AlarmAction action;
+  const _AuditActionTile({required this.action});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Resolve rule name via the instance
+    final instances = ref.watch(alarmInstanceProvider);
+    final inst = instances.where((i) => i.id == action.instanceId).firstOrNull;
+    final ruleName = inst?.ruleName ?? '未知告警';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            _ActionRow._actionIcon(action.action),
+            size: 16,
+            color: _ActionRow._actionColor(action.action),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${_ActionRow._actionLabel(action.action)}  ·  $ruleName',
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${action.deviceName.isNotEmpty ? action.deviceName : action.deviceId}'
+                  '${action.note != null ? "  ·  ${action.note}" : ""}',
+                  style: const TextStyle(
+                      color: AppColors.textMuted, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _formatDt(action.at),
+            style:
+                const TextStyle(color: AppColors.textMuted, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _formatDt(DateTime dt) {
+    return '${dt.month.toString().padLeft(2, '0')}-'
+        '${dt.day.toString().padLeft(2, '0')} '
+        '${dt.hour.toString().padLeft(2, '0')}:'
+        '${dt.minute.toString().padLeft(2, '0')}';
   }
 }
