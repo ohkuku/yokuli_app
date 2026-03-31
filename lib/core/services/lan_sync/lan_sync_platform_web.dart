@@ -125,6 +125,10 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
           final svMs = json['sv'] as int?;
           final peerId = json['id'] as String? ?? '';
           if (svMs != null) onSyncMetaReceived?.call(svMs, peerId);
+        case 'sync_hello':
+          onSyncHelloReceived?.call(json);
+        case 'sync_changes':
+          onSyncChanges?.call(json);
       }
     } catch (_) {}
   }

@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/alarm.dart';
 import '../models/vessel_state.dart';
 import '../utils/id_gen.dart';
+import 'device_provider.dart';
 import 'lan_broadcast.dart';
 import 'vessel_provider.dart';
 
@@ -97,6 +98,7 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
     }
 
     final now = DateTime.now();
+    final deviceId = ref.read(deviceProvider).deviceId;
     final alarm = Alarm(
       id: generateId(),
       type: type,
@@ -106,6 +108,7 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
       message: message,
       linkedLogId: linkedLogId,
       updatedAt: now,
+      sourceDeviceId: deviceId,
     );
 
     state = [...state, alarm];

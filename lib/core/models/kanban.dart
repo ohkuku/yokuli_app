@@ -5,6 +5,7 @@ class KanbanColumn {
   // LWW sync fields
   final DateTime updatedAt;
   final bool deleted;
+  final String? sourceDeviceId;
 
   KanbanColumn({
     required this.id,
@@ -12,6 +13,7 @@ class KanbanColumn {
     required this.order,
     DateTime? updatedAt,
     this.deleted = false,
+    this.sourceDeviceId,
   }) : updatedAt = updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
 
   Map<String, dynamic> toJson() => {
@@ -20,6 +22,7 @@ class KanbanColumn {
         'order': order,
         'ua': updatedAt.toIso8601String(),
         if (deleted) 'del': true,
+        if (sourceDeviceId != null) 'src': sourceDeviceId,
       };
 
   factory KanbanColumn.fromJson(Map<String, dynamic> j) => KanbanColumn(
@@ -30,15 +33,25 @@ class KanbanColumn {
             ? DateTime.parse(j['ua'] as String)
             : DateTime.fromMillisecondsSinceEpoch(0),
         deleted: j['del'] as bool? ?? false,
+        sourceDeviceId: j['src'] as String?,
       );
 
-  KanbanColumn copyWith({String? title, int? order, DateTime? updatedAt, bool? deleted}) =>
+  KanbanColumn copyWith({
+    String? title,
+    int? order,
+    DateTime? updatedAt,
+    bool? deleted,
+    Object? sourceDeviceId = _sentinel,
+  }) =>
       KanbanColumn(
         id: id,
         title: title ?? this.title,
         order: order ?? this.order,
         updatedAt: updatedAt ?? this.updatedAt,
         deleted: deleted ?? this.deleted,
+        sourceDeviceId: sourceDeviceId == _sentinel
+            ? this.sourceDeviceId
+            : sourceDeviceId as String?,
       );
 }
 
@@ -66,6 +79,7 @@ class KanbanCard {
   final bool archived;
   // LWW sync fields
   final bool deleted;
+  final String? sourceDeviceId;
 
   KanbanCard({
     required this.id,
@@ -78,6 +92,7 @@ class KanbanCard {
     DateTime? updatedAt,
     this.archived = false,
     this.deleted = false,
+    this.sourceDeviceId,
   }) : updatedAt = updatedAt ?? createdAt;
 
   KanbanCard copyWith({
@@ -89,6 +104,7 @@ class KanbanCard {
     DateTime? updatedAt,
     bool? archived,
     bool? deleted,
+    Object? sourceDeviceId = _sentinel,
   }) =>
       KanbanCard(
         id: id,
@@ -101,6 +117,9 @@ class KanbanCard {
         updatedAt: updatedAt ?? this.updatedAt,
         archived: archived ?? this.archived,
         deleted: deleted ?? this.deleted,
+        sourceDeviceId: sourceDeviceId == _sentinel
+            ? this.sourceDeviceId
+            : sourceDeviceId as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -114,6 +133,7 @@ class KanbanCard {
         'ua': updatedAt.toIso8601String(),
         if (archived) 'arc': true,
         if (deleted) 'del': true,
+        if (sourceDeviceId != null) 'src': sourceDeviceId,
       };
 
   factory KanbanCard.fromJson(Map<String, dynamic> j) {
@@ -129,6 +149,7 @@ class KanbanCard {
       updatedAt: j['ua'] != null ? DateTime.parse(j['ua'] as String) : createdAt,
       archived: j['arc'] as bool? ?? false,
       deleted: j['del'] as bool? ?? false,
+      sourceDeviceId: j['src'] as String?,
     );
   }
 }
@@ -156,3 +177,6 @@ class KanbanState {
       cards.where((c) => c.archived && !c.deleted).toList()
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 }
+
+// Sentinel object used for nullable copyWith pattern
+const Object _sentinel = Object();

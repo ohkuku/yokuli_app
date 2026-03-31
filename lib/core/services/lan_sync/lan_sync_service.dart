@@ -22,6 +22,8 @@ import '../../providers/issue_provider.dart';
 import '../../providers/voyage_provider.dart';
 import '../../providers/kanban_provider.dart';
 import '../../providers/lan_broadcast.dart';
+import '../../sync/sync_cursor_store.dart';
+import '../../sync/sync_engine.dart';
 import '../signalk/signalk_auth.dart';
 import '../signalk/signalk_client.dart';
 import 'lan_sync_platform.dart'; // conditional export → native or web impl
@@ -30,11 +32,17 @@ import 'lan_sync_platform_base.dart' show DiscoveredHost;
 /// Discovered peers on the LAN — exposed for the settings UI.
 final discoveredPeersProvider = StateProvider<List<DiscoveredHost>>((ref) => []);
 
+/// Sync cursor status — exposed for the settings sync panel.
+/// Returns a map of collection → ISO-8601 cursor string.
+final syncCursorStatusProvider = FutureProvider<Map<String, String>>((ref) async {
+  return SyncCursorStore.getAllCursors();
+});
+
 /// Coordinates LAN sync using the platform-appropriate adapter.
 ///
 /// Native: every device runs a WS server automatically. UDP discovery finds
-/// peers. When a peer has newer stateVersion, we connect to them as a client
-/// and receive a full-state dump. Last-write-wins (LWW) at full-state level.
+/// peers. When a new client connects, both sides exchange sync_hello messages
+/// to perform cursor-based incremental sync.
 ///
 /// Web: client only — connect manually to a known host IP.
 class LanSyncService {
@@ -69,10 +77,9 @@ class LanSyncService {
       _conn.setLanSyncStatus(
         connected ? ConnectionStatus.connected : ConnectionStatus.connecting,
       );
-      // Bidirectional sync: when we successfully connect as a client to a peer,
-      // also push our own records to the server so they get our offline edits.
       if (connected) {
-        _sendFullDump(_platform.sendJson);
+        // As client: send sync_hello to server so it can push missing records to us
+        _sendSyncHello(_platform.sendJson);
       }
     };
     _platform.onPeerCountChanged = (count) => _conn.setPeerCount(count);
@@ -91,7 +98,8 @@ class LanSyncService {
     _platform.onVoyageUpsert = (data) {
       _ref.read(voyageProvider.notifier).upsertRemote(data);
     };
-    _platform.onNewClientConnected = _sendFullDump;
+    // Server: when a new client connects, send sync_hello to them
+    _platform.onNewClientConnected = _sendSyncHello;
     _platform.onPeerDiscovered = _onPeerDiscovered;
     _platform.onSyncMetaReceived = (svMs, peerId) {
       // After receiving a full dump from a server, adopt their stateVersion.
@@ -99,6 +107,166 @@ class LanSyncService {
         DateTime.fromMillisecondsSinceEpoch(svMs),
       );
     };
+    // Server: received sync_hello from a client → send our missing records to them
+    _platform.onSyncHello = _handleSyncHelloFromClient;
+    // Client: received sync_hello from the server → send our missing records to it
+    _platform.onSyncHelloReceived = _handleSyncHelloFromServer;
+    // Both sides: apply incoming batch of records
+    _platform.onSyncChanges = (msg) => _applySyncChanges(msg);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sync hello protocol
+  // ---------------------------------------------------------------------------
+
+  /// Build and send a sync_hello message to [sendTo].
+  ///
+  /// The hello includes our own deviceId and per-collection cursors so the
+  /// recipient knows which records to send us.
+  Future<void> _sendSyncHello(void Function(Map<String, dynamic>) sendTo) async {
+    final deviceId = _ref.read(deviceProvider).deviceId;
+    final cursors = await SyncCursorStore.getAllCursors();
+    sendTo({
+      'type': 'sync_hello',
+      'deviceId': deviceId,
+      'cursors': cursors,
+    });
+  }
+
+  /// Server received sync_hello from a client.
+  ///
+  /// [reply] sends a message directly to that specific client only.
+  Future<void> _handleSyncHelloFromClient(
+    Map<String, dynamic> msg,
+    void Function(Map<String, dynamic>) reply,
+  ) async {
+    final peerCursors = _parseCursors(msg['cursors']);
+    await _sendMissingRecords(peerCursors, reply);
+  }
+
+  /// Client received sync_hello from the server.
+  Future<void> _handleSyncHelloFromServer(Map<String, dynamic> msg) async {
+    final peerCursors = _parseCursors(msg['cursors']);
+    await _sendMissingRecords(peerCursors, _platform.sendJson);
+  }
+
+  /// Parse cursors map from sync_hello — gracefully handles nulls.
+  Map<String, DateTime?> _parseCursors(dynamic raw) {
+    final result = <String, DateTime?>{};
+    if (raw is Map) {
+      for (final entry in raw.entries) {
+        final key = entry.key as String;
+        final val = entry.value as String?;
+        result[key] = val != null ? DateTime.tryParse(val) : null;
+      }
+    }
+    return result;
+  }
+
+  /// Send all records newer than the peer's cursor for each collection.
+  Future<void> _sendMissingRecords(
+    Map<String, DateTime?> peerCursors,
+    void Function(Map<String, dynamic>) sendTo,
+  ) async {
+    for (final collection in SyncCollections.all) {
+      // null cursor = peer has never synced this collection → send all
+      final peerCursor = peerCursors[collection];
+      final records = _getRecordsForCollection(collection);
+      final missing = SyncEngine.missingFor(records, peerCursor);
+      if (missing.isEmpty) continue;
+      sendTo({
+        'type': 'sync_changes',
+        'collection': collection,
+        'records': missing,
+      });
+    }
+  }
+
+  /// Get all records for [collection] as raw JSON maps.
+  List<Map<String, dynamic>> _getRecordsForCollection(String collection) {
+    switch (collection) {
+      case SyncCollections.logs:
+        return _ref.read(logProvider).map((e) => e.toJson()).toList();
+      case SyncCollections.alarms:
+        return _ref.read(alarmProvider).map((a) => a.toJson()).toList();
+      case SyncCollections.tasks:
+        return _ref.read(taskProvider).instances.map((i) => i.toJson()).toList();
+      case SyncCollections.issues:
+        return _ref.read(issueProvider).map((i) => i.toJson()).toList();
+      case SyncCollections.voyages:
+        final vs = _ref.read(voyageProvider);
+        return [
+          if (vs.active != null) vs.active!.toJson(),
+          ...vs.history.map((s) => s.toJson()),
+        ];
+      case SyncCollections.kanbanColumns:
+        return _ref.read(kanbanProvider).columns.map((c) => c.toJson()).toList();
+      case SyncCollections.kanbanCards:
+        return _ref.read(kanbanProvider).cards.map((c) => c.toJson()).toList();
+      default:
+        return [];
+    }
+  }
+
+  /// Apply a batch of incoming records for a collection (LWW merge) and
+  /// advance the local cursor.
+  Future<void> _applySyncChanges(Map<String, dynamic> msg) async {
+    final collection = msg['collection'] as String?;
+    final recordsRaw = msg['records'] as List<dynamic>?;
+    if (collection == null || recordsRaw == null || recordsRaw.isEmpty) return;
+
+    final records = recordsRaw.cast<Map<String, dynamic>>();
+
+    switch (collection) {
+      case SyncCollections.logs:
+        for (final r in records) {
+          await _ref.read(logProvider.notifier).appendRemote(r);
+        }
+      case SyncCollections.alarms:
+        for (final r in records) {
+          await _ref.read(alarmProvider.notifier).upsertRemote(r);
+        }
+      case SyncCollections.tasks:
+        for (final r in records) {
+          await _ref.read(taskProvider.notifier).upsertInstanceRemote(r);
+        }
+      case SyncCollections.issues:
+        for (final r in records) {
+          await _ref.read(issueProvider.notifier).upsertRemote(r);
+        }
+      case SyncCollections.voyages:
+        for (final r in records) {
+          await _ref.read(voyageProvider.notifier).upsertRemote(r);
+        }
+      case SyncCollections.kanbanColumns:
+        _ref.read(kanbanProvider.notifier).applySyncColumns(records);
+      case SyncCollections.kanbanCards:
+        _ref.read(kanbanProvider.notifier).applySyncCards(records);
+    }
+
+    // Advance local cursor to max ua across received records
+    final maxUa = records.fold<DateTime>(
+      DateTime.fromMillisecondsSinceEpoch(0),
+      (best, r) {
+        final ua = r['ua'] as String?;
+        if (ua == null) return best;
+        final dt = DateTime.tryParse(ua);
+        return (dt != null && dt.isAfter(best)) ? dt : best;
+      },
+    );
+    if (maxUa.millisecondsSinceEpoch > 0) {
+      await SyncCursorStore.advance(collection, maxUa);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Force full resync
+  // ---------------------------------------------------------------------------
+
+  /// Reset all cursors and reconnect — triggers a full resync on next connect.
+  Future<void> forceFullResync() async {
+    await SyncCursorStore.resetAll();
+    await restart();
   }
 
   // ---------------------------------------------------------------------------
@@ -139,70 +307,8 @@ class LanSyncService {
     // Record before connecting to prevent races / duplicate calls.
     _peerSyncedVersions[peer.deviceId] = peer.stateVersionMs;
 
-    // Connect — the peer's server will call _sendFullDump for this new client.
+    // Connect — sync_hello exchange will happen automatically on connection
     _platform.connectAsClient(peer.ws);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Full dump (called by server when a new client connects)
-  // ---------------------------------------------------------------------------
-
-  void _sendFullDump(void Function(Map<String, dynamic>) sendTo) {
-    // First: send our stateVersion so the receiver can call syncTo().
-    final device = _ref.read(deviceProvider);
-    sendTo({
-      'type': 'sync_meta',
-      'sv': device.stateVersion.millisecondsSinceEpoch,
-      'id': device.deviceId,
-    });
-
-    // Settings sync — vessel name, tile order, SK credentials, etc.
-    final s = _ref.read(settingsProvider);
-    sendTo({
-      'type': 'settings_sync',
-      'data': {
-        'vesselName': s.vesselName,
-        'tileOrder': s.tileOrder,
-        'keepScreenOn': s.keepScreenOn,
-        if (s.signalKHost.isNotEmpty) ...{
-          'skHost': s.signalKHost,
-          'skPort': s.signalKPort,
-          'skUser': s.signalKUsername,
-          'skPass': s.signalKPassword,
-        },
-      },
-    });
-    // Log entries — send ALL (including soft-deleted tombstones).
-    for (final entry in _ref.read(logProvider)) {
-      sendTo({'type': 'log_append', 'data': entry.toJson()});
-    }
-    // Alarms — send ALL (including tombstones).
-    for (final alarm in _ref.read(alarmProvider)) {
-      sendTo({'type': 'alarm', 'data': alarm.toJson()});
-    }
-    // Task instances — send ALL.
-    for (final instance in _ref.read(taskProvider).instances) {
-      sendTo({'type': 'task_upsert', 'data': instance.toJson()});
-    }
-    // Issues — send ALL.
-    for (final issue in _ref.read(issueProvider)) {
-      sendTo({'type': 'issue_upsert', 'data': issue.toJson()});
-    }
-    // Voyages — send ALL (active + full history, including tombstones).
-    final voyageState = _ref.read(voyageProvider);
-    if (voyageState.active != null) {
-      sendTo({'type': 'voyage_upsert', 'data': voyageState.active!.toJson()});
-    }
-    for (final vs in voyageState.history) {
-      sendTo({'type': 'voyage_upsert', 'data': vs.toJson()});
-    }
-    // Kanban — send ALL cards and columns (including tombstones).
-    final kanban = _ref.read(kanbanProvider);
-    sendTo({
-      'type': 'kanban_sync',
-      'columns': kanban.columns.map((c) => c.toJson()).toList(),
-      'cards': kanban.cards.map((c) => c.toJson()).toList(),
-    });
   }
 
   // ---------------------------------------------------------------------------

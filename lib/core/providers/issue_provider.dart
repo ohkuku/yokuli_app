@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/issue.dart';
 import '../utils/id_gen.dart';
+import 'device_provider.dart';
 import 'lan_broadcast.dart';
 
 // ---------------------------------------------------------------------------
@@ -75,6 +76,7 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
     String? linkedLogId,
   }) async {
     final now = DateTime.now();
+    final deviceId = ref.read(deviceProvider).deviceId;
     final ticket = IssueTicket(
       id: generateId(),
       title: title,
@@ -86,6 +88,7 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
       linkedLogIds: linkedLogId != null ? [linkedLogId] : const [],
       linkedVoyageId: voyageId,
       updatedAt: now,
+      sourceDeviceId: deviceId,
     );
 
     state = [...state, ticket];

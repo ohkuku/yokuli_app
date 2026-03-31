@@ -18,6 +18,7 @@ import '../../core/services/alarm_dispatcher.dart';
 import '../../core/services/signalk/signalk_auth.dart';
 import '../../core/services/signalk/signalk_client.dart';
 import '../../core/services/lan_sync/lan_sync_service.dart';
+import '../../core/sync/sync_migration.dart';
 import '../safety/providers/safety_provider.dart';
 
 // ---------------------------------------------------------------------------
@@ -156,6 +157,9 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     await ref.read(safetyProvider.notifier).load();
     ref.read(deviceProvider);
     await ref.read(localeProvider.notifier).init();
+    // Backfill sourceDeviceId on any legacy records missing it
+    final deviceId = ref.read(deviceProvider).deviceId;
+    await SyncMigration.run(deviceId);
     await ref.read(alarmRuleProvider.notifier).load();
     await ref.read(notifyChannelProvider.notifier).load();
     await Future.wait([

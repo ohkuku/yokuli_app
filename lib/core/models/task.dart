@@ -252,7 +252,8 @@ class TaskInstance {
         'cl': checklistItems.map((i) => i.toJson()).toList(),
         'ca': createdAt.toIso8601String(),
         if (completedAt != null) 'coa': completedAt!.toIso8601String(),
-        if (sourceDeviceId != null) 'sd': sourceDeviceId,
+        // Use 'src' key (migrated from legacy 'sd')
+        if (sourceDeviceId != null) 'src': sourceDeviceId,
         'ua': updatedAt.toIso8601String(),
         if (deleted) 'del': true,
       };
@@ -271,7 +272,8 @@ class TaskInstance {
       completedAt: json['coa'] != null
           ? DateTime.parse(json['coa'] as String)
           : null,
-      sourceDeviceId: json['sd'] as String?,
+      // Read 'src' (new key), fall back to legacy 'sd'
+      sourceDeviceId: (json['src'] ?? json['sd']) as String?,
       updatedAt: json['ua'] != null
           ? DateTime.parse(json['ua'] as String)
           : createdAt,

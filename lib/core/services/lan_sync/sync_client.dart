@@ -41,6 +41,10 @@ class SyncClient {
   void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
   /// Called when server sends sync_meta (stateVersionMs + deviceId of the server).
   void Function(int svMs, String peerId)? onSyncMetaReceived;
+  /// Called when client receives sync_hello from the server.
+  void Function(Map<String, dynamic> msg)? onSyncHelloReceived;
+  /// Called when client receives sync_changes from the server.
+  void Function(Map<String, dynamic> msg)? onSyncChanges;
 
   Future<void> connect(String wsUrl) async {
     await disconnect();
@@ -115,6 +119,10 @@ class SyncClient {
           final svMs = json['sv'] as int?;
           final peerId = json['id'] as String? ?? '';
           if (svMs != null) onSyncMetaReceived?.call(svMs, peerId);
+        case 'sync_hello':
+          onSyncHelloReceived?.call(json);
+        case 'sync_changes':
+          onSyncChanges?.call(json);
       }
     } catch (_) {}
   }

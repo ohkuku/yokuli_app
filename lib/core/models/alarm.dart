@@ -20,6 +20,7 @@ class Alarm {
   // LWW sync fields
   final DateTime updatedAt;
   final bool deleted;
+  final String? sourceDeviceId;
 
   Alarm({
     required this.id,
@@ -34,6 +35,7 @@ class Alarm {
     this.snoozedUntil,
     DateTime? updatedAt,
     this.deleted = false,
+    this.sourceDeviceId,
   }) : updatedAt = updatedAt ?? triggeredAt;
 
   bool get isActive => status == AlarmStatus.active;
@@ -52,6 +54,7 @@ class Alarm {
     Object? snoozedUntil = _sentinel,
     DateTime? updatedAt,
     bool? deleted,
+    Object? sourceDeviceId = _sentinel,
   }) {
     return Alarm(
       id: id ?? this.id,
@@ -73,6 +76,9 @@ class Alarm {
           : snoozedUntil as DateTime?,
       updatedAt: updatedAt ?? this.updatedAt,
       deleted: deleted ?? this.deleted,
+      sourceDeviceId: sourceDeviceId == _sentinel
+          ? this.sourceDeviceId
+          : sourceDeviceId as String?,
     );
   }
 
@@ -89,6 +95,7 @@ class Alarm {
         if (snoozedUntil != null) 'su': snoozedUntil!.toIso8601String(),
         'ua': updatedAt.toIso8601String(),
         if (deleted) 'del': true,
+        if (sourceDeviceId != null) 'src': sourceDeviceId,
       };
 
   factory Alarm.fromJson(Map<String, dynamic> json) {
@@ -110,6 +117,7 @@ class Alarm {
           ? DateTime.parse(json['ua'] as String)
           : triggeredAt,
       deleted: json['del'] as bool? ?? false,
+      sourceDeviceId: json['src'] as String?,
     );
   }
 }

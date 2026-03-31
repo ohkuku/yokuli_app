@@ -18,6 +18,7 @@ class IssueTicket {
   // LWW sync fields
   final DateTime updatedAt;
   final bool deleted;
+  final String? sourceDeviceId; // key 'sdid' — 'src' is taken by IssueSource
 
   IssueTicket({
     required this.id,
@@ -32,6 +33,7 @@ class IssueTicket {
     this.linkedVoyageId,
     DateTime? updatedAt,
     this.deleted = false,
+    this.sourceDeviceId,
   }) : updatedAt = updatedAt ?? createdAt;
 
   bool get isOpen => status != IssueStatus.done;
@@ -49,6 +51,7 @@ class IssueTicket {
     Object? linkedVoyageId = _sentinel,
     DateTime? updatedAt,
     bool? deleted,
+    Object? sourceDeviceId = _sentinel,
   }) {
     return IssueTicket(
       id: id ?? this.id,
@@ -66,6 +69,9 @@ class IssueTicket {
           : linkedVoyageId as String?,
       updatedAt: updatedAt ?? this.updatedAt,
       deleted: deleted ?? this.deleted,
+      sourceDeviceId: sourceDeviceId == _sentinel
+          ? this.sourceDeviceId
+          : sourceDeviceId as String?,
     );
   }
 
@@ -82,6 +88,7 @@ class IssueTicket {
         if (linkedVoyageId != null) 'lv': linkedVoyageId,
         'ua': updatedAt.toIso8601String(),
         if (deleted) 'del': true,
+        if (sourceDeviceId != null) 'sdid': sourceDeviceId,
       };
 
   factory IssueTicket.fromJson(Map<String, dynamic> json) {
@@ -102,6 +109,7 @@ class IssueTicket {
           ? DateTime.parse(json['ua'] as String)
           : createdAt,
       deleted: json['del'] as bool? ?? false,
+      sourceDeviceId: json['sdid'] as String?,
     );
   }
 }

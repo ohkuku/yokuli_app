@@ -11,7 +11,7 @@ import '../../models/mob_alert.dart';
 
 /// Runs a WebSocket server on the LAN.
 /// Host broadcasts VesselState updates to all connected clients.
-/// Also handles MOB alerts from clients.
+/// Also handles MOB alerts and sync messages from clients.
 class SyncHost {
   static const int defaultPort = 8765;
   static const int discoveryPort = 43215;
@@ -36,8 +36,13 @@ class SyncHost {
   void Function(Map<String, dynamic> data)? onVoyageUpsert;
   void Function(Map<String, dynamic>)? onKanbanSync;
   /// Called when a new client connects; receives a function that sends a
-  /// JSON message directly to that specific client only (for initial full dump).
+  /// JSON message directly to that specific client only.
   void Function(void Function(Map<String, dynamic>))? onNewClientConnected;
+  /// Called when host receives sync_hello from a client.
+  /// [reply] sends a message to that specific client only.
+  void Function(Map<String, dynamic> msg, void Function(Map<String, dynamic>) reply)? onSyncHello;
+  /// Called when host receives sync_changes from a client.
+  void Function(Map<String, dynamic> msg)? onSyncChanges;
 
   Future<void> start({
     required int port,
@@ -56,13 +61,13 @@ class SyncHost {
         // Send current VesselState immediately on connect
         _sendToChannel(channel, _buildStateMessage(_lastState));
 
-        // Notify LanSyncService to dump all persistent module data to this client
+        // Notify LanSyncService to send sync_hello to this client
         onNewClientConnected?.call(
           (msg) => _sendToChannel(channel, jsonEncode(msg)),
         );
 
         channel.stream.listen(
-          (message) => _handleClientMessage(message as String),
+          (message) => _handleClientMessage(message as String, channel),
           onDone: () {
             _clients.remove(channel);
             onClientCountChanged?.call(_clients.length);
@@ -146,7 +151,7 @@ class SyncHost {
     }
   }
 
-  void _handleClientMessage(String raw) {
+  void _handleClientMessage(String raw, WebSocketChannel channel) {
     try {
       final json = jsonDecode(raw) as Map<String, dynamic>;
       final type = json['type'] as String?;
@@ -188,6 +193,16 @@ class SyncHost {
         case 'kanban_sync':
           broadcastJson(json);
           onKanbanSync?.call(json);
+        case 'sync_hello':
+          // Client is introducing itself — reply to this specific client only
+          onSyncHello?.call(
+            json,
+            (reply) => _sendToChannel(channel, jsonEncode(reply)),
+          );
+        case 'sync_changes':
+          // Client is pushing records — apply and forward to all other clients
+          onSyncChanges?.call(json);
+          broadcastJson(json);
       }
     } catch (_) {}
   }

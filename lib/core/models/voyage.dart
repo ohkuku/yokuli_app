@@ -17,6 +17,7 @@ class VoyageSession {
   // LWW sync fields
   final DateTime updatedAt;
   final bool deleted;
+  final String? sourceDeviceId; // key 'sdid' — 'src' is taken by VoyageSource
 
   VoyageSession({
     required this.id,
@@ -30,6 +31,7 @@ class VoyageSession {
     this.notes,
     DateTime? updatedAt,
     this.deleted = false,
+    this.sourceDeviceId,
   }) : updatedAt = updatedAt ?? startTime;
 
   bool get isActive => status == VoyageStatus.active;
@@ -54,6 +56,7 @@ class VoyageSession {
     Object? notes = _sentinel,
     DateTime? updatedAt,
     bool? deleted,
+    Object? sourceDeviceId = _sentinel,
   }) {
     return VoyageSession(
       id: id ?? this.id,
@@ -71,6 +74,9 @@ class VoyageSession {
       notes: notes == _sentinel ? this.notes : notes as String?,
       updatedAt: updatedAt ?? this.updatedAt,
       deleted: deleted ?? this.deleted,
+      sourceDeviceId: sourceDeviceId == _sentinel
+          ? this.sourceDeviceId
+          : sourceDeviceId as String?,
     );
   }
 
@@ -86,6 +92,7 @@ class VoyageSession {
         if (notes != null) 'nts': notes,
         'ua': updatedAt.toIso8601String(),
         if (deleted) 'del': true,
+        if (sourceDeviceId != null) 'sdid': sourceDeviceId,
       };
 
   factory VoyageSession.fromJson(Map<String, dynamic> json) {
@@ -108,6 +115,7 @@ class VoyageSession {
           ? DateTime.parse(json['ua'] as String)
           : startTime,
       deleted: json['del'] as bool? ?? false,
+      sourceDeviceId: json['sdid'] as String?,
     );
   }
 }

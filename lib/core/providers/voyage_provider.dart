@@ -8,6 +8,7 @@ import '../models/log_entry.dart';
 import '../models/vessel_state.dart';
 import '../models/voyage.dart';
 import '../utils/id_gen.dart';
+import 'device_provider.dart';
 import 'log_provider.dart';
 import 'vessel_provider.dart';
 import 'lan_broadcast.dart';
@@ -134,6 +135,7 @@ class VoyageNotifier extends Notifier<VoyageState> {
       await endVoyage(position: position);
     }
 
+    final deviceId = ref.read(deviceProvider).deviceId;
     final session = VoyageSession(
       id: generateId(),
       startTime: now,
@@ -141,6 +143,7 @@ class VoyageNotifier extends Notifier<VoyageState> {
       status: VoyageStatus.active,
       source: source,
       updatedAt: now,
+      sourceDeviceId: deviceId,
     );
 
     state = VoyageState(

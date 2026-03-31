@@ -84,7 +84,9 @@ class KanbanNotifier extends Notifier<KanbanState> {
   }
 
   Future<void> addCard(KanbanCard card) async {
-    state = KanbanState(columns: state.columns, cards: [...state.cards, card]);
+    final deviceId = ref.read(deviceProvider).deviceId;
+    final cardWithSrc = card.copyWith(sourceDeviceId: card.sourceDeviceId ?? deviceId);
+    state = KanbanState(columns: state.columns, cards: [...state.cards, cardWithSrc]);
     await _save();
     _broadcast();
     _bump();
@@ -148,11 +150,13 @@ class KanbanNotifier extends Notifier<KanbanState> {
     final newOrder = state.columns.isEmpty
         ? 0
         : state.columns.map((c) => c.order).reduce((a, b) => a > b ? a : b) + 1;
+    final deviceId = ref.read(deviceProvider).deviceId;
     final col = KanbanColumn(
       id: generateId(),
       title: title,
       order: newOrder,
       updatedAt: now,
+      sourceDeviceId: deviceId,
     );
     state = KanbanState(columns: [...state.columns, col], cards: state.cards);
     await _save();
@@ -192,6 +196,7 @@ class KanbanNotifier extends Notifier<KanbanState> {
   }
 
   /// Merge incoming kanban state using per-record LWW (updatedAt comparison).
+  /// Used by legacy kanban_sync message type.
   void applySync(Map<String, dynamic> data) {
     try {
       final incomingCols = (data['columns'] as List<dynamic>? ?? [])
@@ -201,39 +206,71 @@ class KanbanNotifier extends Notifier<KanbanState> {
           .map((c) => KanbanCard.fromJson(c as Map<String, dynamic>))
           .toList();
 
-      // Merge columns: LWW per ID.
-      final colsById = <String, KanbanColumn>{
-        for (final c in state.columns) c.id: c,
-      };
-      for (final inc in incomingCols) {
-        final existing = colsById[inc.id];
-        if (existing == null || inc.updatedAt.isAfter(existing.updatedAt)) {
-          colsById[inc.id] = inc;
-        }
-      }
-      final mergedCols = colsById.values
-          .where((c) => !c.deleted)
-          .toList()
-        ..sort((a, b) => a.order.compareTo(b.order));
-
-      // Merge cards: LWW per ID.
-      final cardsById = <String, KanbanCard>{
-        for (final c in state.cards) c.id: c,
-      };
-      for (final inc in incomingCards) {
-        final existing = cardsById[inc.id];
-        if (existing == null || inc.updatedAt.isAfter(existing.updatedAt)) {
-          cardsById[inc.id] = inc;
-        }
-      }
-      final mergedCards = cardsById.values.toList();
-
-      state = KanbanState(
-        columns: mergedCols.isEmpty ? state.columns : mergedCols,
-        cards: mergedCards,
-      );
+      _mergeColumns(incomingCols);
+      _mergeCards(incomingCards);
       _save();
     } catch (_) {}
+  }
+
+  /// Merge a list of incoming column records (LWW per ID).
+  /// Used by the cursor-based sync_changes protocol.
+  void applySyncColumns(List<Map<String, dynamic>> records) {
+    try {
+      final incomingCols = records
+          .map((c) => KanbanColumn.fromJson(c))
+          .toList();
+      _mergeColumns(incomingCols);
+      _save();
+    } catch (_) {}
+  }
+
+  /// Merge a list of incoming card records (LWW per ID).
+  /// Used by the cursor-based sync_changes protocol.
+  void applySyncCards(List<Map<String, dynamic>> records) {
+    try {
+      final incomingCards = records
+          .map((c) => KanbanCard.fromJson(c))
+          .toList();
+      _mergeCards(incomingCards);
+      _save();
+    } catch (_) {}
+  }
+
+  void _mergeColumns(List<KanbanColumn> incomingCols) {
+    final colsById = <String, KanbanColumn>{
+      for (final c in state.columns) c.id: c,
+    };
+    for (final inc in incomingCols) {
+      final existing = colsById[inc.id];
+      if (existing == null || inc.updatedAt.isAfter(existing.updatedAt)) {
+        colsById[inc.id] = inc;
+      }
+    }
+    final mergedCols = colsById.values
+        .where((c) => !c.deleted)
+        .toList()
+      ..sort((a, b) => a.order.compareTo(b.order));
+
+    state = KanbanState(
+      columns: mergedCols.isEmpty ? state.columns : mergedCols,
+      cards: state.cards,
+    );
+  }
+
+  void _mergeCards(List<KanbanCard> incomingCards) {
+    final cardsById = <String, KanbanCard>{
+      for (final c in state.cards) c.id: c,
+    };
+    for (final inc in incomingCards) {
+      final existing = cardsById[inc.id];
+      if (existing == null || inc.updatedAt.isAfter(existing.updatedAt)) {
+        cardsById[inc.id] = inc;
+      }
+    }
+    state = KanbanState(
+      columns: state.columns,
+      cards: cardsById.values.toList(),
+    );
   }
 }
 

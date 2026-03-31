@@ -38,12 +38,27 @@ abstract class LanSyncPlatform {
   void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
   void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
   /// Host only: called when a new client connects; receives a send-to-one function
-  /// that LanSyncService uses to dump all persisted module data to the new client.
+  /// that LanSyncService uses to send sync_hello to the new client.
   void Function(void Function(Map<String, dynamic>))? onNewClientConnected;
   /// Called when a peer announces itself (or updates its stateVersionMs) via UDP.
   void Function(DiscoveredHost peer)? onPeerDiscovered;
   /// Called when client receives a sync_meta message from the server it connected to.
   void Function(int svMs, String peerId)? onSyncMetaReceived;
+
+  // --- Cursor-based sync callbacks ---
+
+  /// Host only: called when host receives sync_hello from a client.
+  /// [reply] sends a message directly to that specific client.
+  void Function(
+    Map<String, dynamic> msg,
+    void Function(Map<String, dynamic>) reply,
+  )? onSyncHello;
+
+  /// Client only: called when client receives sync_hello from the server.
+  void Function(Map<String, dynamic> msg)? onSyncHelloReceived;
+
+  /// Called when either side receives sync_changes (batch of records).
+  void Function(Map<String, dynamic> msg)? onSyncChanges;
 
   // --- Host operations (native only) ---
   Future<void> startHost(

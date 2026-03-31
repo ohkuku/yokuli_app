@@ -13,6 +13,8 @@ import '../../../core/services/lan_sync/lan_sync_platform_base.dart' show Discov
 import '../../../core/services/data_export_service.dart';
 import '../../../core/services/signalk/signalk_auth.dart';
 import '../../../core/services/signalk/signalk_client.dart';
+import '../../../core/services/lan_sync/lan_sync_service.dart' show syncCursorStatusProvider;
+import '../../../core/sync/sync_cursor_store.dart' show SyncCollections;
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -347,6 +349,101 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _forceFullResync() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBg,
+        title: const Text('强制全量重同步',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text(
+          '将清除所有同步游标，下次连接时重新同步全部数据。',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.warning),
+            child: const Text('重置并重连'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await ref.read(lanSyncServiceProvider).forceFullResync();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('同步游标已重置，正在重新连接…')),
+      );
+    }
+  }
+
+  void _showSyncDiagnostics(Map<String, String> cursors) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBg,
+        title: const Text('同步诊断',
+            style: TextStyle(
+                color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('各集合最后同步时间（本地游标）：',
+                  style: TextStyle(
+                      color: AppColors.textSecondary, fontSize: 12)),
+              const SizedBox(height: 8),
+              ...SyncCollections.all.map((col) {
+                final cursor = cursors[col];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(col,
+                            style: const TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 11,
+                                fontFamily: 'monospace')),
+                      ),
+                      Text(
+                        cursor != null
+                            ? cursor.substring(0, 19).replaceFirst('T', ' ')
+                            : '—',
+                        style: TextStyle(
+                          color: cursor != null
+                              ? AppColors.textSecondary
+                              : AppColors.inactive,
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(stringsProvider);
@@ -615,6 +712,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ],
 
+            const SizedBox(height: 24),
+
+            // --- Sync Status ---
+            _SectionHeader('SYNC STATUS'),
+            const SizedBox(height: 8),
+            _SyncStatusPanel(
+              onForceResync: _forceFullResync,
+              onShowDiagnostics: _showSyncDiagnostics,
+            ),
             const SizedBox(height: 24),
 
             // --- Devices ---
@@ -1077,6 +1183,113 @@ class _DevicesPanel extends StatelessWidget {
               ],
             );
           }),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sync Status Panel
+// ---------------------------------------------------------------------------
+
+class _SyncStatusPanel extends ConsumerWidget {
+  final VoidCallback onForceResync;
+  final void Function(Map<String, String>) onShowDiagnostics;
+
+  const _SyncStatusPanel({
+    required this.onForceResync,
+    required this.onShowDiagnostics,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cursorsAsync = ref.watch(syncCursorStatusProvider);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+            child: Row(children: [
+              const Icon(Icons.sync_rounded, size: 15, color: AppColors.cyan),
+              const SizedBox(width: 6),
+              const Text('数据同步',
+                  style: TextStyle(
+                      color: AppColors.cyan,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+              const Spacer(),
+              cursorsAsync.when(
+                loading: () => const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 1.5)),
+                error: (_, __) => const SizedBox.shrink(),
+                data: (cursors) {
+                  final synced = cursors.values.where((v) => v.isNotEmpty).length;
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: synced > 0
+                          ? AppColors.teal.withAlpha(40)
+                          : AppColors.inactive.withAlpha(40),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '$synced / ${SyncCollections.all.length} 已同步',
+                      style: TextStyle(
+                          color: synced > 0
+                              ? AppColors.teal
+                              : AppColors.textMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  );
+                },
+              ),
+            ]),
+          ),
+          const Divider(height: 1, color: AppColors.divider),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onForceResync,
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: const Text('强制重同步', style: TextStyle(fontSize: 12)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.warning,
+                    side: const BorderSide(color: AppColors.warning),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: cursorsAsync.when(
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                  data: (cursors) => OutlinedButton.icon(
+                    onPressed: () => onShowDiagnostics(cursors),
+                    icon: const Icon(Icons.info_outline_rounded, size: 16),
+                    label: const Text('诊断日志', style: TextStyle(fontSize: 12)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.textSecondary,
+                      side: const BorderSide(color: AppColors.border),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
+          ),
         ],
       ),
     );

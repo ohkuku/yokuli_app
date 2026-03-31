@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/task.dart';
 import '../utils/id_gen.dart';
+import 'device_provider.dart';
 import 'lan_broadcast.dart';
 
 // ---------------------------------------------------------------------------
@@ -129,6 +130,7 @@ class TaskNotifier extends Notifier<TaskState> {
     );
 
     final now = DateTime.now();
+    final deviceId = ref.read(deviceProvider).deviceId;
     final instance = TaskInstance(
       id: generateId(),
       templateId: templateId,
@@ -143,6 +145,7 @@ class TaskNotifier extends Notifier<TaskState> {
           .toList(),
       createdAt: now,
       updatedAt: now,
+      sourceDeviceId: deviceId,
     );
 
     state = TaskState(
