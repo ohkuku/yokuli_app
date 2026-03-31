@@ -176,7 +176,15 @@ class MobNotifier extends Notifier<MobState> {
       message: 'MOB 已解除 — 历时 ${mins}分${secs}秒',
     );
 
-    ref.read(lanBroadcastProvider)?.call({'type': 'mob_cancel'});
+    final lanBroadcast = ref.read(lanBroadcastProvider);
+    if (lanBroadcast != null) {
+      lanBroadcast({'type': 'mob_cancel'});
+    } else {
+      // Fallback when LAN sync hasn't attached broadcaster yet
+      final lanSync = ref.read(lanSyncServiceProvider);
+      lanSync.broadcastJson({'type': 'mob_cancel'});
+      lanSync.sendJson({'type': 'mob_cancel'});
+    }
     ref.read(deviceProvider.notifier).bump();
   }
 

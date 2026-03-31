@@ -42,6 +42,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) showUpdateDialogIfNeeded(context);
+      // Auto-navigate to MOB screen when a remote MOB arrives
+      ref.listenManual(
+        mobProvider.select((s) => s.activeMob),
+        (prev, next) {
+          if (next != null && prev == null && mounted) {
+            context.push('/mob');
+          }
+        },
+      );
     });
   }
 
@@ -567,7 +576,6 @@ class _DraggableMobFab extends ConsumerStatefulWidget {
 
 class _DraggableMobFabState extends ConsumerState<_DraggableMobFab> {
   Offset? _pos; // null = use default bottom-right
-  bool _isDragging = false;
 
   @override
   Widget build(BuildContext context) {
@@ -589,26 +597,17 @@ class _DraggableMobFabState extends ConsumerState<_DraggableMobFab> {
     return Positioned(
       left: clamped.dx,
       top: clamped.dy,
-      child: GestureDetector(
-        // DragStartBehavior.down = tracking starts from first touch, not after threshold
-        dragStartBehavior: DragStartBehavior.down,
-        onPanStart: (_) => setState(() => _isDragging = true),
-        onPanUpdate: (d) {
-          // Use _pos directly (always current) rather than the closure-captured
-          // `clamped`, which is stale when multiple events fire before a rebuild.
+      child: _MobButton(
+        label: s.mob,
+        onTrigger: () => _triggerMob(context),
+        onNavigate: () => context.push('/mob'),
+        onDrag: (delta) {
           final cur = _pos ?? Offset(size.width - 100, size.height - 160);
           setState(() => _pos = Offset(
-                cur.dx + d.delta.dx,
-                cur.dy + d.delta.dy,
+                cur.dx + delta.dx,
+                cur.dy + delta.dy,
               ));
         },
-        onPanEnd: (_) => setState(() => _isDragging = false),
-        child: _MobButton(
-          label: s.mob,
-          isDragging: _isDragging,
-          onTrigger: () => _triggerMob(context),
-          onNavigate: () => context.push('/mob'),
-        ),
       ),
     );
   }
@@ -625,14 +624,14 @@ class _DraggableMobFabState extends ConsumerState<_DraggableMobFab> {
 
 class _MobButton extends StatefulWidget {
   final String label;
-  final bool isDragging;
   final VoidCallback onTrigger;
   final VoidCallback onNavigate;
+  final void Function(Offset delta) onDrag;
   const _MobButton({
     required this.label,
-    required this.isDragging,
     required this.onTrigger,
     required this.onNavigate,
+    required this.onDrag,
   });
 
   @override
@@ -642,12 +641,21 @@ class _MobButton extends StatefulWidget {
 class _MobButtonState extends State<_MobButton>
     with TickerProviderStateMixin {
   static const _holdDuration = Duration(milliseconds: 1200);
+  /// Minimum hold before a release counts as "navigate" tap.
+  /// Must hold at least this long (until after vibration) to navigate.
+  static const _minTapDuration = Duration(milliseconds: 150);
+  /// Movement threshold to switch from press to drag (logical pixels).
+  static const _dragThreshold = 8.0;
 
   late AnimationController _holdCtrl;   // 0→1 over holdDuration while pressing
   late AnimationController _scaleCtrl;  // spring-bounce on release
   late Animation<double> _scaleAnim;
 
   Timer? _triggerTimer;
+  DateTime? _pressStartTime;
+  bool _isDragging = false;
+  bool _triggered = false;
+  Offset _startPos = Offset.zero;
 
   @override
   void initState() {
@@ -672,8 +680,11 @@ class _MobButtonState extends State<_MobButton>
     super.dispose();
   }
 
-  void _onPressStart() {
-    if (widget.isDragging) return;
+  void _onPanDown(DragDownDetails d) {
+    _startPos = d.globalPosition;
+    _isDragging = false;
+    _triggered = false;
+    _pressStartTime = DateTime.now();
     HapticFeedback.lightImpact();
     _holdCtrl.forward(from: 0);
 
@@ -686,15 +697,31 @@ class _MobButtonState extends State<_MobButton>
 
     // Schedule trigger at end of hold
     _triggerTimer = Timer(_holdDuration, () {
-      _triggerTimer = null; // mark as fired
+      _triggerTimer = null;
+      _triggered = true;
       HapticFeedback.heavyImpact();
       _holdCtrl.reset();
       widget.onTrigger();
     });
   }
 
-  void _onPressEnd() {
-    final wasTap = _triggerTimer != null; // timer still pending → quick tap
+  void _onPanUpdate(DragUpdateDetails d) {
+    if (_triggered) return;
+    final dist = (d.globalPosition - _startPos).distance;
+    if (!_isDragging && dist > _dragThreshold) {
+      _isDragging = true;
+      // Cancel hold timer — we're dragging now
+      _triggerTimer?.cancel();
+      _triggerTimer = null;
+      _holdCtrl.stop();
+      _holdCtrl.reset();
+    }
+    if (_isDragging) {
+      widget.onDrag(d.delta);
+    }
+  }
+
+  void _onPanEnd(DragEndDetails _) {
     _triggerTimer?.cancel();
     _triggerTimer = null;
     _holdCtrl.stop();
@@ -706,16 +733,40 @@ class _MobButtonState extends State<_MobButton>
     );
     _scaleCtrl.forward(from: 0);
 
-    // Quick tap → open MOB screen without triggering alarm
-    if (wasTap && !widget.isDragging) widget.onNavigate();
+    // Navigate on tap only if: not dragging, not already triggered,
+    // and held at least _minTapDuration (waited for vibration feedback).
+    if (!_isDragging && !_triggered && _pressStartTime != null) {
+      final held = DateTime.now().difference(_pressStartTime!);
+      if (held >= _minTapDuration) {
+        widget.onNavigate();
+      }
+    }
+    _isDragging = false;
+    _pressStartTime = null;
+  }
+
+  void _onPanCancel() {
+    _triggerTimer?.cancel();
+    _triggerTimer = null;
+    _holdCtrl.stop();
+    _holdCtrl.reset();
+    _isDragging = false;
+    _pressStartTime = null;
+
+    _scaleAnim = Tween<double>(begin: _scaleCtrl.value * 0.95, end: 1.0).animate(
+      CurvedAnimation(parent: _scaleCtrl, curve: Curves.elasticOut),
+    );
+    _scaleCtrl.forward(from: 0);
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTapDown: (_) => _onPressStart(),
-      onTapUp: (_) => _onPressEnd(),
-      onTapCancel: _onPressEnd,
+      dragStartBehavior: DragStartBehavior.down,
+      onPanDown: _onPanDown,
+      onPanUpdate: _onPanUpdate,
+      onPanEnd: _onPanEnd,
+      onPanCancel: _onPanCancel,
       child: AnimatedBuilder(
         animation: Listenable.merge([_holdCtrl, _scaleCtrl]),
         builder: (context, _) {

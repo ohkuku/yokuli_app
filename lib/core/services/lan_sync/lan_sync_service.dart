@@ -831,8 +831,16 @@ class LanSyncService {
 
   void triggerMob(MobAlert alert) {
     // Broadcast to our WS clients; also send upstream if connected to a peer.
-    _platform.broadcastMob(alert);
-    if (_platform.isClientConnected) _platform.sendMob(alert);
+    // Embed stateVersion and deviceId metadata so peers stay in sv-sync.
+    final device = _ref.read(deviceProvider);
+    final withMeta = <String, dynamic>{
+      'type': 'mob',
+      'data': alert.toJson(),
+      '_sv': device.stateVersion.millisecondsSinceEpoch,
+      '_id': device.deviceId,
+    };
+    _platform.broadcastJson(withMeta);
+    if (_platform.isClientConnected) _platform.sendJson(withMeta);
     onMobAlert?.call(alert);
   }
 
