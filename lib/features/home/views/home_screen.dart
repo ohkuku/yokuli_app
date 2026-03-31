@@ -616,6 +616,7 @@ class _DraggableMobFabState extends ConsumerState<_DraggableMobFab> {
           label: s.mob,
           isDragging: _isDragging,
           onTrigger: () => _triggerMob(context),
+          onNavigate: () => context.push('/mob'),
         ),
       ),
     );
@@ -635,10 +636,12 @@ class _MobButton extends StatefulWidget {
   final String label;
   final bool isDragging;
   final VoidCallback onTrigger;
+  final VoidCallback onNavigate;
   const _MobButton({
     required this.label,
     required this.isDragging,
     required this.onTrigger,
+    required this.onNavigate,
   });
 
   @override
@@ -692,6 +695,7 @@ class _MobButtonState extends State<_MobButton>
 
     // Schedule trigger at end of hold
     _triggerTimer = Timer(_holdDuration, () {
+      _triggerTimer = null; // mark as fired
       HapticFeedback.heavyImpact();
       _holdCtrl.reset();
       widget.onTrigger();
@@ -699,6 +703,7 @@ class _MobButtonState extends State<_MobButton>
   }
 
   void _onPressEnd() {
+    final wasTap = _triggerTimer != null; // timer still pending → quick tap
     _triggerTimer?.cancel();
     _triggerTimer = null;
     _holdCtrl.stop();
@@ -709,6 +714,9 @@ class _MobButtonState extends State<_MobButton>
       CurvedAnimation(parent: _scaleCtrl, curve: Curves.elasticOut),
     );
     _scaleCtrl.forward(from: 0);
+
+    // Quick tap → open MOB screen without triggering alarm
+    if (wasTap && !widget.isDragging) widget.onNavigate();
   }
 
   @override

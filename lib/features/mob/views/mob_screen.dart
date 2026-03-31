@@ -651,21 +651,19 @@ class _AddRuleSheet extends ConsumerStatefulWidget {
   ConsumerState<_AddRuleSheet> createState() => _AddRuleSheetState();
 }
 
+enum _Step { category, presets, custom }
+
 class _AddRuleSheetState extends ConsumerState<_AddRuleSheet> {
+  _Step _step = _Step.category;
   late MobTriggerType _type;
   late TextEditingController _name;
-  // signalkPath
   late TextEditingController _skPath;
   late TextEditingController _skMatchState;
-  // signalkNotification
   late TextEditingController _notifPattern;
   final Set<String> _notifStates = {'emergency'};
-  // nmeaSentence
   late TextEditingController _talkerId;
   late TextEditingController _sentenceType;
   late TextEditingController _keyword;
-
-  bool _isPresetView = true;
 
   @override
   void initState() {
@@ -683,7 +681,7 @@ class _AddRuleSheetState extends ConsumerState<_AddRuleSheet> {
     _talkerId = TextEditingController(text: e?.config['talkerId'] as String? ?? '');
     _sentenceType = TextEditingController(text: e?.config['sentenceType'] as String? ?? '');
     _keyword = TextEditingController(text: e?.config['keyword'] as String? ?? '');
-    if (e != null) _isPresetView = false;
+    if (e != null) _step = _Step.custom; // editing → go straight to form
   }
 
   @override
@@ -694,21 +692,22 @@ class _AddRuleSheetState extends ConsumerState<_AddRuleSheet> {
     super.dispose();
   }
 
-  void _applyPreset(MobTriggerRule rule) {
-    setState(() {
-      _type = rule.type;
-      _name.text = rule.name;
-      final c = rule.config;
-      _skPath.text = c['path'] as String? ?? '';
-      _skMatchState.text = c['matchStateEquals'] as String? ?? '';
-      _notifPattern.text = c['pathPattern'] as String? ?? '';
-      _notifStates.clear();
-      _notifStates.addAll(((c['states'] as List?) ?? []).map((s) => s.toString()));
-      _talkerId.text = c['talkerId'] as String? ?? '';
-      _sentenceType.text = c['sentenceType'] as String? ?? '';
-      _keyword.text = c['keyword'] as String? ?? '';
-      _isPresetView = false;
-    });
+  void _pickCategory(MobTriggerType type) =>
+      setState(() { _type = type; _step = _Step.presets; });
+
+  // Preset tapped → save immediately, no form needed
+  void _pickPreset(MobTriggerRule preset) {
+    final now = DateTime.now();
+    widget.onSave(MobTriggerRule(
+      id: generateId(),
+      name: preset.name,
+      enabled: true,
+      type: preset.type,
+      config: preset.config,
+      createdAt: now,
+      updatedAt: now,
+    ));
+    Navigator.of(context).pop();
   }
 
   Map<String, dynamic> _buildConfig() {
@@ -737,7 +736,7 @@ class _AddRuleSheetState extends ConsumerState<_AddRuleSheet> {
     if (_name.text.trim().isEmpty) return;
     final now = DateTime.now();
     final e = widget.existing;
-    final rule = MobTriggerRule(
+    widget.onSave(MobTriggerRule(
       id: e?.id ?? generateId(),
       name: _name.text.trim(),
       enabled: e?.enabled ?? true,
@@ -745,14 +744,22 @@ class _AddRuleSheetState extends ConsumerState<_AddRuleSheet> {
       config: _buildConfig(),
       createdAt: e?.createdAt ?? now,
       updatedAt: now,
-    );
-    widget.onSave(rule);
+    ));
     Navigator.of(context).pop();
+  }
+
+  void _back() {
+    setState(() {
+      if (_step == _Step.custom && widget.existing == null) {
+        _step = _Step.presets;
+      } else {
+        _step = _Step.category;
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final isEdit = widget.existing != null;
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
       child: SingleChildScrollView(
@@ -760,55 +767,83 @@ class _AddRuleSheetState extends ConsumerState<_AddRuleSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              isEdit ? '编辑规则' : '添加触发规则',
-              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            // Header
+            Row(
+              children: [
+                if (_step != _Step.category)
+                  GestureDetector(
+                    onTap: _back,
+                    child: const Padding(
+                      padding: EdgeInsets.only(right: 10),
+                      child: Icon(Icons.arrow_back_ios, color: Colors.white54, size: 18),
+                    ),
+                  ),
+                Text(
+                  switch (_step) {
+                    _Step.category => '添加触发规则',
+                    _Step.presets => _type.label,
+                    _Step.custom => widget.existing != null ? '编辑规则' : '自定义规则',
+                  },
+                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
 
-            // Show presets only for new rules
-            if (!isEdit && _isPresetView) ...[
-              const Text('选择预设', style: TextStyle(color: Colors.white54, fontSize: 13)),
+            if (_step == _Step.category) ...[
+              const Text('选择触发类型', style: TextStyle(color: Colors.white54, fontSize: 13)),
               const SizedBox(height: 12),
-              ..._presets().map((p) => _PresetTile(
-                title: p.name,
-                subtitle: p.type.description,
-                icon: switch (p.type) {
-                  MobTriggerType.signalkPath => Icons.alt_route,
-                  MobTriggerType.signalkNotification => Icons.notifications_active_outlined,
-                  MobTriggerType.nmeaSentence => Icons.terminal,
-                },
-                onTap: () => _applyPreset(p),
-              )),
-              const Divider(color: Colors.white12, height: 24),
-              TextButton(
-                onPressed: () => setState(() => _isPresetView = false),
-                child: const Text('自定义配置'),
+              _CategoryTile(
+                icon: Icons.notifications_active_outlined,
+                title: 'Signal K 通知',
+                subtitle: '监听 notifications.* 路径的状态变化',
+                onTap: () => _pickCategory(MobTriggerType.signalkNotification),
               ),
-            ] else ...[
-              // Name
-              _Field(label: '规则名称', controller: _name),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
+              _CategoryTile(
+                icon: Icons.alt_route,
+                title: 'Signal K 路径',
+                subtitle: '监听任意 Signal K 数据路径的值变化',
+                onTap: () => _pickCategory(MobTriggerType.signalkPath),
+              ),
+              const SizedBox(height: 8),
+              _CategoryTile(
+                icon: Icons.terminal,
+                title: 'NMEA 0183 句子',
+                subtitle: '匹配特定句子类型或关键字',
+                onTap: () => _pickCategory(MobTriggerType.nmeaSentence),
+              ),
+            ],
 
-              // Type selector
-              const Text('触发类型', style: TextStyle(color: Colors.white54, fontSize: 12)),
-              const SizedBox(height: 6),
-              SegmentedButton<MobTriggerType>(
-                style: ButtonStyle(
-                  backgroundColor: WidgetStateProperty.resolveWith(
-                    (s) => s.contains(WidgetState.selected) ? AppColors.cyan.withValues(alpha: 0.3) : null,
-                  ),
+            if (_step == _Step.presets) ...[
+              ...(_presetsFor(_type).map((p) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _PresetTile(
+                  title: p.name,
+                  subtitle: _presetSummary(p),
+                  icon: switch (_type) {
+                    MobTriggerType.signalkPath => Icons.alt_route,
+                    MobTriggerType.signalkNotification => Icons.notifications_active_outlined,
+                    MobTriggerType.nmeaSentence => Icons.terminal,
+                  },
+                  onTap: () => _pickPreset(p),
                 ),
-                segments: MobTriggerType.values.map((t) => ButtonSegment(
-                  value: t,
-                  label: Text(t.label, style: const TextStyle(fontSize: 11)),
-                )).toList(),
-                selected: {_type},
-                onSelectionChanged: (v) => setState(() => _type = v.first),
+              ))),
+              const Divider(color: Colors.white12, height: 24),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.tune, size: 16),
+                label: const Text('自定义配置'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white70,
+                  side: const BorderSide(color: Colors.white24),
+                ),
+                onPressed: () => setState(() => _step = _Step.custom),
               ),
-              const SizedBox(height: 16),
+            ],
 
-              // Type-specific fields
+            if (_step == _Step.custom) ...[
+              _Field(label: '规则名称', controller: _name),
+              const SizedBox(height: 16),
               if (_type == MobTriggerType.signalkPath) ...[
                 _Field(label: 'SignalK 路径 (如: notifications.mob)', controller: _skPath),
                 const SizedBox(height: 10),
@@ -847,7 +882,6 @@ class _AddRuleSheetState extends ConsumerState<_AddRuleSheet> {
                 const SizedBox(height: 10),
                 _Field(label: '关键字 (可选, 如: MOB)', controller: _keyword),
               ],
-
               const SizedBox(height: 20),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -855,7 +889,7 @@ class _AddRuleSheetState extends ConsumerState<_AddRuleSheet> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
                 onPressed: _save,
-                child: Text(isEdit ? '保存' : '添加规则'),
+                child: Text(widget.existing != null ? '保存' : '添加规则'),
               ),
             ],
           ],
@@ -864,14 +898,36 @@ class _AddRuleSheetState extends ConsumerState<_AddRuleSheet> {
     );
   }
 
-  List<MobTriggerRule> _presets() {
+  List<MobTriggerRule> _presetsFor(MobTriggerType type) {
     final now = DateTime.now();
-    return [
-      MobTriggerRule.presetSignalKNotification(id: '', now: now),
-      MobTriggerRule.presetNmeaMob(id: '', now: now),
-      MobTriggerRule.presetNmeaAisSafety(id: '', now: now),
-      MobTriggerRule.presetSkPathManOverboard(id: '', now: now),
-    ];
+    return switch (type) {
+      MobTriggerType.signalkNotification => [
+        MobTriggerRule.presetSignalKNotification(id: '', now: now),
+      ],
+      MobTriggerType.signalkPath => [
+        MobTriggerRule.presetSkPathManOverboard(id: '', now: now),
+      ],
+      MobTriggerType.nmeaSentence => [
+        MobTriggerRule.presetNmeaMob(id: '', now: now),
+        MobTriggerRule.presetNmeaAisSafety(id: '', now: now),
+      ],
+    };
+  }
+
+  String _presetSummary(MobTriggerRule p) {
+    switch (p.type) {
+      case MobTriggerType.signalkPath:
+        return p.config['path'] as String? ?? '';
+      case MobTriggerType.signalkNotification:
+        final pattern = p.config['pathPattern'] as String? ?? '';
+        final states = (p.config['states'] as List?)?.join(', ') ?? '';
+        return 'notifications.*$pattern  [$states]';
+      case MobTriggerType.nmeaSentence:
+        final t = p.config['talkerId'] as String? ?? '';
+        final st = p.config['sentenceType'] as String? ?? '';
+        final kw = p.config['keyword'] as String? ?? '';
+        return '\$${t.isEmpty ? '--' : t}$st${kw.isNotEmpty ? '  keyword:$kw' : ''}';
+    }
   }
 }
 
@@ -990,6 +1046,53 @@ class _Field extends StatelessWidget {
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: Colors.white12),
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  const _CategoryTile({required this.icon, required this.title, required this.subtitle, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFF151525),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 42, height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.cyan.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: AppColors.cyan, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.white24),
+            ],
+          ),
         ),
       ),
     );
