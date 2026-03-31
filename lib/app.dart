@@ -9,6 +9,7 @@ import 'core/theme/app_theme.dart';
 import 'core/providers/locale_provider.dart';
 import 'core/providers/alarm_instance_provider.dart';
 import 'features/mob/providers/mob_provider.dart';
+import 'core/services/lan_sync/lan_sync_service.dart';
 import 'router/app_router.dart';
 
 /// Provider that holds the alarm instance to display as an in-app banner.
@@ -25,10 +26,20 @@ class YokulApp extends ConsumerWidget {
 
     // Navigate every device to the MOB screen when a MOB is triggered.
     ref.listen(
-      mobProvider.select((s) => s.isMobActive),
-      (prev, isActive) {
-        if (isActive == true && prev != true) {
+      mobProvider.select((s) => s.activeMob?.id),
+      (prev, mobId) {
+        if (mobId != null && mobId != prev) {
           router.push('/mob');
+        }
+      },
+    );
+
+    // During join sync, return to the main waiting page (home) for all devices.
+    ref.listen(
+      networkJoinInProgressProvider,
+      (prev, next) {
+        if (next == true && prev != true) {
+          router.go('/');
         }
       },
     );
@@ -89,10 +100,44 @@ class _AlarmBannerOverlay extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final alarm = ref.watch(inAppAlarmBannerProvider);
+    final joining = ref.watch(networkJoinInProgressProvider);
 
     return Stack(
       children: [
         child,
+        if (joining)
+          Positioned.fill(
+            child: AbsorbPointer(
+              absorbing: true,
+              child: Container(
+                color: Colors.black.withOpacity(0.35),
+                alignment: Alignment.center,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppColors.cardBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 10),
+                      Text(
+                        '新设备加入中，请等待其完成配置…',
+                        style: TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         if (alarm != null)
           Positioned(
             top: 0,

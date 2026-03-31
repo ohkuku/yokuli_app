@@ -101,34 +101,48 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
       switch (json['type'] as String?) {
         case 'vessel_state':
           if (data != null) onStateReceived?.call(VesselState.fromJson(data));
+          break;
         case 'mob':
           if (data != null) onMobReceived?.call(MobAlert.fromJson(data));
+          break;
         case 'mob_cancel':
           onMobCancelReceived?.call();
+          break;
         case 'log_append':
           if (data != null) onLogAppend?.call(data);
+          break;
         case 'alarm':
           if (data != null) onAlarmSync?.call(data);
+          break;
         case 'task_upsert':
           if (data != null) onTaskUpsert?.call(data);
+          break;
         case 'issue_upsert':
           if (data != null) onIssueUpsert?.call(data);
+          break;
         case 'voyage_upsert':
           if (data != null) onVoyageUpsert?.call(data);
+          break;
         case 'kanban_sync':
           onKanbanSync?.call(json);
+          break;
         case 'sk_credentials':
           if (data != null) onSkCredentialsReceived?.call(data);
+          break;
         case 'settings_sync':
           if (data != null) onSettingsSyncReceived?.call(data);
+          break;
         case 'sync_meta':
           final svMs = json['sv'] as int?;
           final peerId = json['id'] as String? ?? '';
           if (svMs != null) onSyncMetaReceived?.call(svMs, peerId);
+          break;
         case 'sync_hello':
           onSyncHelloReceived?.call(json);
+          break;
         case 'sync_changes':
           onSyncChanges?.call(json);
+          break;
         case 'alarm_rules_sync':
           final rules = json['rules'] as List<dynamic>?;
           if (rules != null) {
@@ -136,14 +150,30 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
               onAlarmRuleSync?.call(r as Map<String, dynamic>);
             }
           }
+          break;
         case 'alarm_instance_sync':
           if (data != null) onAlarmInstanceSync?.call(data);
+          break;
         case 'alarm_action_sync':
           if (data != null) onAlarmActionSync?.call(data);
+          break;
         case 'notification_sync':
           if (data != null) onNotificationSync?.call(data);
+          break;
         case 'notification_receipt_sync':
           if (data != null) onNotifReceiptSync?.call(data);
+          break;
+        case 'mob_rule_sync':
+          if (data != null) onMobRuleSync?.call(data);
+          break;
+        case 'notify_channel_sync':
+          if (data != null) onNotifyChannelSyncReceived?.call(data);
+          break;
+        case 'network_join_sync':
+          onNetworkJoinSync?.call();
+          break;
+        default:
+          break;
       }
     } catch (_) {}
   }

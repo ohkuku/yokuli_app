@@ -28,8 +28,20 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     int Function()? getStateVersionMs,
   }) async {
     _host.onClientCountChanged = (count) => onPeerCountChanged?.call(count);
-    _host.onMobReceived = (alert) => onMobReceived?.call(alert);
-    _host.onMobCancelReceived = () => onMobCancelReceived?.call();
+    _host.onMobReceived = (alert) {
+      onMobReceived?.call(alert);
+      // Relay client-originated MOB events upstream when this device is also
+      // connected to another host, so multi-hop topologies stay in sync.
+      if (_client.isConnected) {
+        _client.sendMob(alert);
+      }
+    };
+    _host.onMobCancelReceived = () {
+      onMobCancelReceived?.call();
+      if (_client.isConnected) {
+        _client.sendJson({'type': 'mob_cancel'});
+      }
+    };
     _host.onLogAppend = (data) => onLogAppend?.call(data);
     _host.onAlarmSync = (data) => onAlarmSync?.call(data);
     _host.onTaskUpsert = (data) => onTaskUpsert?.call(data);
@@ -40,7 +52,13 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _host.onSyncHello = (msg, reply) => onSyncHello?.call(msg, reply);
     _host.onSyncChanges = (msg) => onSyncChanges?.call(msg);
     _host.onMobRuleSync = (data) => onMobRuleSync?.call(data);
+    _host.onAlarmRuleSync = (data) => onAlarmRuleSync?.call(data);
+    _host.onAlarmInstanceSync = (data) => onAlarmInstanceSync?.call(data);
+    _host.onAlarmActionSync = (data) => onAlarmActionSync?.call(data);
+    _host.onNotificationSync = (data) => onNotificationSync?.call(data);
+    _host.onNotifReceiptSync = (data) => onNotifReceiptSync?.call(data);
     _host.onNotifyChannelSync = (data) => onNotifyChannelSyncReceived?.call(data);
+    _host.onNetworkJoinSync = () => onNetworkJoinSync?.call();
     _host.onVesselStatePush = (state) => onVesselStatePush?.call(state);
     await _host.start(
       port: port,
@@ -90,7 +108,13 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _client.onSyncHelloReceived = (msg) => onSyncHelloReceived?.call(msg);
     _client.onSyncChanges = (msg) => onSyncChanges?.call(msg);
     _client.onMobRuleSync = (data) => onMobRuleSync?.call(data);
+    _client.onAlarmRuleSync = (data) => onAlarmRuleSync?.call(data);
+    _client.onAlarmInstanceSync = (data) => onAlarmInstanceSync?.call(data);
+    _client.onAlarmActionSync = (data) => onAlarmActionSync?.call(data);
+    _client.onNotificationSync = (data) => onNotificationSync?.call(data);
+    _client.onNotifReceiptSync = (data) => onNotifReceiptSync?.call(data);
     _client.onNotifyChannelSyncReceived = (data) => onNotifyChannelSyncReceived?.call(data);
+    _client.onNetworkJoinSync = () => onNetworkJoinSync?.call();
     await _client.connect(wsUrl);
   }
 

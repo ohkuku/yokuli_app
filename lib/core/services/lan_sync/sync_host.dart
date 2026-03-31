@@ -42,6 +42,7 @@ class SyncHost {
   void Function(Map<String, dynamic> data)? onNotifReceiptSync;
   void Function(Map<String, dynamic> data)? onMobRuleSync;
   void Function(Map<String, dynamic> data)? onNotifyChannelSync;
+  void Function()? onNetworkJoinSync;
   void Function(VesselState state)? onVesselStatePush;
   /// Called when a new client connects; receives a function that sends a
   /// JSON message directly to that specific client only.
@@ -170,37 +171,45 @@ class SyncHost {
           final alert = MobAlert.fromJson(data!);
           onMobReceived?.call(alert);
           broadcastMob(alert);
+          break;
         case 'mob_cancel':
           onMobCancelReceived?.call();
           broadcastJson(json);
+          break;
         case 'log_append':
           if (data != null) {
             onLogAppend?.call(data);
             broadcastJson(json);
           }
+          break;
         case 'alarm':
           if (data != null) {
             onAlarmSync?.call(data);
             broadcastJson(json);
           }
+          break;
         case 'task_upsert':
           if (data != null) {
             onTaskUpsert?.call(data);
             broadcastJson(json);
           }
+          break;
         case 'issue_upsert':
           if (data != null) {
             onIssueUpsert?.call(data);
             broadcastJson(json);
           }
+          break;
         case 'voyage_upsert':
           if (data != null) {
             onVoyageUpsert?.call(data);
             broadcastJson(json);
           }
+          break;
         case 'kanban_sync':
           broadcastJson(json);
           onKanbanSync?.call(json);
+          break;
         case 'alarm_rules_sync':
           broadcastJson(json);
           final rules = json['rules'] as List<dynamic>?;
@@ -209,42 +218,54 @@ class SyncHost {
               onAlarmRuleSync?.call(r as Map<String, dynamic>);
             }
           }
+          break;
         case 'alarm_instance_sync':
           if (data != null) {
             onAlarmInstanceSync?.call(data);
             broadcastJson(json);
           }
+          break;
         case 'alarm_action_sync':
           if (data != null) {
             onAlarmActionSync?.call(data);
             broadcastJson(json);
           }
+          break;
         case 'notification_sync':
           if (data != null) {
             onNotificationSync?.call(data);
             broadcastJson(json);
           }
+          break;
         case 'notification_receipt_sync':
           if (data != null) {
             onNotifReceiptSync?.call(data);
             broadcastJson(json);
           }
+          break;
         case 'ping':
           // Respond immediately so client watchdog stays satisfied.
           _sendToChannel(
             channel,
             jsonEncode({'type': 'pong', 'at': json['at']}),
           );
+          break;
         case 'mob_rule_sync':
           if (data != null) {
             onMobRuleSync?.call(data);
             broadcastJson(json);
           }
+          break;
         case 'notify_channel_sync':
           if (data != null) {
             onNotifyChannelSync?.call(data);
             broadcastJson(json);
           }
+          break;
+        case 'network_join_sync':
+          onNetworkJoinSync?.call();
+          broadcastJson(json);
+          break;
         case 'vessel_state_push':
           // Client with SK is sharing its vessel state — apply if we lack SK data,
           // then let the 2Hz stateTimer relay it to all other clients automatically.
@@ -253,16 +274,21 @@ class SyncHost {
               onVesselStatePush?.call(VesselState.fromJson(data));
             } catch (_) {}
           }
+          break;
         case 'sync_hello':
           // Client is introducing itself — reply to this specific client only
           onSyncHello?.call(
             json,
             (reply) => _sendToChannel(channel, jsonEncode(reply)),
           );
+          break;
         case 'sync_changes':
           // Client is pushing records — apply and forward to all other clients
           onSyncChanges?.call(json);
           broadcastJson(json);
+          break;
+        default:
+          break;
       }
     } catch (_) {}
   }
