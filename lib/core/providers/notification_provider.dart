@@ -70,6 +70,7 @@ class NotificationNotifier extends Notifier<List<NotificationRecord>> {
     if (state.any((r) => r.id == record.id)) return;
     state = [record, ...state];
     await _save();
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call({
       'type': 'notification_sync',
       'data': record.toJson(),
@@ -144,6 +145,7 @@ class NotificationReceiptNotifier extends Notifier<List<NotificationReceipt>> {
       state = [...state, receipt];
     }
     await _save();
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call({
       'type': 'notification_receipt_sync',
       'data': receipt.toJson(),

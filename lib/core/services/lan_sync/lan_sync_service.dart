@@ -38,12 +38,26 @@ import 'lan_sync_platform_base.dart' show DiscoveredHost;
 
 /// Discovered peers on the LAN — exposed for the settings UI.
 final discoveredPeersProvider = StateProvider<List<DiscoveredHost>>((ref) => []);
+final networkJoinInProgressProvider = StateProvider<bool>((ref) => false);
 
 /// Sync cursor status — exposed for the settings sync panel.
 /// Returns a map of collection → ISO-8601 cursor string.
 final syncCursorStatusProvider = FutureProvider<Map<String, String>>((ref) async {
   return SyncCursorStore.getAllCursors();
 });
+
+/// Pure policy helper for deciding whether we should try connecting to a peer.
+bool shouldAttemptPeerConnect({
+  required bool isSelf,
+  required bool isClientConnected,
+  required int nowMs,
+  required int lastAttemptMs,
+  int cooldownMs = 5000,
+}) {
+  if (isSelf) return false;
+  if (isClientConnected) return false;
+  return (nowMs - lastAttemptMs) >= cooldownMs;
+}
 
 /// Coordinates LAN sync using the platform-appropriate adapter.
 ///
@@ -57,9 +71,11 @@ class LanSyncService {
   final LanSyncPlatformImpl _platform = LanSyncPlatformImpl();
   Timer? _stateTimer;
   Timer? _skPushTimer;
+  Timer? _joinGuardTimer;
+  String? _localIp;
 
-  /// deviceId → stateVersionMs we last successfully triggered a sync with.
-  /// Prevents duplicate connections to the same peer at the same version.
+  /// peerKey(deviceId or ws) → unix-ms of last connect attempt.
+  /// Prevents repeated connection storms while discovery beacons are frequent.
   final Map<String, int> _peerSyncedVersions = {};
 
   /// Bounded set of processed sync_changes eventIds for idempotent dedup.
@@ -79,14 +95,18 @@ class LanSyncService {
   /// Called when alarm settings arrive from a remote peer.
   void Function(Map<String, dynamic>)? onAlarmSettingsReceived;
 
-  /// Called to get alarm rules (per-type) to push to new clients.
-  Map<String, dynamic>? Function()? getAlarmRules;
+  /// Called to get alarm rules payload to push to new clients.
+  /// Supports either:
+  ///   - {'rules': [ ... ]}
+  ///   - [ ... ]  (legacy direct list)
+  Object? Function()? getAlarmRules;
 
   /// Called to get notify channel config to push to new clients.
   Map<String, dynamic>? Function()? getNotifyChannelCfg;
 
   /// Called when alarm rules arrive from a remote peer.
-  void Function(Map<String, dynamic>)? onAlarmRulesReceived;
+  /// Receives normalized rule records.
+  void Function(List<Map<String, dynamic>>)? onAlarmRulesReceived;
 
   /// Called when notify channel config arrives from a remote peer.
   void Function(Map<String, dynamic>)? onNotifyChannelReceived;
@@ -135,8 +155,11 @@ class LanSyncService {
         connected ? ConnectionStatus.connected : ConnectionStatus.disconnected,
       );
       if (connected) {
+        _setJoinInProgress(false);
         // As client: send sync_hello to server so it can push missing records to us
         _sendSyncHello(_platform.sendJson);
+      } else {
+        _setJoinInProgress(false);
       }
     };
     _platform.onPeerCountChanged = (count) => _conn.setPeerCount(count);
@@ -168,6 +191,9 @@ class LanSyncService {
       if (skStatus != ConnectionStatus.connected) {
         _ref.read(vesselProvider.notifier).update(state);
       }
+    };
+    _platform.onNetworkJoinSync = () {
+      _setJoinInProgress(true);
     };
     // Server: when a new client connects, send sync_hello to them
     _platform.onNewClientConnected = _sendSyncHello;
@@ -216,6 +242,7 @@ class LanSyncService {
     // Push current settings, SK credentials, and active MOB to the new client
     // so it becomes fully operational without any manual configuration.
     _pushCurrentStateTo(reply);
+    _setJoinInProgress(false);
   }
 
   /// Push current settings and MOB state to a specific client (e.g. on first connect).
@@ -230,6 +257,8 @@ class LanSyncService {
         'vesselName': s.vesselName,
         'tileOrder': s.tileOrder,
         'keepScreenOn': s.keepScreenOn,
+        if (s.signalKUrl.isNotEmpty) 'skUrl': s.signalKUrl,
+        'autoConnectSignalK': s.autoConnectSignalK,
         if (s.signalKHost.isNotEmpty) ...{
           'skHost': s.signalKHost,
           'skPort': s.signalKPort,
@@ -256,6 +285,7 @@ class LanSyncService {
   Future<void> _handleSyncHelloFromServer(Map<String, dynamic> msg) async {
     final peerCursors = _parseCursors(msg['cursors']);
     await _sendMissingRecords(peerCursors, _platform.sendJson);
+    _setJoinInProgress(false);
   }
 
   /// Parse cursors map from sync_hello — gracefully handles nulls.
@@ -407,6 +437,7 @@ class LanSyncService {
     if (maxUa.millisecondsSinceEpoch > 0) {
       await SyncCursorStore.advance(collection, maxUa);
     }
+    _setJoinInProgress(false);
   }
 
   // ---------------------------------------------------------------------------
@@ -424,6 +455,17 @@ class LanSyncService {
   // ---------------------------------------------------------------------------
 
   void _onPeerDiscovered(DiscoveredHost peer) {
+    final ownDeviceId = _ref.read(deviceProvider).deviceId;
+    final ownPort = _ref.read(settingsProvider).hostPort;
+    final localIp = _localIp;
+    final isSelfById =
+        peer.deviceId.isNotEmpty && peer.deviceId == ownDeviceId;
+    final isSelfByAddress = localIp != null &&
+        localIp.isNotEmpty &&
+        peer.host == localIp &&
+        peer.port == ownPort;
+    if (isSelfById || isSelfByAddress) return;
+
     // Update the discovered peers list for the settings UI.
     final current = List<DiscoveredHost>.from(_ref.read(discoveredPeersProvider));
     final idx = current.indexWhere((p) => p.deviceId == peer.deviceId);
@@ -431,6 +473,7 @@ class LanSyncService {
       current[idx] = peer;
     } else {
       current.add(peer);
+      _announceJoinSyncToAll();
     }
     _ref.read(discoveredPeersProvider.notifier).state =
         List.unmodifiable(current);
@@ -438,26 +481,44 @@ class LanSyncService {
     _checkAndConnect(peer);
   }
 
-  /// Connect to [peer] as a WS client if they have newer data than us.
+  void _announceJoinSyncToAll() {
+    broadcastJson({'type': 'network_join_sync'});
+    if (_platform.isClientConnected) {
+      _platform.sendJson({'type': 'network_join_sync'});
+    }
+    _setJoinInProgress(true);
+  }
+
+  void _setJoinInProgress(bool value) {
+    _joinGuardTimer?.cancel();
+    _ref.read(networkJoinInProgressProvider.notifier).state = value;
+    if (value) {
+      _joinGuardTimer = Timer(const Duration(seconds: 12), () {
+        _ref.read(networkJoinInProgressProvider.notifier).state = false;
+      });
+    }
+  }
+
+  /// Connect to [peer] as a WS client (throttled), independent of peer sv.
   void _checkAndConnect(DiscoveredHost peer) {
-    final device = _ref.read(deviceProvider);
+    final peerKey = peer.deviceId.isNotEmpty ? peer.deviceId : peer.ws;
+    final ownDeviceId = _ref.read(deviceProvider).deviceId;
 
-    // Never connect to ourselves.
-    if (peer.deviceId.isNotEmpty && peer.deviceId == device.deviceId) return;
-
-    final ownSvMs = device.stateVersion.millisecondsSinceEpoch;
-
-    // Only connect if peer has strictly newer data.
-    if (peer.stateVersionMs <= ownSvMs) return;
-
-    // Don't re-trigger if we already initiated a sync at this exact version.
-    final lastSynced = _peerSyncedVersions[peer.deviceId] ?? 0;
-    if (peer.stateVersionMs <= lastSynced) return;
-
-    // Record before connecting to prevent races / duplicate calls.
-    _peerSyncedVersions[peer.deviceId] = peer.stateVersionMs;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final lastAttemptMs = _peerSyncedVersions[peerKey] ?? 0;
+    final isSelf = peer.deviceId.isNotEmpty && peer.deviceId == ownDeviceId;
+    if (!shouldAttemptPeerConnect(
+      isSelf: isSelf,
+      isClientConnected: _platform.isClientConnected,
+      nowMs: nowMs,
+      lastAttemptMs: lastAttemptMs,
+    )) {
+      return;
+    }
+    _peerSyncedVersions[peerKey] = nowMs;
 
     // Mark connecting before the attempt so the UI shows the right state.
+    _setJoinInProgress(true);
     _conn.setLanSyncStatus(ConnectionStatus.connecting);
 
     // Connect — sync_hello exchange will happen automatically on connection
@@ -514,6 +575,8 @@ class LanSyncService {
     final vesselName = data['vesselName'] as String?;
     final tileOrder = (data['tileOrder'] as List?)?.cast<String>();
     final keepScreenOn = data['keepScreenOn'] as bool?;
+    final autoConnectSignalK = data['autoConnectSignalK'] as bool?;
+    final skUrl = data['skUrl'] as String?;
     final skHost = data['skHost'] as String?;
     final skPort = data['skPort'] as int?;
     final skUser = data['skUser'] as String?;
@@ -524,6 +587,9 @@ class LanSyncService {
             vesselName: vesselName ?? current.vesselName,
             tileOrder: tileOrder ?? current.tileOrder,
             keepScreenOn: keepScreenOn ?? current.keepScreenOn,
+            autoConnectSignalK:
+                autoConnectSignalK ?? current.autoConnectSignalK,
+            signalKUrl: skUrl ?? current.signalKUrl,
             signalKHost: skHost ?? current.signalKHost,
             signalKPort: skPort ?? current.signalKPort,
             signalKUsername: skUser ?? current.signalKUsername,
@@ -541,6 +607,11 @@ class LanSyncService {
           'username': skUser ?? '',
           'password': skPass ?? '',
         });
+      }
+    } else if (skUrl != null && skUrl.isNotEmpty) {
+      final skStatus = _ref.read(connectionProvider).signalK;
+      if (skStatus != ConnectionStatus.connected) {
+        await _ref.read(signalKClientProvider).connect(skUrl);
       }
     }
 
@@ -560,9 +631,10 @@ class LanSyncService {
     }
 
     // Apply alarm rules if present
-    final alarmRulesRaw = data['alarmRules'] as Map<String, dynamic>?;
-    if (alarmRulesRaw != null) {
-      onAlarmRulesReceived?.call(alarmRulesRaw);
+    final alarmRulesRaw = data['alarmRules'];
+    final normalizedAlarmRules = _parseAlarmRulesPayload(alarmRulesRaw);
+    if (normalizedAlarmRules.isNotEmpty) {
+      onAlarmRulesReceived?.call(normalizedAlarmRules);
     }
 
     // Apply notify channel config if present
@@ -570,6 +642,19 @@ class LanSyncService {
     if (notifyChannelRaw != null) {
       onNotifyChannelReceived?.call(notifyChannelRaw);
     }
+  }
+
+  List<Map<String, dynamic>> _parseAlarmRulesPayload(dynamic raw) {
+    if (raw is List) {
+      return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+    if (raw is Map) {
+      final rules = raw['rules'];
+      if (rules is List) {
+        return rules.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      }
+    }
+    return const [];
   }
 
   /// Broadcast current settings to all peers (call after any settings change).
@@ -584,6 +669,8 @@ class LanSyncService {
         'vesselName': s.vesselName,
         'tileOrder': s.tileOrder,
         'keepScreenOn': s.keepScreenOn,
+        if (s.signalKUrl.isNotEmpty) 'skUrl': s.signalKUrl,
+        'autoConnectSignalK': s.autoConnectSignalK,
         if (s.signalKHost.isNotEmpty) ...{
           'skHost': s.signalKHost,
           'skPort': s.signalKPort,
@@ -631,6 +718,8 @@ class LanSyncService {
   bool get supportsAutoDiscovery => _platform.supportsAutoDiscovery;
 
   Future<void> start() async {
+    _setJoinInProgress(false);
+    _localIp = await _platform.getLocalIp();
     if (kIsWeb) {
       // Web: client-only — connect to manually configured host IP.
       final settings = _ref.read(settingsProvider);
@@ -643,6 +732,7 @@ class LanSyncService {
       };
 
       if (settings.hostIp.isNotEmpty) {
+        _setJoinInProgress(true);
         _conn.setLanSyncStatus(ConnectionStatus.connecting);
         await _platform.connectAsClient(
           'ws://${settings.hostIp}:${settings.hostPort}',
@@ -679,6 +769,7 @@ class LanSyncService {
     await _platform.startDiscovery();
 
     _conn.setLanSyncStatus(ConnectionStatus.connected);
+    _setJoinInProgress(false);
 
     // Push VesselState to connected clients at ~2 Hz.
     _stateTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
@@ -707,6 +798,8 @@ class LanSyncService {
     _stateTimer = null;
     _skPushTimer?.cancel();
     _skPushTimer = null;
+    _joinGuardTimer?.cancel();
+    _joinGuardTimer = null;
     _ref.read(lanBroadcastProvider.notifier).state = null;
     _peerSyncedVersions.clear();
     _platform.stopDiscovery();
@@ -714,6 +807,8 @@ class LanSyncService {
     await _platform.disconnectClient();
     _conn.setLanSyncStatus(ConnectionStatus.disconnected);
     _ref.read(discoveredPeersProvider.notifier).state = [];
+    _setJoinInProgress(false);
+    _localIp = null;
   }
 
   Future<void> restart() async {
