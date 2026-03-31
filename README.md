@@ -1,309 +1,119 @@
-<div align="center">
+# Yokuli — 智能船舶管理平台
 
-# Yokuli
+基于 Flutter 的海洋船控应用，支持 Android、iOS 和 Web。以「船载操作系统」为设计理念，launcher 风格首页组织各功能模块，接入 Signal K 服务器获取实时传感器数据，支持多设备局域网自动同步。
 
-**船控平台 · Vessel Control Platform**
+## 功能总览
 
-*Flutter · Android · iOS · Web*
+| 模块 | 说明 |
+|------|------|
+| **Signal K Hub** | WebSocket 客户端，连接 Signal K 服务器获取航行数据（航速、航向、风速、水深、电池等），支持用户名/密码认证，自动重连，60s 无数据自动断线重连 |
+| **仪表盘** | 航速（SOG）、航向罗盘（COG/HDG）、真风/视风（TWS/AWS/AWA）、水深（DBK/DBS）、GPS 位置、电池状态 |
+| **电力管理** | 多电池组卡片（SOC、电压、电流、温度），太阳能充电控制器面板（面板电压/电流/功率/日发电量） |
+| **AIS** | OpenStreetMap 地图叠加 + 极坐标雷达 + 目标列表，CPA/TCPA 风险分析，MMSI 详情 |
+| **航程** | 航程计时，快速日志按钮（天气/帆况/事件），事件列表含 GPS 详情，历史航程列表 |
+| **船务看板** | Kanban 看板（自定义列），卡片含分类/优先级/标签，拖拽排序 |
+| **告警中心** | 自定义告警规则（支持持续时间、滞后带、冷却期），告警实例管理（确认/解除/贪睡），审计日志 |
+| **MOB** | 长按 1.2s 触发落水警报，GPS 定位 + 距离方位计算，LAN 广播同步所有设备，自动规则触发（Signal K notifications 路径） |
+| **天气** | iOS 风格动画天气背景（基于 WMO 天气码 + 日出日落），Open-Meteo 免费 API（可选 MetService NZ），Signal K GPS 优先，设备 GPS 兜底 |
+| **系统日志** | 全局事件流（导航/系统/MOB/告警），按类型过滤 |
+| **设置** | 设备名、船名、Signal K 配置、LAN 设备列表、同步状态诊断、天气数据源、屏幕常亮 |
 
-<br/>
+## 多设备同步
 
-[**中文**](#中文)　·　[**English**](#english)
+所有原生设备（Android/iOS）同时运行 WebSocket 服务器和客户端。通过 UDP 广播（端口 43215）自动发现同网段设备，连接后自动交换同步游标，增量推送差异数据。
 
-</div>
+**同步范围：**
+- 航程、任务、问题、日志、看板（列+卡片）— 游标增量同步（LWW 合并）
+- 告警规则、告警实例、告警动作 — 游标增量同步
+- MOB 警报/取消 — 实时广播
+- MOB 规则 — 实时广播 + 首次连接推送
+- 船名、Signal K 配置、告警阈值、首页布局、屏幕常亮、语言 — settings_sync 推送
+- 通知渠道配置 — 实时广播
+- 船舶状态（VesselState）— 2Hz 持续广播
 
----
+**冲突解决：** Last-Write-Wins (LWW)，按 `updatedAt` 时间戳 → 软删除标记 → `sourceDeviceId` 字典序三级判定。
 
-<a name="中文"></a>
+**首次加入：** 新设备只需填写设备名，连接后自动从已有设备拉取全部配置和数据。
 
-## 中文文档
+**Web 限制：** 浏览器无法运行 WebSocket 服务器，只能作为 Client 连接到原生设备。
 
-> 🇬🇧 [Switch to English](#english)
-
-### 简介
-
-Yokuli 是一款基于 Flutter 的海洋船控 App，面向 Android、iOS 和 **Web** 三端。界面风格类似「船载操作系统」—— 以 launcher 方式组织各功能模块，接入 Signal K 服务器实时数据，支持多设备局域网数据共享。
-
-**Web 端限制：** 浏览器无法运行服务器，因此 Web 版只能作为 Client 连接到原生设备（Android/iOS）的 Host。Signal K 直连功能正常。
-
-### 当前状态
-
-> **分支：** `claude/vessel-control-app-jeJzm`
-> **最后更新：** 2026-03-30
-> **构建状态：** ✅ 源码完整，执行 `flutter pub get && flutter run` 即可运行
-
----
-
-### 功能模块
-
-| 模块 | 状态 | 说明 |
-|------|------|------|
-| Signal K Hub | ✅ | WebSocket 客户端，Host IP + Port 输入，自动重连，断线60s无数据自动重连 |
-| 仪表盘 | ✅ | 航速、航向罗盘、风速风向、水深、GPS、电池 |
-| 电力管理 | ✅ | 电池卡片（SOC、电压、电流），太阳能充电控制器（面板电压/电流/功率） |
-| AIS | ✅ | 地图叠加雷达（OpenStreetMap + 可缩放），极坐标雷达，目标列表，CPA 风险，详细信息 |
-| 航程 | ✅ | 航程计时，快速日志按钮，事件列表（可删除、查看 GPS 详情），历史记录 |
-| 系统日志 | ✅ | 全局事件流，按类型过滤 |
-| 安全 | ✅ | MOB 触发（GPS 位置 + LAN 广播所有设备），水深 / 速度告警，取消 MOB 广播 |
-| 船务看板 | ✅ | Kanban 看板（待办/进行中/已完成），自定义列，卡片含分类/优先级 |
-| 天气 | 🔲 占位 | 入口已预留 |
-| 小工具 | 🔲 占位 | 入口已预留 |
-| 设置 | ✅ | 船名、Signal K 主机 IP + 端口、LAN 角色、连接/断开按钮、自动连接 |
-
----
-
-### 架构说明
-
-```
-MVVM + Riverpod（手写 Notifier，无需 code generation）
-Feature-first 目录结构
-JSON 文件持久化（path_provider）用于日志、航程、看板
-SharedPreferences 用于设置持久化
-go_router 路由
-```
-
-#### 多设备 LAN 同步
-
-```
-主机设备 (Host)                    客户端设备 (Client)
-  │                                      │
-Signal K WS ──► VesselState              │
-  │                                      │
-  └──► shelf WS 服务器 :8765 ────────► WS 客户端 ──► VesselState
-
-发现方式：UDP 广播端口 43215（自动）+ 手动填写 IP（备用）
-```
-
-**设备角色（设置页面选择）：**
-- **独立模式 (Standalone)** — 直连 Signal K，不参与局域网同步
-- **主机 (Host/Master)** — 汇聚 Signal K 数据，通过 WebSocket 向局域网客户端广播（仅原生端支持）
-- **客户端 (Client)** — 从主机接收所有数据，首页不显示 Signal K 仪表盘（Web 端固定为此模式）
-
----
-
-### 快速开始
-
-**环境要求**
-- Flutter SDK ≥ 3.3.0（stable 频道）
-- Android SDK 或 Xcode（iOS）
-
-**运行步骤**
+## 快速开始
 
 ```bash
-# 1. 克隆仓库
 git clone https://github.com/ohkuku/yokuli_app.git
 cd yokuli_app
 git checkout claude/vessel-control-app-jeJzm
-
-# 2. 获取依赖
 flutter pub get
-
-# 3. 运行（Android 或 iOS）
-flutter run
-
-# iOS 首次运行需要额外执行
-cd ios && pod install && cd ..
 flutter run
 ```
 
----
+**环境要求：** Flutter SDK ≥ 3.3.0（stable），Android SDK 或 Xcode。
 
-### Signal K 连接
+## Signal K 连接
 
 1. 首页点击 **Signal K Hub**
-2. 填写主机 IP 和端口（默认端口 3000）
-3. 点击 **Connect（连接）**
+2. 填写主机地址和端口（默认 3000）
+3. 点击连接
 
-开启「启动时自动连接」后，App 启动时自动接入。如果连接成功但 60 秒内无数据，会自动断线重连（处理服务器重启后 TCP 半开连接问题）。
+支持用户名/密码认证。开启「自动连接」后每次启动自动接入。连接后 60 秒内无数据自动重连（处理服务器重启后的 TCP 半开连接）。
 
----
-
-### 局域网多设备同步
-
-**主机设备（舵手站、图表仪平板）：**
-1. 进入 **设置 → LAN Sync → Host (Master)**
-2. 记下显示的 WS 地址（如 `ws://192.168.1.5:8765`）
-3. 开启「启动时自动连接 LAN」
-4. 连接 Signal K
-
-**客户端设备（驾驶舱平板、手机）：**
-1. 进入 **设置 → LAN Sync → Client**
-2. 填写主机 IP（或点击「扫描主机」自动发现）
-3. 点击 **CONNECT LAN** 按钮
-
----
-
-### 主要依赖
+## 主要依赖
 
 | 包 | 用途 |
 |----|------|
-| `flutter_riverpod` | 状态管理 |
+| `flutter_riverpod` | 状态管理（手写 Notifier，无 codegen） |
 | `go_router` | 页面路由 |
-| `web_socket_channel` | Signal K + LAN 客户端 |
-| `shelf` + `shelf_web_socket` | LAN 主机 WebSocket 服务器 |
-| `flutter_map` | AIS 地图叠加（OpenStreetMap 瓦片） |
-| `latlong2` | 地理坐标类型 |
-| `path_provider` | 本地 JSON 文件存储 |
+| `web_socket_channel` | Signal K + LAN 客户端 WebSocket |
+| `shelf` + `shelf_web_socket` | LAN WebSocket 服务器（原生端） |
+| `flutter_map` + `latlong2` | AIS 地图叠加（OpenStreetMap 瓦片） |
+| `path_provider` | 本地 JSON 文件持久化 |
 | `shared_preferences` | 设置持久化 |
-| `geolocator` | 设备 GPS（MOB 位置备用） |
+| `geolocator` | 设备 GPS（天气定位 + MOB 位置兜底） |
+| `http` | 天气 API、Signal K REST |
+| `hive_flutter` | 备用本地存储 |
+| `intl` | 日期时间格式化 |
+| `package_info_plus` | 应用版本检查 |
 
----
-
-### 路线图
-
-- [ ] 天气模块（OpenWeatherMap / Windy API）
-- [ ] 锚泊报警（GPS 漂移检测）
-- [ ] NMEA 0183 TCP 输入
-- [ ] 离线地图瓦片缓存
-- [ ] 航行日志 GPX / CSV 导出
-- [ ] 告警推送通知
-- [ ] 潮汐数据（离线表格）
-- [ ] 暗色 / 红光夜视模式切换
-
----
-
-<a name="english"></a>
-
-## English Documentation
-
-> 🇨🇳 [切换中文](#中文)
-
-### Overview
-
-Yokuli is a Flutter-based marine vessel control app for Android, iOS, and **Web**. Designed to feel like a "Marine OS" — a launcher-style interface with modular panels for Signal K data, instruments, power management, safety, AIS radar, voyage logging, and a Kanban task board. Supports real-time multi-device data sharing over LAN.
-
-**Web limitations:** Browsers cannot run a server, so the web version acts only as a Client — connect to a Host running on a native (Android/iOS) device. Signal K direct connection works normally.
-
-### Status
-
-> **Branch:** `claude/vessel-control-app-jeJzm`
-> **Last updated:** 2026-03-30
-> **Build status:** ✅ Source complete — ready for `flutter pub get && flutter run`
-
----
-
-### Modules
-
-| Module | Status | Description |
-|--------|--------|-------------|
-| Signal K Hub | ✅ | WebSocket client, host IP + port input, auto-reconnect, 60s stale-data watchdog |
-| Dashboard | ✅ | SOG, COG compass, wind, depth, GPS, batteries |
-| Power | ✅ | Battery cards (SOC, voltage, current), solar charge controllers (panel V/A/W) |
-| AIS | ✅ | Map overlay radar (OSM tiles, pinch-to-zoom), polar chart radar, target list, CPA risk |
-| Voyage | ✅ | Voyage timer, quick-log buttons, event list (delete + GPS details), history |
-| System Log | ✅ | Global event feed, filterable by type |
-| Safety | ✅ | MOB trigger (GPS + LAN broadcast), depth/speed alarms, cancel-MOB broadcast |
-| Kanban Board | ✅ | Ship tasks board (待办/进行中/已完成), custom columns, cards with category + priority |
-| Weather | 🔲 Stub | Entry point reserved |
-| Tools | 🔲 Stub | Entry point reserved |
-| Settings | ✅ | Vessel name, SK host IP + port, LAN role, Connect/Disconnect button, auto-connect |
-
----
-
-### Architecture
+## 项目结构
 
 ```
-MVVM + Riverpod (manual Notifier, no code generation required)
-Feature-first directory structure
-JSON file persistence (path_provider) for logs, voyages, kanban
-SharedPreferences for settings
-go_router for navigation
+lib/
+├── main.dart                          # 入口
+├── app.dart                           # MaterialApp + ProviderScope
+├── router/app_router.dart             # GoRouter 路由定义
+├── core/
+│   ├── models/                        # 数据模型（VesselState, AlarmRule, MobAlert, etc.）
+│   ├── providers/                     # Riverpod 状态管理
+│   ├── services/
+│   │   ├── signalk/                   # Signal K 客户端/解析器/认证
+│   │   ├── lan_sync/                  # LAN 多设备同步基础设施
+│   │   ├── alarm_evaluator.dart       # 告警条件持续评估引擎
+│   │   ├── alarm_dispatcher.dart      # 告警响应分发
+│   │   ├── data_export_service.dart   # 数据导入/导出
+│   │   ├── telemetry_service.dart     # 连接/同步遥测
+│   │   └── update/                    # 应用更新检查
+│   ├── sync/                          # 同步引擎（LWW 合并 + 游标存储）
+│   ├── theme/                         # 深色主题 + 颜色系统
+│   ├── l10n/                          # 国际化字符串（中文/英文）
+│   ├── utils/                         # ID 生成等工具
+│   └── widgets/                       # 共享 UI 组件（GlassCard 等）
+└── features/
+    ├── home/                          # 首页 launcher + 天气背景
+    ├── startup/                       # 启动页 + 首次配置向导
+    ├── dashboard/                     # 航行仪表盘
+    ├── signalk/                       # Signal K 连接管理
+    ├── power/                         # 电力管理
+    ├── ais/                           # AIS 雷达 + 地图
+    ├── voyage/                        # 航程管理
+    ├── logbook/                       # 系统日志
+    ├── kanban/                        # 船务看板
+    ├── alarm_center/                  # 告警中心 + 规则编辑
+    ├── alarm_management/              # 告警配置管理
+    ├── safety/                        # 安全设置（深度/速度告警阈值）
+    ├── mob/                           # MOB 落水警报
+    ├── weather/                       # 天气详情页
+    ├── issues/                        # 问题追踪
+    ├── tasks/                         # 任务管理
+    ├── maintenance/                   # 维护记录
+    └── settings/                      # 系统设置
 ```
-
-#### Multi-device LAN Sync
-
-```
-Host device                     Client device(s)
-  │                                  │
-Signal K WS ──► VesselState          │
-  │                                  │
-  └──► shelf WS server :8765 ─────► WS client ──► VesselState
-
-Discovery: UDP broadcast on port 43215 (auto) + manual IP entry (fallback)
-```
-
-**Device roles (Settings screen):**
-- **Standalone** — direct Signal K connection only, no LAN sync
-- **Host (Master)** — collects Signal K data, serves LAN peers via WebSocket (native only)
-- **Client** — receives all data from host, Signal K tile hidden on home screen (Web is always Client)
-
----
-
-### Setup
-
-**Prerequisites**
-- Flutter SDK ≥ 3.3.0 (stable channel)
-- Android SDK or Xcode for iOS
-
-**First run**
-
-```bash
-# 1. Clone
-git clone https://github.com/ohkuku/yokuli_app.git
-cd yokuli_app
-git checkout claude/vessel-control-app-jeJzm
-
-# 2. Get dependencies
-flutter pub get
-
-# 3. Run (Android or iOS)
-flutter run
-
-# For iOS (first time only)
-cd ios && pod install && cd ..
-flutter run
-```
-
----
-
-### Signal K Connection
-
-1. Open **Signal K Hub** from the home screen
-2. Enter the server host IP and port (default: 3000)
-3. Tap **Connect**
-
-Enable **Auto-connect** to connect automatically on app launch. If the connection appears live but no data is received for 60 seconds (e.g. after a server restart), the client automatically forces a reconnect to clear any stale TCP half-open connections.
-
----
-
-### LAN Sync Setup
-
-**On the host device (helm station, chartplotter tablet):**
-1. Go to **Settings → LAN Sync → Host (Master)**
-2. Note the WS address shown (e.g. `ws://192.168.1.5:8765`)
-3. Enable **Auto-start LAN sync on launch**
-4. Connect this device to Signal K
-
-**On client devices (cockpit tablet, phone):**
-1. Go to **Settings → LAN Sync → Client**
-2. Enter the host IP (or tap **Scan for hosts**)
-3. Tap **CONNECT LAN**
-
----
-
-### Key Packages
-
-| Package | Purpose |
-|---------|---------|
-| `flutter_riverpod` | State management |
-| `go_router` | Navigation |
-| `web_socket_channel` | Signal K + LAN client |
-| `shelf` + `shelf_web_socket` | LAN host WebSocket server |
-| `flutter_map` | AIS map overlay (OpenStreetMap tiles) |
-| `latlong2` | Geographic coordinate types |
-| `path_provider` | Local JSON file storage |
-| `shared_preferences` | Settings persistence |
-| `geolocator` | Device GPS for MOB position fallback |
-
----
-
-### Roadmap
-
-- [ ] Weather module (OpenWeatherMap / Windy API)
-- [ ] Anchor alarm (GPS drift detection)
-- [ ] NMEA 0183 TCP input
-- [ ] Offline map tile caching
-- [ ] Voyage log GPX/CSV export
-- [ ] Push notifications for alarms
-- [ ] Tidal data (offline tables)
-- [ ] Dark/dim mode toggle (red night vision mode)
