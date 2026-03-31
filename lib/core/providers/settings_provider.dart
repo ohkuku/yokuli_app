@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'device_provider.dart';
 import 'lan_broadcast.dart';
 
 /// Device role in the LAN mesh
@@ -159,6 +160,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> update(AppSettings updated) async {
     state = updated;
     await _saveToPrefs(updated);
+    ref.read(deviceProvider.notifier).bump();
     // Broadcast shared fields to all LAN peers (vessel-level settings only;
     // device-local fields like deviceName/role/hostIp are intentionally excluded).
     ref.read(lanBroadcastProvider)?.call({

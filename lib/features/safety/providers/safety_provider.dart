@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/models/alarm.dart';
 import '../../../core/models/vessel_state.dart';
 import '../../../core/providers/alarm_provider.dart';
+import '../../../core/providers/device_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/providers/lan_broadcast.dart';
 
@@ -78,6 +79,7 @@ class SafetyNotifier extends Notifier<SafetyState> {
     );
     _save();
     _broadcastAlarmSettings();
+    ref.read(deviceProvider.notifier).bump();
   }
 
   void setSpeedAlarm({required bool enabled, double? threshold}) {
@@ -87,6 +89,7 @@ class SafetyNotifier extends Notifier<SafetyState> {
     );
     _save();
     _broadcastAlarmSettings();
+    ref.read(deviceProvider.notifier).bump();
   }
 
   void applyAlarmSync(Map<String, dynamic> data) {

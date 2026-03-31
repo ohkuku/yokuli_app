@@ -152,6 +152,7 @@ class VoyageNotifier extends Notifier<VoyageState> {
       history: state.history,
     );
     await save();
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'voyage_upsert', 'data': session.toJson()});
     await ref.read(logProvider.notifier).log(
@@ -179,6 +180,7 @@ class VoyageNotifier extends Notifier<VoyageState> {
 
     state = VoyageState(active: null, history: newHistory);
     await save();
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'voyage_upsert', 'data': ended.toJson()});
     await ref.read(logProvider.notifier).log(
@@ -207,6 +209,7 @@ class VoyageNotifier extends Notifier<VoyageState> {
       state = VoyageState(active: state.active, history: updated);
     }
     await save();
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'voyage_upsert', 'data': tombstone.toJson()});
   }
@@ -233,6 +236,7 @@ class VoyageNotifier extends Notifier<VoyageState> {
     final session = state.active?.id == id
         ? state.active!
         : state.history.firstWhere((s) => s.id == id);
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'voyage_upsert', 'data': session.toJson()});
   }
@@ -254,6 +258,17 @@ class VoyageNotifier extends Notifier<VoyageState> {
       state = VoyageState(active: state.active, history: updated);
     }
     await save();
+    final session = state.active?.id == id
+        ? state.active
+        : () {
+            final idx = state.history.indexWhere((s) => s.id == id);
+            return idx >= 0 ? state.history[idx] : null;
+          }();
+    if (session != null) {
+      ref.read(deviceProvider.notifier).bump();
+      ref.read(lanBroadcastProvider)?.call(
+          {'type': 'voyage_upsert', 'data': session.toJson()});
+    }
   }
 
   // ---- Remote sync --------------------------------------------------------

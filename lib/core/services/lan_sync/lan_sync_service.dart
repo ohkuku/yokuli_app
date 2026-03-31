@@ -57,6 +57,7 @@ class LanSyncService {
   final LanSyncPlatformImpl _platform = LanSyncPlatformImpl();
   Timer? _stateTimer;
   Timer? _skPushTimer;
+  String? _localIp;
 
   /// deviceId → stateVersionMs we last successfully triggered a sync with.
   /// Prevents duplicate connections to the same peer at the same version.
@@ -430,6 +431,17 @@ class LanSyncService {
   // ---------------------------------------------------------------------------
 
   void _onPeerDiscovered(DiscoveredHost peer) {
+    final ownDeviceId = _ref.read(deviceProvider).deviceId;
+    final ownPort = _ref.read(settingsProvider).hostPort;
+    final localIp = _localIp;
+    final isSelfById =
+        peer.deviceId.isNotEmpty && peer.deviceId == ownDeviceId;
+    final isSelfByAddress = localIp != null &&
+        localIp.isNotEmpty &&
+        peer.host == localIp &&
+        peer.port == ownPort;
+    if (isSelfById || isSelfByAddress) return;
+
     // Update the discovered peers list for the settings UI.
     final current = List<DiscoveredHost>.from(_ref.read(discoveredPeersProvider));
     final idx = current.indexWhere((p) => p.deviceId == peer.deviceId);
@@ -663,6 +675,7 @@ class LanSyncService {
   bool get supportsAutoDiscovery => _platform.supportsAutoDiscovery;
 
   Future<void> start() async {
+    _localIp = await _platform.getLocalIp();
     if (kIsWeb) {
       // Web: client-only — connect to manually configured host IP.
       final settings = _ref.read(settingsProvider);
@@ -746,6 +759,7 @@ class LanSyncService {
     await _platform.disconnectClient();
     _conn.setLanSyncStatus(ConnectionStatus.disconnected);
     _ref.read(discoveredPeersProvider.notifier).state = [];
+    _localIp = null;
   }
 
   Future<void> restart() async {
