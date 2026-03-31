@@ -23,7 +23,7 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
   @override
   Future<void> startHost(
     int port,
-    String vesselName, {
+    String deviceName, {
     String deviceId = '',
     int Function()? getStateVersionMs,
   }) async {
@@ -41,7 +41,7 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _host.onSyncChanges = (msg) => onSyncChanges?.call(msg);
     await _host.start(
       port: port,
-      vesselName: vesselName,
+      deviceName: deviceName,
       deviceId: deviceId,
       getStateVersionMs: getStateVersionMs,
     );

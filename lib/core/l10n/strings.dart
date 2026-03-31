@@ -123,6 +123,13 @@ class S {
   String get webModeLabel     => _m['webModeLabel']!;
 
   // --- Settings (additional) ---
+  String get sectionThisDevice    => _m['sectionThisDevice']!;
+  String get deviceNameLabel      => _m['deviceNameLabel']!;
+  String get deviceNameHint       => _m['deviceNameHint']!;
+  String get deviceIdLabel        => _m['deviceIdLabel']!;
+  String get sectionLanDevices    => _m['sectionLanDevices']!;
+  String get noOtherDevices       => _m['noOtherDevices']!;
+  String get deviceDetailTitle    => _m['deviceDetailTitle']!;
   String get sectionVessel        => _m['sectionVessel']!;
   String get sectionDevices       => _m['sectionDevices']!;
   String get sectionDisplay       => _m['sectionDisplay']!;
@@ -438,6 +445,13 @@ const _en = <String, String>{
   'overSpeedAlarmHint':   'Alert when SOG exceeds threshold',
   'mobPosition':          'MOB POSITION',
   // Settings additional
+  'sectionThisDevice':    'THIS DEVICE',
+  'deviceNameLabel':      'Device name',
+  'deviceNameHint':       "e.g. Captain's iPad",
+  'deviceIdLabel':        'Device ID',
+  'sectionLanDevices':    'CONNECTED DEVICES',
+  'noOtherDevices':       'No other devices on this network',
+  'deviceDetailTitle':    'Device Details',
   'sectionVessel':        'VESSEL',
   'sectionDevices':       'DEVICES',
   'sectionDisplay':       'DISPLAY',
@@ -658,6 +672,13 @@ const _zh = <String, String>{
   'overSpeedAlarmHint':   '对地航速超过阈值时报警',
   'mobPosition':          'MOB 位置',
   // Settings additional
+  'sectionThisDevice':    '此设备',
+  'deviceNameLabel':      '设备名称',
+  'deviceNameHint':       '如：舵手平板',
+  'deviceIdLabel':        '设备 ID',
+  'sectionLanDevices':    '局域网设备',
+  'noOtherDevices':       '暂未发现其他设备',
+  'deviceDetailTitle':    '设备详情',
   'sectionVessel':        '船只',
   'sectionDevices':       '设备',
   'sectionDisplay':       '显示',

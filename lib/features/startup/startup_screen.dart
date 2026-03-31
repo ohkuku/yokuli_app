@@ -48,6 +48,7 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
   // Wizard
   int _wizardPage = 0;
   final _pageCtrl = PageController();
+  final _deviceNameCtrl = TextEditingController();
   final _vesselNameCtrl = TextEditingController();
   final _skHostCtrl = TextEditingController();
   final _skPortCtrl = TextEditingController(text: '3000');
@@ -73,6 +74,7 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
   void dispose() {
     _pulseCtrl.dispose();
     _pageCtrl.dispose();
+    _deviceNameCtrl.dispose();
     _vesselNameCtrl.dispose();
     _skHostCtrl.dispose();
     _skPortCtrl.dispose();
@@ -126,10 +128,9 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
 
     if (!mounted) return;
 
-    // Decide: first-time wizard or go straight to app
-    final isFirstTime = latestSettings.vesselName == 'My Vessel' &&
-        latestSettings.signalKHost.isEmpty &&
-        _peersFound == 0;
+    // Decide: first-time wizard or go straight to app.
+    // Wizard is shown only when device has no name yet.
+    final isFirstTime = latestSettings.deviceName.isEmpty;
 
     if (isFirstTime) {
       setState(() {
@@ -233,20 +234,48 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
 
   // ── Wizard actions ─────────────────────────────────────────────────────────
 
-  void _wizardNext() {
-    if (_wizardPage < 2) {
-      setState(() => _wizardPage++);
-      _pageCtrl.animateToPage(
-        _wizardPage,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
+  void _goToPage(int page) {
+    setState(() => _wizardPage = page);
+    _pageCtrl.animateToPage(
+      page,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  /// Called from page 0 (Welcome).
+  void _wizardNext() => _goToPage(1);
+
+  /// Called from page 1 (Device Name).
+  Future<void> _wizardSaveDeviceName() async {
+    final name = _deviceNameCtrl.text.trim();
+    if (name.isEmpty) return;
+
+    // Save device name
+    await ref.read(settingsProvider.notifier).update(
+          ref.read(settingsProvider).copyWith(deviceName: name),
+        );
+
+    if (!mounted) return;
+
+    if (_peersFound > 0) {
+      // LAN already found — auto-join, no further config needed.
+      widget.onComplete();
+    } else {
+      // No LAN peers — guide through vessel name + SK setup.
+      _goToPage(2);
     }
   }
 
+  /// Called from page 2 (Vessel Name).
+  void _wizardNextVessel() {
+    if (_vesselNameCtrl.text.trim().isNotEmpty) _goToPage(3);
+  }
+
+  /// Called from page 3 (Signal K). Saves vessel name + SK then finishes.
   Future<void> _wizardFinish() async {
-    final name = _vesselNameCtrl.text.trim();
-    if (name.isEmpty) return;
+    final vesselName = _vesselNameCtrl.text.trim();
+    if (vesselName.isEmpty) return;
 
     setState(() {
       _wizardConnecting = true;
@@ -255,7 +284,7 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
 
     // Save vessel name
     await ref.read(settingsProvider.notifier).update(
-          ref.read(settingsProvider).copyWith(vesselName: name),
+          ref.read(settingsProvider).copyWith(vesselName: vesselName),
         );
 
     // Connect SK if configured in wizard
@@ -272,7 +301,7 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
           );
       try {
         await _connectSK(ref.read(settingsProvider));
-      } catch (e) {
+      } catch (_) {
         if (mounted) {
           setState(() {
             _wizardConnecting = false;
@@ -386,6 +415,9 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
   }
 
   Widget _buildWizard() {
+    // When peers are found: Welcome(0) + DeviceName(1) = 2 dots total.
+    // When no peers: Welcome(0) + DeviceName(1) + VesselName(2) + SK(3) = 4 dots.
+    final totalDots = _peersFound > 0 ? 2 : 4;
     return Column(
       key: const ValueKey('wizard'),
       children: [
@@ -394,7 +426,7 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
           padding: const EdgeInsets.symmetric(vertical: 20),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(3, (i) {
+            children: List.generate(totalDots, (i) {
               final active = i == _wizardPage;
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
@@ -416,13 +448,20 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
             physics: const NeverScrollableScrollPhysics(),
             onPageChanged: (i) => setState(() => _wizardPage = i),
             children: [
+              // Page 0: Welcome
               _WizardPageWelcome(onNext: _wizardNext),
+              // Page 1: Device Name
+              _WizardPageDeviceName(
+                controller: _deviceNameCtrl,
+                peersFound: _peersFound,
+                onSave: _wizardSaveDeviceName,
+              ),
+              // Page 2: Vessel Name (only reached if no peers)
               _WizardPageVessel(
                 controller: _vesselNameCtrl,
-                onNext: () {
-                  if (_vesselNameCtrl.text.trim().isNotEmpty) _wizardNext();
-                },
+                onNext: _wizardNextVessel,
               ),
+              // Page 3: Signal K (only reached if no peers)
               _WizardPageSignalK(
                 hostCtrl: _skHostCtrl,
                 portCtrl: _skPortCtrl,
@@ -539,6 +578,78 @@ class _WizardPageWelcome extends StatelessWidget {
             ),
             child: const Text('开始配置',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WizardPageDeviceName extends StatelessWidget {
+  final TextEditingController controller;
+  final int peersFound;
+  final VoidCallback onSave;
+
+  const _WizardPageDeviceName({
+    required this.controller,
+    required this.peersFound,
+    required this.onSave,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 40),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.smartphone_rounded,
+              size: 48, color: AppColors.cyan),
+          const SizedBox(height: 20),
+          const Text(
+            '给这台设备起个名字',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            peersFound > 0
+                ? '发现 $peersFound 台设备在同一网络。\n输入名称后将自动加入。'
+                : '名称将显示在局域网其他设备上，便于识别',
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 32),
+          TextField(
+            controller: controller,
+            autofocus: true,
+            style: const TextStyle(
+                color: AppColors.textPrimary, fontSize: 18),
+            decoration: const InputDecoration(
+              hintText: '例如：舵手平板',
+              hintStyle: TextStyle(color: AppColors.textMuted),
+              prefixIcon: Icon(Icons.badge_rounded,
+                  color: AppColors.textMuted),
+            ),
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => onSave(),
+          ),
+          const SizedBox(height: 40),
+          ElevatedButton(
+            onPressed: onSave,
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              backgroundColor: AppColors.cyan,
+              foregroundColor: AppColors.background,
+            ),
+            child: Text(
+              peersFound > 0 ? '加入局域网' : '继续',
+              style: const TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),

@@ -546,7 +546,7 @@ class LanSyncService {
     _conn.setLanSyncStatus(ConnectionStatus.connecting);
     await _platform.startHost(
       settings.hostPort,
-      settings.vesselName,
+      settings.deviceName,
       deviceId: ownDeviceId,
       getStateVersionMs: () =>
           _ref.read(deviceProvider).stateVersion.millisecondsSinceEpoch,

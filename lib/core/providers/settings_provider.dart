@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 enum DeviceRole { standalone, host, client }
 
 class AppSettings {
+  final String deviceName;  // this device's display name (not synced to peers)
   final String vesselName;
   final String signalKUrl; // legacy; use signalKHost+signalKPort for new setups
   final String signalKHost; // e.g. 192.168.1.10 or signalk.local
@@ -20,6 +21,7 @@ class AppSettings {
   final List<String> tileOrder; // home screen tile ordering
 
   const AppSettings({
+    this.deviceName = '',
     this.vesselName = 'My Vessel',
     this.signalKUrl = '',
     this.signalKHost = '',
@@ -69,6 +71,7 @@ class AppSettings {
   }
 
   AppSettings copyWith({
+    String? deviceName,
     String? vesselName,
     String? signalKUrl,
     String? signalKHost,
@@ -84,6 +87,7 @@ class AppSettings {
     List<String>? tileOrder,
   }) =>
       AppSettings(
+        deviceName: deviceName ?? this.deviceName,
         vesselName: vesselName ?? this.vesselName,
         signalKUrl: signalKUrl ?? this.signalKUrl,
         signalKHost: signalKHost ?? this.signalKHost,
@@ -101,6 +105,7 @@ class AppSettings {
 }
 
 class SettingsNotifier extends Notifier<AppSettings> {
+  static const _keyDeviceName     = 'device_name';
   static const _keyVesselName     = 'vessel_name';
   static const _keySignalKUrl     = 'signalk_url';
   static const _keySignalKHost    = 'signalk_host';
@@ -128,6 +133,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
     final prefs = await SharedPreferences.getInstance();
     final tileOrderStr = prefs.getString(_keyTileOrder) ?? '';
     state = AppSettings(
+      deviceName:      prefs.getString(_keyDeviceName)  ?? '',
       vesselName:      prefs.getString(_keyVesselName)  ?? 'My Vessel',
       signalKUrl:      prefs.getString(_keySignalKUrl)  ?? '',
       signalKHost:     prefs.getString(_keySignalKHost) ?? '',
@@ -152,6 +158,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> update(AppSettings updated) async {
     state = updated;
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyDeviceName,    updated.deviceName);
     await prefs.setString(_keyVesselName,    updated.vesselName);
     await prefs.setString(_keySignalKUrl,    updated.signalKUrl);
     await prefs.setString(_keySignalKHost,   updated.signalKHost);

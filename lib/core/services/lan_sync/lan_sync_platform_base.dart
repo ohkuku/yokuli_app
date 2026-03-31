@@ -63,7 +63,7 @@ abstract class LanSyncPlatform {
   // --- Host operations (native only) ---
   Future<void> startHost(
     int port,
-    String vesselName, {
+    String deviceName, {
     String deviceId,
     int Function()? getStateVersionMs,
   });

@@ -46,7 +46,7 @@ class SyncHost {
 
   Future<void> start({
     required int port,
-    required String vesselName,
+    required String deviceName,
     VesselState Function()? getState,
     /// Permanent device UUID — included in UDP announcements.
     String deviceId = '',
@@ -94,12 +94,12 @@ class SyncHost {
     });
 
     // UDP discovery broadcast every 5 seconds (dynamic — includes current sv)
-    await _startUdpDiscovery(port, vesselName, deviceId, getStateVersionMs);
+    await _startUdpDiscovery(port, deviceName, deviceId, getStateVersionMs);
   }
 
   Future<void> _startUdpDiscovery(
     int port,
-    String vesselName,
+    String deviceName,
     String deviceId,
     int Function()? getStateVersionMs,
   ) async {
@@ -113,7 +113,7 @@ class SyncHost {
         final sv = getStateVersionMs?.call() ?? 0;
         final data = utf8.encode(jsonEncode({
           'type': serviceType,
-          'name': vesselName,
+          'name': deviceName.isNotEmpty ? deviceName : deviceId.substring(0, 8),
           'host': localIp,
           'port': port,
           'ws': 'ws://$localIp:$port',
