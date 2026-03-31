@@ -2,6 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 enum ConnectionStatus { disconnected, connecting, connected, error }
 
+/// Sentinel used by [AppConnectionState.copyWith] so callers can explicitly
+/// pass `null` to CLEAR an error field (vs. omitting the argument to keep it).
+const _keepValue = Object();
+
 class AppConnectionState {
   final ConnectionStatus signalK;
   final String? signalKError;
@@ -17,18 +21,23 @@ class AppConnectionState {
     this.peerCount = 0,
   });
 
+  /// [signalKError] / [lanSyncError]: omit → keep existing; pass `null` → clear.
   AppConnectionState copyWith({
     ConnectionStatus? signalK,
-    String? signalKError,
+    Object? signalKError = _keepValue,
     ConnectionStatus? lanSync,
-    String? lanSyncError,
+    Object? lanSyncError = _keepValue,
     int? peerCount,
   }) =>
       AppConnectionState(
         signalK: signalK ?? this.signalK,
-        signalKError: signalKError ?? this.signalKError,
+        signalKError: identical(signalKError, _keepValue)
+            ? this.signalKError
+            : signalKError as String?,
         lanSync: lanSync ?? this.lanSync,
-        lanSyncError: lanSyncError ?? this.lanSyncError,
+        lanSyncError: identical(lanSyncError, _keepValue)
+            ? this.lanSyncError
+            : lanSyncError as String?,
         peerCount: peerCount ?? this.peerCount,
       );
 
@@ -41,11 +50,20 @@ class ConnectionNotifier extends Notifier<AppConnectionState> {
   AppConnectionState build() => const AppConnectionState();
 
   void setSignalKStatus(ConnectionStatus status, {String? error}) {
-    state = state.copyWith(signalK: status, signalKError: error);
+    // Automatically clear any previous error when leaving the error state.
+    final clearError = status != ConnectionStatus.error;
+    state = state.copyWith(
+      signalK: status,
+      signalKError: clearError ? null : error,
+    );
   }
 
   void setLanSyncStatus(ConnectionStatus status, {String? error}) {
-    state = state.copyWith(lanSync: status, lanSyncError: error);
+    final clearError = status != ConnectionStatus.error;
+    state = state.copyWith(
+      lanSync: status,
+      lanSyncError: clearError ? null : error,
+    );
   }
 
   void setPeerCount(int count) {

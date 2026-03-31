@@ -110,8 +110,14 @@ class TaskNotifier extends Notifier<TaskState> {
     required List<Map<String, dynamic>> templates,
     required List<Map<String, dynamic>> instances,
   }) async {
+    final imported = templates.map(TaskTemplate.fromJson).toList();
+    // Built-in templates must always be present; only import custom ones.
+    final allTemplates = [
+      ...TaskTemplate.builtInTemplates,
+      ...imported.where((t) => !t.isBuiltIn),
+    ];
     state = TaskState(
-      templates: templates.map(TaskTemplate.fromJson).toList(),
+      templates: allTemplates,
       instances: instances.map(TaskInstance.fromJson).toList(),
     );
     await save();

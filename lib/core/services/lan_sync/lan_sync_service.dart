@@ -126,8 +126,10 @@ class LanSyncService {
     _platform.onSkCredentialsReceived = _onSkCredentialsReceived;
     _platform.onSettingsSyncReceived = _onSettingsSyncReceived;
     _platform.onClientConnectionChanged = (connected) {
+      // Use disconnected (not connecting) when the link drops — connecting is
+      // only set right before a connection attempt is made.
       _conn.setLanSyncStatus(
-        connected ? ConnectionStatus.connected : ConnectionStatus.connecting,
+        connected ? ConnectionStatus.connected : ConnectionStatus.disconnected,
       );
       if (connected) {
         // As client: send sync_hello to server so it can push missing records to us
@@ -445,6 +447,9 @@ class LanSyncService {
 
     // Record before connecting to prevent races / duplicate calls.
     _peerSyncedVersions[peer.deviceId] = peer.stateVersionMs;
+
+    // Mark connecting before the attempt so the UI shows the right state.
+    _conn.setLanSyncStatus(ConnectionStatus.connecting);
 
     // Connect — sync_hello exchange will happen automatically on connection
     _platform.connectAsClient(peer.ws);
