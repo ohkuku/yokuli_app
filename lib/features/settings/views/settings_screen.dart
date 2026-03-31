@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
@@ -10,9 +9,6 @@ import '../../../core/providers/locale_provider.dart';
 import '../../../core/providers/device_provider.dart' show DeviceInfo, deviceProvider;
 import '../../../core/services/lan_sync/lan_sync_service.dart';
 import '../../../core/services/lan_sync/lan_sync_platform_base.dart' show DiscoveredHost;
-import '../../../core/services/data_export_service.dart';
-import '../../../core/services/signalk/signalk_auth.dart';
-import '../../../core/services/signalk/signalk_client.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart' show syncCursorStatusProvider;
 import '../../../core/sync/sync_cursor_store.dart' show SyncCollections;
 
@@ -27,16 +23,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late TextEditingController _nameCtrl;
   late TextEditingController _hostIpCtrl;
   late TextEditingController _hostPortCtrl;
-  late TextEditingController _skHostCtrl;
-  late TextEditingController _skPortCtrl;
-  late TextEditingController _skUserCtrl;
-  late TextEditingController _skPassCtrl;
 
   List<DiscoveredHost> _scannedHosts = [];
   bool _scanning = false;
-  bool _exporting = false;
-  bool _skConnecting = false;
-  String? _skConnectError;
   String? _localIp;
 
   @override
@@ -46,10 +35,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _nameCtrl = TextEditingController(text: s.vesselName);
     _hostIpCtrl = TextEditingController(text: s.hostIp);
     _hostPortCtrl = TextEditingController(text: s.hostPort.toString());
-    _skHostCtrl = TextEditingController(text: s.signalKHost);
-    _skPortCtrl = TextEditingController(text: s.signalKPort.toString());
-    _skUserCtrl = TextEditingController(text: s.signalKUsername);
-    _skPassCtrl = TextEditingController(text: s.signalKPassword);
     if (!kIsWeb) _loadLocalIp();
   }
 
@@ -58,10 +43,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _nameCtrl.dispose();
     _hostIpCtrl.dispose();
     _hostPortCtrl.dispose();
-    _skHostCtrl.dispose();
-    _skPortCtrl.dispose();
-    _skUserCtrl.dispose();
-    _skPassCtrl.dispose();
     super.dispose();
   }
 
@@ -99,145 +80,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final s = ref.read(stringsProvider);
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(s.settingsSaved)));
-    }
-  }
-
-  Future<void> _exportData() async {
-    if (kIsWeb) {
-      final jsonStr = ref.read(dataExportServiceProvider).exportAsJsonString();
-      if (!mounted) return;
-      final s = ref.read(stringsProvider);
-      await showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          title: Text(s.exportBackup),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '复制以下 JSON 以保存备份。',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                height: 150,
-                decoration: BoxDecoration(
-                  color: AppColors.cardBg,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(8),
-                  child: SelectableText(
-                    jsonStr,
-                    style: const TextStyle(
-                        color: AppColors.textSecondary, fontSize: 10),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: jsonStr));
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(s.copy == '复制' ? '已复制到剪贴板' : 'Copied to clipboard')),
-                );
-              },
-              child: Text(s.copy),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(s.close),
-            ),
-          ],
-        ),
-      );
-      return;
-    }
-
-    setState(() => _exporting = true);
-    try {
-      await ref.read(dataExportServiceProvider).exportAndShare();
-    } catch (e) {
-      if (mounted) {
-        final s = ref.read(stringsProvider);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${s.exportBackup} failed: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _exporting = false);
-    }
-  }
-
-  Future<void> _importData() async {
-    final s = ref.read(stringsProvider);
-    final ctrl = TextEditingController();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text(s.importBackup),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              s.importBackup == '导入备份'
-                  ? '这将替换所有本地数据。请先导出以保留备份。'
-                  : 'This will REPLACE all local data. Export first to keep a backup.',
-              style: const TextStyle(
-                  color: AppColors.warning,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              maxLines: 8,
-              decoration: InputDecoration(
-                hintText: s.importBackup == '导入备份' ? '在此粘贴 JSON 备份…' : 'Paste JSON backup here…',
-                border: OutlineInputBorder(),
-              ),
-              style: const TextStyle(fontSize: 12),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(s.cancel),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(s.importBackup),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-    final json = ctrl.text.trim();
-    if (json.isEmpty) return;
-
-    try {
-      await ref.read(dataExportServiceProvider).importFromJsonString(json);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(s.importSuccess)),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${s.importSuccess == '导入成功' ? '导入失败' : 'Import failed'}: $e')),
-        );
-      }
     }
   }
 
@@ -288,55 +130,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('已连接到 ${host.name}')),
       );
-    }
-  }
-
-  Future<void> _saveSkSettings() async {
-    final host = _skHostCtrl.text.trim();
-    final port = int.tryParse(_skPortCtrl.text.trim()) ?? 3000;
-    final username = _skUserCtrl.text.trim();
-    final password = _skPassCtrl.text;
-    await ref.read(settingsProvider.notifier).update(
-          ref.read(settingsProvider).copyWith(
-                signalKHost: host,
-                signalKPort: port,
-                signalKUsername: username,
-                signalKPassword: password,
-              ),
-        );
-  }
-
-  Future<void> _connectSK() async {
-    await _saveSkSettings();
-    final settings = ref.read(settingsProvider);
-    final url = settings.effectiveSignalKUrl;
-    if (url.isEmpty) return;
-
-    setState(() {
-      _skConnecting = true;
-      _skConnectError = null;
-    });
-    try {
-      String? token;
-      if (settings.hasCredentials) {
-        try {
-          token = await SignalKAuth.login(
-            url,
-            settings.signalKUsername,
-            settings.signalKPassword,
-          );
-        } catch (_) {}
-      }
-      await ref.read(signalKClientProvider).connect(url, token: token);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Signal K 已连接')),
-        );
-      }
-    } catch (e) {
-      if (mounted) setState(() => _skConnectError = '连接失败：$e');
-    } finally {
-      if (mounted) setState(() => _skConnecting = false);
     }
   }
 
@@ -487,98 +280,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               textInputAction: TextInputAction.done,
             ),
             const SizedBox(height: 24),
-
-            // --- Signal K ---
-            const SizedBox(height: 24),
-            _SectionHeader('SIGNAL K'),
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: TextField(
-                    controller: _skHostCtrl,
-                    decoration: const InputDecoration(
-                      labelText: '主机 / 地址',
-                      hintText: '192.168.1.10',
-                      prefixIcon: Icon(Icons.dns_rounded),
-                    ),
-                    keyboardType: TextInputType.url,
-                    autocorrect: false,
-                    textInputAction: TextInputAction.next,
-                    onEditingComplete: _saveSkSettings,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  width: 90,
-                  child: TextField(
-                    controller: _skPortCtrl,
-                    decoration: const InputDecoration(labelText: '端口'),
-                    keyboardType: TextInputType.number,
-                    textInputAction: TextInputAction.next,
-                    onEditingComplete: _saveSkSettings,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _skUserCtrl,
-              decoration: const InputDecoration(
-                labelText: '用户名',
-                prefixIcon: Icon(Icons.person_rounded),
-              ),
-              autocorrect: false,
-              textInputAction: TextInputAction.next,
-              onEditingComplete: _saveSkSettings,
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _skPassCtrl,
-              decoration: const InputDecoration(
-                labelText: '密码',
-                prefixIcon: Icon(Icons.lock_rounded),
-              ),
-              obscureText: true,
-              textInputAction: TextInputAction.done,
-              onEditingComplete: _saveSkSettings,
-            ),
-            if (_skConnectError != null) ...[
-              const SizedBox(height: 6),
-              Row(children: [
-                const Icon(Icons.error_outline_rounded,
-                    size: 14, color: AppColors.danger),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(_skConnectError!,
-                      style: const TextStyle(
-                          color: AppColors.danger, fontSize: 12)),
-                ),
-              ]),
-            ],
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _skConnecting ? null : _connectSK,
-                icon: _skConnecting
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: AppColors.background),
-                      )
-                    : const Icon(Icons.link_rounded),
-                label: Text(_skConnecting ? '连接中…' : '连接 Signal K'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.cyan,
-                  foregroundColor: AppColors.background,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
 
             // --- LAN Sync ---
             _SectionHeader(s.lanSync.toUpperCase()),
@@ -745,36 +446,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     .update(settings.copyWith(keepScreenOn: v));
                 ref.read(lanSyncServiceProvider).broadcastSettings();
               },
-            ),
-            const SizedBox(height: 24),
-
-            // --- Data Management ---
-            _SectionHeader(s.sectionDataMgmt),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _exporting ? null : _exportData,
-                    icon: _exporting
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.upload_rounded),
-                    label: Text(_exporting ? 'Exporting…' : s.exportBackup),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _importData,
-                    icon: const Icon(Icons.download_rounded),
-                    label: Text(s.importBackup),
-                  ),
-                ),
-              ],
             ),
             const SizedBox(height: 24),
 
