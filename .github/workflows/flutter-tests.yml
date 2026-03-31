@@ -5,7 +5,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  analyze:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,11 +20,58 @@ jobs:
         run: flutter pub get
 
       - name: Static analysis
-        run: flutter analyze
+        run: flutter analyze | tee analyze.log
+
+      - name: Upload analyze log
+        uses: actions/upload-artifact@v4
+        with:
+          name: analyze-log
+          path: analyze.log
+
+  unit_widget_tests:
+    needs: analyze
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
 
       - name: Unit and widget tests
-        run: flutter test
+        run: flutter test -r expanded | tee unit_widget_test.log
+
+      - name: Upload unit/widget log
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-widget-test-log
+          path: unit_widget_test.log
+
+  integration_tests:
+    needs: analyze
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
 
       - name: Integration tests
-        run: flutter test integration_test
+        run: flutter test integration_test -r expanded | tee integration_test.log
 
+      - name: Upload integration log
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-log
+          path: integration_test.log
