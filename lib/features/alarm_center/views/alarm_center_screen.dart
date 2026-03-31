@@ -77,6 +77,10 @@ String _actionLabel(AlarmActionType type) {
       return '已暂停';
     case AlarmActionType.cleared:
       return '已清除';
+    case AlarmActionType.autoClear:
+      return '自动恢复';
+    case AlarmActionType.reactivate:
+      return '重新激活';
   }
 }
 
