@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -93,7 +93,12 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
   Future<void> _runInit() async {
     // Step 0: Load local data
     _setStep('加载本地数据…');
-    await _loadLocalData();
+    try {
+      await _loadLocalData().timeout(const Duration(seconds: 30));
+    } catch (e) {
+      // Non-fatal: log and continue — defaults are already in providers.
+      debugPrint('[Startup] _loadLocalData error: $e');
+    }
     _markStep(0);
 
     // Step 1: Start LAN sync (always on native)
@@ -159,33 +164,41 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
   }
 
   Future<void> _loadLocalData() async {
-    await TelemetryService.instance.init();
-    await ref.read(settingsProvider.notifier).load();
-    await ref.read(safetyProvider.notifier).load();
+    Future<void> safe(Future<void> Function() fn) async {
+      try {
+        await fn().timeout(const Duration(seconds: 10));
+      } catch (e) {
+        debugPrint('[Startup] step failed: $e');
+      }
+    }
+
+    await safe(() => TelemetryService.instance.init());
+    await safe(() => ref.read(settingsProvider.notifier).load());
+    await safe(() => ref.read(safetyProvider.notifier).load());
     ref.read(deviceProvider);
-    await ref.read(localeProvider.notifier).init();
+    await safe(() => ref.read(localeProvider.notifier).init());
     // Backfill sourceDeviceId on any legacy records missing it
     final deviceId = ref.read(deviceProvider).deviceId;
-    await SyncMigration.run(deviceId);
+    await safe(() => SyncMigration.run(deviceId));
 
-    // Load new alarm + notification providers
-    await ref.read(alarmRuleProvider.notifier).load();
-    await ref.read(notifyChannelProvider.notifier).load();
-    await ref.read(alarmInstanceProvider.notifier).load();
-    await ref.read(alarmActionProvider.notifier).load();
-    await ref.read(notificationProvider.notifier).load();
-    await ref.read(notificationReceiptProvider.notifier).load();
+    // Load alarm + notification providers
+    await safe(() => ref.read(alarmRuleProvider.notifier).load());
+    await safe(() => ref.read(notifyChannelProvider.notifier).load());
+    await safe(() => ref.read(alarmInstanceProvider.notifier).load());
+    await safe(() => ref.read(alarmActionProvider.notifier).load());
+    await safe(() => ref.read(notificationProvider.notifier).load());
+    await safe(() => ref.read(notificationReceiptProvider.notifier).load());
 
     // Load business data
-    await Future.wait([
-      ref.read(voyageProvider.notifier).load(),
-      ref.read(taskProvider.notifier).load(),
-      ref.read(issueProvider.notifier).load(),
-      ref.read(logProvider.notifier).load(),
-    ]);
+    await safe(() => Future.wait([
+          ref.read(voyageProvider.notifier).load(),
+          ref.read(taskProvider.notifier).load(),
+          ref.read(issueProvider.notifier).load(),
+          ref.read(logProvider.notifier).load(),
+        ]));
 
     // Load MOB provider (rules + history)
-    await ref.read(mobProvider.notifier).load();
+    await safe(() => ref.read(mobProvider.notifier).load());
 
     // Start alarm evaluator (watches vessel state and fires alarm instances)
     ref.read(alarmEvaluatorProvider).start();
