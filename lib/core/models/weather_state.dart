@@ -53,7 +53,7 @@ String descriptionForCode(int code) {
 
 IconData iconForCode(int code) {
   if (code == 0) return Icons.wb_sunny_rounded;
-  if (code <= 2) return Icons.partly_cloudy_day_rounded;
+  if (code <= 2) return Icons.wb_cloudy_rounded;
   if (code == 3) return Icons.cloud_rounded;
   if (code == 45 || code == 48) return Icons.foggy;
   if (code >= 51 && code <= 57) return Icons.grain_rounded;

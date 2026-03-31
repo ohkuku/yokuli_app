@@ -105,10 +105,8 @@ class WeatherNotifier extends Notifier<WeatherState> {
         return null;
       }
       final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.low,
-          timeLimit: Duration(seconds: 8),
-        ),
+        desiredAccuracy: LocationAccuracy.low,
+        timeLimit: const Duration(seconds: 8),
       );
       return _LatLon(pos.latitude, pos.longitude);
     } catch (_) {
