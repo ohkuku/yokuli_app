@@ -13,7 +13,6 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/providers/locale_provider.dart';
 import '../../../core/providers/alarm_instance_provider.dart';
-import '../../../core/providers/notification_provider.dart';
 import '../../../core/providers/kanban_provider.dart';
 import '../../../features/mob/providers/mob_provider.dart';
 import '../../../core/services/update/update_dialog.dart';
@@ -358,9 +357,6 @@ class _Header extends ConsumerWidget {
                   : 'LAN',
             ),
             const SizedBox(width: 8),
-            // Notification bell
-            _NotificationBell(),
-            const SizedBox(width: 8),
             // Arrange tiles button
             GestureDetector(
               onTap: onArrange,
@@ -377,71 +373,6 @@ class _Header extends ConsumerWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Notification bell with badge
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _NotificationBell extends ConsumerWidget {
-  const _NotificationBell();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final count = ref.watch(unreadNotificationCountProvider);
-
-    return GestureDetector(
-      onTap: () => context.push('/notifications'),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              color: count > 0
-                  ? AppColors.danger.withOpacity(0.15)
-                  : Colors.white.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                  color: count > 0
-                      ? AppColors.danger.withOpacity(0.35)
-                      : Colors.white.withOpacity(0.10)),
-            ),
-            child: Icon(
-              count > 0
-                  ? Icons.notifications_active_rounded
-                  : Icons.notifications_rounded,
-              size: 14,
-              color: count > 0
-                  ? AppColors.danger
-                  : Colors.white.withOpacity(0.4),
-            ),
-          ),
-          if (count > 0)
-            Positioned(
-              top: -4,
-              right: -4,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  color: AppColors.danger,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.background, width: 1),
-                ),
-                child: Text(
-                  '$count',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800),
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }

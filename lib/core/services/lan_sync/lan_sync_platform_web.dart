@@ -157,12 +157,6 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
         case 'alarm_action_sync':
           if (data != null) onAlarmActionSync?.call(data);
           break;
-        case 'notification_sync':
-          if (data != null) onNotificationSync?.call(data);
-          break;
-        case 'notification_receipt_sync':
-          if (data != null) onNotifReceiptSync?.call(data);
-          break;
         case 'mob_rule_sync':
           if (data != null) onMobRuleSync?.call(data);
           break;

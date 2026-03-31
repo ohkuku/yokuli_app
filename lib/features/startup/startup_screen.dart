@@ -15,7 +15,6 @@ import '../../core/providers/log_provider.dart';
 import '../../core/providers/alarm_rule_provider.dart';
 import '../../core/providers/alarm_instance_provider.dart';
 import '../../core/providers/alarm_action_provider.dart';
-import '../../core/providers/notification_provider.dart';
 import '../../core/services/alarm_evaluator.dart';
 import '../../core/services/signalk/signalk_auth.dart';
 import '../../core/services/signalk/signalk_client.dart';
@@ -181,14 +180,11 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     final deviceId = ref.read(deviceProvider).deviceId;
     await safe(() => SyncMigration.run(deviceId));
 
-    // Load alarm + notification providers
+    // Load alarm providers
     await safe(() => ref.read(alarmRuleProvider.notifier).load());
     await safe(() => ref.read(notifyChannelProvider.notifier).load());
     await safe(() => ref.read(alarmInstanceProvider.notifier).load());
     await safe(() => ref.read(alarmActionProvider.notifier).load());
-    await safe(() => ref.read(notificationProvider.notifier).load());
-    await safe(() => ref.read(notificationReceiptProvider.notifier).load());
-
     // Load business data
     await safe(() => Future.wait([
           ref.read(voyageProvider.notifier).load(),
@@ -245,7 +241,7 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     });
     ref.read(signalKClientProvider).onRawDelta = mobWatcher.onDelta;
 
-    // Wire new alarm rule / instance / action / notification sync callbacks
+    // Wire alarm rule / instance / action sync callbacks
     lanSync.onMobRuleSync = (data) =>
         ref.read(mobProvider.notifier).applyRuleRemote(data);
     lanSync.onAlarmRuleSync = (data) =>
@@ -254,10 +250,6 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
         ref.read(alarmInstanceProvider.notifier).upsertRemote(data);
     lanSync.onAlarmActionSync = (data) =>
         ref.read(alarmActionProvider.notifier).applyRemote(data);
-    lanSync.onNotificationSync = (data) =>
-        ref.read(notificationProvider.notifier).applyRemote(data);
-    lanSync.onNotifReceiptSync = (data) =>
-        ref.read(notificationReceiptProvider.notifier).applyRemote(data);
   }
 
   Future<void> _connectSK(AppSettings settings) async {

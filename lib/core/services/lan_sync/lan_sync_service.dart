@@ -21,7 +21,6 @@ import '../../providers/alarm_provider.dart';
 import '../../providers/alarm_rule_provider.dart';
 import '../../providers/alarm_instance_provider.dart';
 import '../../providers/alarm_action_provider.dart';
-import '../../providers/notification_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/issue_provider.dart';
 import '../../providers/voyage_provider.dart';
@@ -120,12 +119,6 @@ class LanSyncService {
   /// Called when an alarm action record arrives from a remote peer.
   void Function(Map<String, dynamic>)? onAlarmActionSync;
 
-  /// Called when a notification record arrives from a remote peer.
-  void Function(Map<String, dynamic>)? onNotificationSync;
-
-  /// Called when a notification receipt record arrives from a remote peer.
-  void Function(Map<String, dynamic>)? onNotifReceiptSync;
-
   /// Called when a mob_rule_sync message arrives from a remote peer.
   void Function(Map<String, dynamic>)? onMobRuleSync;
 
@@ -181,8 +174,6 @@ class LanSyncService {
     _platform.onAlarmRuleSync = (data) => onAlarmRuleSync?.call(data);
     _platform.onAlarmInstanceSync = (data) => onAlarmInstanceSync?.call(data);
     _platform.onAlarmActionSync = (data) => onAlarmActionSync?.call(data);
-    _platform.onNotificationSync = (data) => onNotificationSync?.call(data);
-    _platform.onNotifReceiptSync = (data) => onNotifReceiptSync?.call(data);
     _platform.onMobRuleSync = (data) => onMobRuleSync?.call(data);
     _platform.onNotifyChannelSyncReceived = (data) => onNotifyChannelReceived?.call(data);
     _platform.onVesselStatePush = (state) {
@@ -351,10 +342,6 @@ class LanSyncService {
         return _ref.read(alarmInstanceProvider).map((i) => i.toJson()).toList();
       case SyncCollections.alarmActions:
         return _ref.read(alarmActionProvider).map((a) => a.toJson()).toList();
-      case SyncCollections.notifications:
-        return _ref.read(notificationProvider).map((n) => n.toJson()).toList();
-      case SyncCollections.notifReceipts:
-        return _ref.read(notificationReceiptProvider).map((r) => r.toJson()).toList();
       default:
         return [];
     }
@@ -426,18 +413,6 @@ class LanSyncService {
         for (final r in records) {
           await _ref.read(alarmActionProvider.notifier).applyRemote(r);
         }
-        break;
-      case SyncCollections.notifications:
-        for (final r in records) {
-          await _ref.read(notificationProvider.notifier).applyRemote(r);
-        }
-        break;
-      case SyncCollections.notifReceipts:
-        for (final r in records) {
-          await _ref.read(notificationReceiptProvider.notifier).applyRemote(r);
-        }
-        break;
-      default:
         break;
     }
 
@@ -733,14 +708,6 @@ class LanSyncService {
 
   void broadcastAlarmAction(Map<String, dynamic> data) {
     broadcastJson({'type': 'alarm_action_sync', 'data': data});
-  }
-
-  void broadcastNotification(Map<String, dynamic> data) {
-    broadcastJson({'type': 'notification_sync', 'data': data});
-  }
-
-  void broadcastNotifReceipt(Map<String, dynamic> data) {
-    broadcastJson({'type': 'notification_receipt_sync', 'data': data});
   }
 
   // ---------------------------------------------------------------------------

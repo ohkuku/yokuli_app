@@ -38,8 +38,6 @@ abstract class LanSyncPlatform {
   void Function(Map<String, dynamic> data)? onAlarmRuleSync;
   void Function(Map<String, dynamic> data)? onAlarmInstanceSync;
   void Function(Map<String, dynamic> data)? onAlarmActionSync;
-  void Function(Map<String, dynamic> data)? onNotificationSync;
-  void Function(Map<String, dynamic> data)? onNotifReceiptSync;
   void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
   void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
   /// Called when a mob_rule_sync message arrives (add/update/delete a MOB trigger rule).

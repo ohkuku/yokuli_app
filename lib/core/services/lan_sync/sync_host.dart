@@ -38,8 +38,6 @@ class SyncHost {
   void Function(Map<String, dynamic> data)? onAlarmRuleSync;
   void Function(Map<String, dynamic> data)? onAlarmInstanceSync;
   void Function(Map<String, dynamic> data)? onAlarmActionSync;
-  void Function(Map<String, dynamic> data)? onNotificationSync;
-  void Function(Map<String, dynamic> data)? onNotifReceiptSync;
   void Function(Map<String, dynamic> data)? onMobRuleSync;
   void Function(Map<String, dynamic> data)? onNotifyChannelSync;
   void Function()? onNetworkJoinSync;
@@ -228,18 +226,6 @@ class SyncHost {
         case 'alarm_action_sync':
           if (data != null) {
             onAlarmActionSync?.call(data);
-            broadcastJson(json);
-          }
-          break;
-        case 'notification_sync':
-          if (data != null) {
-            onNotificationSync?.call(data);
-            broadcastJson(json);
-          }
-          break;
-        case 'notification_receipt_sync':
-          if (data != null) {
-            onNotifReceiptSync?.call(data);
             broadcastJson(json);
           }
           break;

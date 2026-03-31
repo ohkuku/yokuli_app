@@ -58,8 +58,6 @@ class SyncClient {
   void Function(Map<String, dynamic> data)? onAlarmRuleSync;
   void Function(Map<String, dynamic> data)? onAlarmInstanceSync;
   void Function(Map<String, dynamic> data)? onAlarmActionSync;
-  void Function(Map<String, dynamic> data)? onNotificationSync;
-  void Function(Map<String, dynamic> data)? onNotifReceiptSync;
   void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
   void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
   void Function(Map<String, dynamic> data)? onMobRuleSync;
@@ -206,12 +204,6 @@ class SyncClient {
           break;
         case 'alarm_action_sync':
           if (data != null) onAlarmActionSync?.call(data);
-          break;
-        case 'notification_sync':
-          if (data != null) onNotificationSync?.call(data);
-          break;
-        case 'notification_receipt_sync':
-          if (data != null) onNotifReceiptSync?.call(data);
           break;
         case 'sk_credentials':
           if (data != null) onSkCredentialsReceived?.call(data);

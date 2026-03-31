@@ -12,8 +12,6 @@ class SyncCollections {
   static const alarmRules    = 'alarm_rules';
   static const alarmInstances = 'alarm_instances';
   static const alarmActions  = 'alarm_actions';
-  static const notifications = 'notifications';
-  static const notifReceipts = 'notif_receipts';
 
   static const all = <String>[
     logs,
@@ -26,8 +24,6 @@ class SyncCollections {
     alarmRules,
     alarmInstances,
     alarmActions,
-    notifications,
-    notifReceipts,
   ];
 }
 

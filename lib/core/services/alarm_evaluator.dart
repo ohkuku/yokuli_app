@@ -5,13 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/alarm_action.dart';
 import '../models/alarm_instance.dart';
 import '../models/alarm_rule.dart';
-import '../models/notification_record.dart';
 import '../models/vessel_state.dart';
 import '../providers/alarm_action_provider.dart';
 import '../providers/alarm_instance_provider.dart';
 import '../providers/alarm_rule_provider.dart';
 import '../providers/device_provider.dart';
-import '../providers/notification_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/vessel_provider.dart';
 import '../utils/id_gen.dart';
@@ -21,8 +19,8 @@ import '../utils/id_gen.dart';
 // ---------------------------------------------------------------------------
 
 /// Watches live vessel state and evaluates all enabled [AlarmRule]s, creating
-/// [AlarmInstance] and [NotificationRecord] entries whenever a condition is
-/// met and the relevant cool-down / sustain / deduplication constraints allow.
+/// [AlarmInstance] entries whenever a condition is met and the relevant
+/// cool-down / sustain / deduplication constraints allow.
 class AlarmEvaluator {
   final Ref _ref;
 
@@ -239,22 +237,6 @@ class AlarmEvaluator {
     // Notifier returns null if deduplication/cooldown blocked the trigger.
     if (instance == null) return;
 
-    // Create an accompanying notification record.
-    final now = DateTime.now();
-    final notification = NotificationRecord(
-      id: generateId(),
-      type: NotificationType.alarm,
-      severity: _severityFromLevel(rule.level),
-      title: rule.name,
-      body: message,
-      linkedEntityId: instance.id,
-      createdAt: now,
-      updatedAt: now,
-      sourceDeviceId: deviceId,
-    );
-
-    _ref.read(notificationProvider.notifier).append(notification);
-
     // Clear sustain tracking now that the alarm has fired, so the sustain
     // window resets should the condition persist after this instance clears.
     _conditionFirstTrueAt.remove(rule.id);
@@ -325,18 +307,6 @@ class AlarmEvaluator {
         .toList()
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return settled.firstOrNull;
-  }
-
-  /// Maps an [AlarmLevel] to the equivalent [NotificationSeverity].
-  NotificationSeverity _severityFromLevel(AlarmLevel level) {
-    switch (level) {
-      case AlarmLevel.critical:
-        return NotificationSeverity.critical;
-      case AlarmLevel.warning:
-        return NotificationSeverity.warning;
-      case AlarmLevel.info:
-        return NotificationSeverity.info;
-    }
   }
 
   /// Returns the display unit string for a vessel metric key.
