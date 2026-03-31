@@ -46,6 +46,19 @@ final syncCursorStatusProvider = FutureProvider<Map<String, String>>((ref) async
   return SyncCursorStore.getAllCursors();
 });
 
+/// Pure policy helper for deciding whether we should try connecting to a peer.
+bool shouldAttemptPeerConnect({
+  required bool isSelf,
+  required bool isClientConnected,
+  required int nowMs,
+  required int lastAttemptMs,
+  int cooldownMs = 5000,
+}) {
+  if (isSelf) return false;
+  if (isClientConnected) return false;
+  return (nowMs - lastAttemptMs) >= cooldownMs;
+}
+
 /// Coordinates LAN sync using the platform-appropriate adapter.
 ///
 /// Native: every device runs a WS server automatically. UDP discovery finds
@@ -467,16 +480,17 @@ class LanSyncService {
     final peerKey = peer.deviceId.isNotEmpty ? peer.deviceId : peer.ws;
     final ownDeviceId = _ref.read(deviceProvider).deviceId;
 
-    // Never connect to ourselves.
-    if (peer.deviceId.isNotEmpty && peer.deviceId == ownDeviceId) return;
-
-    // Item-level LWW sync is cursor/timestamp driven. Device-level stateVersion
-    // should not gate whether we establish a sync channel.
-    if (_platform.isClientConnected) return;
-
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final lastAttemptMs = _peerSyncedVersions[peerKey] ?? 0;
-    if (nowMs - lastAttemptMs < 5000) return;
+    final isSelf = peer.deviceId.isNotEmpty && peer.deviceId == ownDeviceId;
+    if (!shouldAttemptPeerConnect(
+      isSelf: isSelf,
+      isClientConnected: _platform.isClientConnected,
+      nowMs: nowMs,
+      lastAttemptMs: lastAttemptMs,
+    )) {
+      return;
+    }
     _peerSyncedVersions[peerKey] = nowMs;
 
     // Mark connecting before the attempt so the UI shows the right state.
