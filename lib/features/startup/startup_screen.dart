@@ -171,13 +171,29 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     ]);
     ref.read(alarmDispatcherProvider);
 
-    // Wire LAN sync callbacks for MOB
+    // Wire LAN sync callbacks for MOB and alarm settings
     final lanSync = ref.read(lanSyncServiceProvider);
     lanSync.onMobAlert = (alert) {
       ref.read(safetyProvider.notifier).receiveMob(alert);
     };
     lanSync.onMobCancelReceived = () {
       ref.read(safetyProvider.notifier).receiveMobCancel();
+    };
+    // Provide active MOB state so host can push it to newly connected clients
+    lanSync.getActiveMob = () => ref.read(safetyProvider).activeMob;
+    // Provide alarm settings so host includes them in settings_sync
+    lanSync.getAlarmSettings = () {
+      final s = ref.read(safetyProvider);
+      return {
+        'depthAlarmEnabled': s.depthAlarmEnabled,
+        'depthAlarmThreshold': s.depthAlarmThreshold,
+        'speedAlarmEnabled': s.speedAlarmEnabled,
+        'speedAlarmThreshold': s.speedAlarmThreshold,
+      };
+    };
+    // Apply alarm settings received from a remote peer
+    lanSync.onAlarmSettingsReceived = (data) {
+      ref.read(safetyProvider.notifier).applyAlarmSync(data);
     };
   }
 

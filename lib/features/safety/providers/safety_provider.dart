@@ -148,7 +148,8 @@ class SafetyNotifier extends Notifier<SafetyState> {
       depthAlarmEnabled: enabled,
       depthAlarmThreshold: threshold,
     );
-    _save(); // fire-and-forget
+    _save();
+    _broadcastAlarmSettings();
   }
 
   void setSpeedAlarm({required bool enabled, double? threshold}) {
@@ -156,7 +157,35 @@ class SafetyNotifier extends Notifier<SafetyState> {
       speedAlarmEnabled: enabled,
       speedAlarmThreshold: threshold,
     );
-    _save(); // fire-and-forget
+    _save();
+    _broadcastAlarmSettings();
+  }
+
+  /// Apply alarm settings received from a remote peer (no re-broadcast).
+  void applyAlarmSync(Map<String, dynamic> data) {
+    final depthEnabled = data['depthAlarmEnabled'] as bool?;
+    final depthThreshold = (data['depthAlarmThreshold'] as num?)?.toDouble();
+    final speedEnabled = data['speedAlarmEnabled'] as bool?;
+    final speedThreshold = (data['speedAlarmThreshold'] as num?)?.toDouble();
+    state = state.copyWith(
+      depthAlarmEnabled: depthEnabled,
+      depthAlarmThreshold: depthThreshold,
+      speedAlarmEnabled: speedEnabled,
+      speedAlarmThreshold: speedThreshold,
+    );
+    _save();
+  }
+
+  void _broadcastAlarmSettings() {
+    ref.read(lanBroadcastProvider)?.call({
+      'type': 'settings_sync',
+      'data': {
+        'depthAlarmEnabled': state.depthAlarmEnabled,
+        'depthAlarmThreshold': state.depthAlarmThreshold,
+        'speedAlarmEnabled': state.speedAlarmEnabled,
+        'speedAlarmThreshold': state.speedAlarmThreshold,
+      },
+    });
   }
 
   void _checkAlarms(VesselState vessel) {

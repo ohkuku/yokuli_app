@@ -57,6 +57,15 @@ class LanSyncService {
   void Function(MobAlert alert)? onMobAlert;
   void Function()? onMobCancelReceived;
 
+  /// Called to get the currently active MOB alert (if any) to push to new clients.
+  MobAlert? Function()? getActiveMob;
+
+  /// Called to get alarm threshold settings to include in settings_sync.
+  Map<String, dynamic>? Function()? getAlarmSettings;
+
+  /// Called when alarm settings arrive from a remote peer.
+  void Function(Map<String, dynamic>)? onAlarmSettingsReceived;
+
   LanSyncService(this._ref) {
     _platform.onStateReceived = (state) {
       // Don't overwrite local SK data with LAN broadcasts — that causes
@@ -142,6 +151,34 @@ class LanSyncService {
   ) async {
     final peerCursors = _parseCursors(msg['cursors']);
     await _sendMissingRecords(peerCursors, reply);
+    // Push current settings, SK credentials, and active MOB to the new client
+    // so it becomes fully operational without any manual configuration.
+    _pushCurrentStateTo(reply);
+  }
+
+  /// Push current settings and MOB state to a specific client (e.g. on first connect).
+  void _pushCurrentStateTo(void Function(Map<String, dynamic>) sendTo) {
+    final s = _ref.read(settingsProvider);
+    final alarmData = getAlarmSettings?.call();
+    sendTo({
+      'type': 'settings_sync',
+      'data': {
+        'vesselName': s.vesselName,
+        'tileOrder': s.tileOrder,
+        'keepScreenOn': s.keepScreenOn,
+        if (s.signalKHost.isNotEmpty) ...{
+          'skHost': s.signalKHost,
+          'skPort': s.signalKPort,
+          'skUser': s.signalKUsername,
+          'skPass': s.signalKPassword,
+        },
+        if (alarmData != null) ...alarmData,
+      },
+    });
+    final mob = getActiveMob?.call();
+    if (mob != null) {
+      sendTo({'type': 'mob', 'data': mob.toJson()});
+    }
   }
 
   /// Client received sync_hello from the server.
@@ -390,11 +427,27 @@ class LanSyncService {
         });
       }
     }
+
+    // Apply alarm threshold settings if present
+    final depthEnabled = data['depthAlarmEnabled'] as bool?;
+    final depthThreshold = (data['depthAlarmThreshold'] as num?)?.toDouble();
+    final speedEnabled = data['speedAlarmEnabled'] as bool?;
+    final speedThreshold = (data['speedAlarmThreshold'] as num?)?.toDouble();
+    if (depthEnabled != null || depthThreshold != null ||
+        speedEnabled != null || speedThreshold != null) {
+      onAlarmSettingsReceived?.call({
+        if (depthEnabled != null) 'depthAlarmEnabled': depthEnabled,
+        if (depthThreshold != null) 'depthAlarmThreshold': depthThreshold,
+        if (speedEnabled != null) 'speedAlarmEnabled': speedEnabled,
+        if (speedThreshold != null) 'speedAlarmThreshold': speedThreshold,
+      });
+    }
   }
 
   /// Broadcast current settings to all peers (call after any settings change).
   void broadcastSettings() {
     final s = _ref.read(settingsProvider);
+    final alarmData = getAlarmSettings?.call();
     broadcastJson({
       'type': 'settings_sync',
       'data': {
@@ -407,6 +460,7 @@ class LanSyncService {
           'skUser': s.signalKUsername,
           'skPass': s.signalKPassword,
         },
+        if (alarmData != null) ...alarmData,
       },
     });
   }
