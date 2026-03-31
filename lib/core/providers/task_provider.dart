@@ -160,6 +160,7 @@ class TaskNotifier extends Notifier<TaskState> {
       instances: [...state.instances, instance],
     );
     await save();
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'task_upsert', 'data': instance.toJson()});
     return instance;
@@ -201,6 +202,7 @@ class TaskNotifier extends Notifier<TaskState> {
     state = TaskState(templates: state.templates, instances: instances);
     await save();
     final updated = state.instances.firstWhere((i) => i.id == instanceId);
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'task_upsert', 'data': updated.toJson()});
   }
@@ -220,6 +222,7 @@ class TaskNotifier extends Notifier<TaskState> {
     state = TaskState(templates: state.templates, instances: instances);
     await save();
     final updated = state.instances.firstWhere((i) => i.id == instanceId);
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'task_upsert', 'data': updated.toJson()});
   }
@@ -235,6 +238,7 @@ class TaskNotifier extends Notifier<TaskState> {
     state = TaskState(templates: state.templates, instances: instances);
     await save();
     final updated = state.instances.firstWhere((i) => i.id == instanceId);
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'task_upsert', 'data': updated.toJson()});
   }

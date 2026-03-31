@@ -41,6 +41,7 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _host.onSyncChanges = (msg) => onSyncChanges?.call(msg);
     _host.onMobRuleSync = (data) => onMobRuleSync?.call(data);
     _host.onNotifyChannelSync = (data) => onNotifyChannelSyncReceived?.call(data);
+    _host.onNetworkJoinSync = () => onNetworkJoinSync?.call();
     _host.onVesselStatePush = (state) => onVesselStatePush?.call(state);
     await _host.start(
       port: port,
@@ -91,6 +92,7 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _client.onSyncChanges = (msg) => onSyncChanges?.call(msg);
     _client.onMobRuleSync = (data) => onMobRuleSync?.call(data);
     _client.onNotifyChannelSyncReceived = (data) => onNotifyChannelSyncReceived?.call(data);
+    _client.onNetworkJoinSync = () => onNetworkJoinSync?.call();
     await _client.connect(wsUrl);
   }
 

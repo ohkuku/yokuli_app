@@ -144,6 +144,12 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
           if (data != null) onNotificationSync?.call(data);
         case 'notification_receipt_sync':
           if (data != null) onNotifReceiptSync?.call(data);
+        case 'mob_rule_sync':
+          if (data != null) onMobRuleSync?.call(data);
+        case 'notify_channel_sync':
+          if (data != null) onNotifyChannelSyncReceived?.call(data);
+        case 'network_join_sync':
+          onNetworkJoinSync?.call();
       }
     } catch (_) {}
   }

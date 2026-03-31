@@ -8,6 +8,7 @@ import '../models/log_entry.dart';
 import '../models/vessel_state.dart';
 import '../sync/sync_engine.dart';
 import '../utils/id_gen.dart';
+import 'device_provider.dart';
 import 'vessel_provider.dart';
 import 'lan_broadcast.dart';
 
@@ -77,6 +78,7 @@ class LogNotifier extends Notifier<List<LogEntry>> {
     // Prepend so that state[0] is always the newest entry.
     state = [entry, ...state];
     await save();
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'log_append', 'data': entry.toJson()});
   }
@@ -168,6 +170,7 @@ class LogNotifier extends Notifier<List<LogEntry>> {
     }).toList();
     await save();
     final tombstone = state.firstWhere((e) => e.id == id, orElse: () => state.first);
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'log_append', 'data': tombstone.toJson()});
   }

@@ -114,6 +114,7 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
 
     state = [...state, alarm];
     save(); // fire-and-forget
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'alarm', 'data': alarm.toJson()});
     return alarm.id;
@@ -132,6 +133,7 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
     }).toList();
     save();
     final updated = state.firstWhere((a) => a.id == id);
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'alarm', 'data': updated.toJson()});
   }
@@ -150,6 +152,7 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
     }).toList();
     save();
     final updated = state.firstWhere((a) => a.id == id, orElse: () => state.first);
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'alarm', 'data': updated.toJson()});
   }
@@ -216,6 +219,7 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
     }).toList();
     save();
     final updated = state.firstWhere((a) => a.id == id, orElse: () => state.first);
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'alarm', 'data': updated.toJson()});
   }

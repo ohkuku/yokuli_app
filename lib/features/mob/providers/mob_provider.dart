@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../../core/models/mob_alert.dart';
 import '../../../core/models/mob_trigger_rule.dart';
 import '../../../core/models/log_entry.dart';
+import '../../../core/providers/device_provider.dart';
 import '../../../core/providers/lan_broadcast.dart';
 import '../../../core/providers/log_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
@@ -139,6 +140,7 @@ class MobNotifier extends Notifier<MobState> {
 
     // Broadcast to LAN peers
     ref.read(lanSyncServiceProvider).triggerMob(alert);
+    ref.read(deviceProvider.notifier).bump();
   }
 
   void cancel() {
@@ -169,11 +171,16 @@ class MobNotifier extends Notifier<MobState> {
     );
 
     ref.read(lanBroadcastProvider)?.call({'type': 'mob_cancel'});
+    ref.read(deviceProvider.notifier).bump();
   }
 
   /// Receive a MOB alert from a LAN peer.
   void receiveMob(MobAlert alert) {
-    if (state.isMobActive) return;
+    final current = state.activeMob;
+    if (current != null &&
+        !alert.triggeredAt.isAfter(current.triggeredAt)) {
+      return;
+    }
     state = state.copyWith(activeMob: alert);
     TelemetryService.instance.recordMobActivated();
     ref.read(logProvider.notifier).log(
@@ -209,6 +216,7 @@ class MobNotifier extends Notifier<MobState> {
     state = state.copyWith(rules: [...state.rules, rule]);
     await _saveRules();
     ref.read(lanBroadcastProvider)?.call({'type': _kMobRuleSync, 'data': rule.toJson()});
+    ref.read(deviceProvider.notifier).bump();
   }
 
   Future<void> updateRule(MobTriggerRule updated) async {
@@ -216,6 +224,7 @@ class MobNotifier extends Notifier<MobState> {
     state = state.copyWith(rules: rules);
     await _saveRules();
     ref.read(lanBroadcastProvider)?.call({'type': _kMobRuleSync, 'data': updated.toJson()});
+    ref.read(deviceProvider.notifier).bump();
   }
 
   Future<void> deleteRule(String id) async {
@@ -223,6 +232,7 @@ class MobNotifier extends Notifier<MobState> {
     await _saveRules();
     // Broadcast a tombstone so peers also remove the rule.
     ref.read(lanBroadcastProvider)?.call({'type': _kMobRuleSync, 'data': {'id': id, '_deleted': true}});
+    ref.read(deviceProvider.notifier).bump();
   }
 
   Future<void> toggleRule(String id, {required bool enabled}) async {
@@ -234,6 +244,7 @@ class MobNotifier extends Notifier<MobState> {
     await _saveRules();
     final toggled = state.rules.firstWhere((r) => r.id == id, orElse: () => state.rules.first);
     ref.read(lanBroadcastProvider)?.call({'type': _kMobRuleSync, 'data': toggled.toJson()});
+    ref.read(deviceProvider.notifier).bump();
   }
 
   /// Apply a rule received from a LAN peer — LWW merge, no re-broadcast.
