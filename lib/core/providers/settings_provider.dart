@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'lan_broadcast.dart';
 
 /// Device role in the LAN mesh
 enum DeviceRole { standalone, host, client }
@@ -157,21 +158,48 @@ class SettingsNotifier extends Notifier<AppSettings> {
 
   Future<void> update(AppSettings updated) async {
     state = updated;
+    await _saveToPrefs(updated);
+    // Broadcast shared fields to all LAN peers (vessel-level settings only;
+    // device-local fields like deviceName/role/hostIp are intentionally excluded).
+    ref.read(lanBroadcastProvider)?.call({
+      'type': 'settings_sync',
+      'data': {
+        'vesselName': updated.vesselName,
+        'tileOrder': updated.tileOrder,
+        'keepScreenOn': updated.keepScreenOn,
+        if (updated.signalKHost.isNotEmpty) ...{
+          'skHost': updated.signalKHost,
+          'skPort': updated.signalKPort,
+          'skUser': updated.signalKUsername,
+          'skPass': updated.signalKPassword,
+        },
+      },
+    });
+  }
+
+  /// Apply settings received from a LAN peer WITHOUT re-broadcasting.
+  /// Prevents the broadcast→receive→broadcast feedback loop.
+  Future<void> applyRemote(AppSettings updated) async {
+    state = updated;
+    await _saveToPrefs(updated);
+  }
+
+  Future<void> _saveToPrefs(AppSettings s) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyDeviceName,    updated.deviceName);
-    await prefs.setString(_keyVesselName,    updated.vesselName);
-    await prefs.setString(_keySignalKUrl,    updated.signalKUrl);
-    await prefs.setString(_keySignalKHost,   updated.signalKHost);
-    await prefs.setInt(_keySignalKPort2,     updated.signalKPort);
-    await prefs.setString(_keySignalKUser,   updated.signalKUsername);
-    await prefs.setString(_keySignalKPass,   updated.signalKPassword);
-    await prefs.setString(_keyDeviceRole,    updated.deviceRole.name);
-    await prefs.setString(_keyHostIp,        updated.hostIp);
-    await prefs.setInt(_keyHostPort,         updated.hostPort);
-    await prefs.setBool(_keyAutoConnectSK,   updated.autoConnectSignalK);
-    await prefs.setBool(_keyAutoConnectLan,  updated.autoConnectLan);
-    await prefs.setBool(_keyKeepScreenOn,    updated.keepScreenOn);
-    await prefs.setString(_keyTileOrder,     updated.tileOrder.join(','));
+    await prefs.setString(_keyDeviceName,    s.deviceName);
+    await prefs.setString(_keyVesselName,    s.vesselName);
+    await prefs.setString(_keySignalKUrl,    s.signalKUrl);
+    await prefs.setString(_keySignalKHost,   s.signalKHost);
+    await prefs.setInt(_keySignalKPort2,     s.signalKPort);
+    await prefs.setString(_keySignalKUser,   s.signalKUsername);
+    await prefs.setString(_keySignalKPass,   s.signalKPassword);
+    await prefs.setString(_keyDeviceRole,    s.deviceRole.name);
+    await prefs.setString(_keyHostIp,        s.hostIp);
+    await prefs.setInt(_keyHostPort,         s.hostPort);
+    await prefs.setBool(_keyAutoConnectSK,   s.autoConnectSignalK);
+    await prefs.setBool(_keyAutoConnectLan,  s.autoConnectLan);
+    await prefs.setBool(_keyKeepScreenOn,    s.keepScreenOn);
+    await prefs.setString(_keyTileOrder,     s.tileOrder.join(','));
   }
 }
 

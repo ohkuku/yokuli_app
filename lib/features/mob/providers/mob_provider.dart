@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 import '../../../core/models/mob_alert.dart';
 import '../../../core/models/mob_trigger_rule.dart';
 import '../../../core/providers/lan_broadcast.dart';
+// mob_rule_sync message type constant
+const _kMobRuleSync = 'mob_rule_sync';
 import '../../../core/providers/log_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
@@ -205,17 +207,21 @@ class MobNotifier extends Notifier<MobState> {
   Future<void> addRule(MobTriggerRule rule) async {
     state = state.copyWith(rules: [...state.rules, rule]);
     await _saveRules();
+    ref.read(lanBroadcastProvider)?.call({'type': _kMobRuleSync, 'data': rule.toJson()});
   }
 
   Future<void> updateRule(MobTriggerRule updated) async {
     final rules = state.rules.map((r) => r.id == updated.id ? updated : r).toList();
     state = state.copyWith(rules: rules);
     await _saveRules();
+    ref.read(lanBroadcastProvider)?.call({'type': _kMobRuleSync, 'data': updated.toJson()});
   }
 
   Future<void> deleteRule(String id) async {
     state = state.copyWith(rules: state.rules.where((r) => r.id != id).toList());
     await _saveRules();
+    // Broadcast a tombstone so peers also remove the rule.
+    ref.read(lanBroadcastProvider)?.call({'type': _kMobRuleSync, 'data': {'id': id, '_deleted': true}});
   }
 
   Future<void> toggleRule(String id, {required bool enabled}) async {
@@ -225,6 +231,35 @@ class MobNotifier extends Notifier<MobState> {
     }).toList();
     state = state.copyWith(rules: rules);
     await _saveRules();
+    final toggled = state.rules.firstWhere((r) => r.id == id, orElse: () => state.rules.first);
+    ref.read(lanBroadcastProvider)?.call({'type': _kMobRuleSync, 'data': toggled.toJson()});
+  }
+
+  /// Apply a rule received from a LAN peer — LWW merge, no re-broadcast.
+  Future<void> applyRuleRemote(Map<String, dynamic> data) async {
+    try {
+      final id = data['id'] as String?;
+      if (id == null) return;
+      // Tombstone → delete locally
+      if (data['_deleted'] == true) {
+        state = state.copyWith(rules: state.rules.where((r) => r.id != id).toList());
+        await _saveRules();
+        return;
+      }
+      final incoming = MobTriggerRule.fromJson(data);
+      final idx = state.rules.indexWhere((r) => r.id == id);
+      List<MobTriggerRule> rules;
+      if (idx >= 0) {
+        // LWW: keep whichever was updated more recently
+        if (!incoming.updatedAt.isAfter(state.rules[idx].updatedAt)) return;
+        rules = List.from(state.rules);
+        rules[idx] = incoming;
+      } else {
+        rules = [...state.rules, incoming];
+      }
+      state = state.copyWith(rules: rules);
+      await _saveRules();
+    } catch (_) {}
   }
 }
 

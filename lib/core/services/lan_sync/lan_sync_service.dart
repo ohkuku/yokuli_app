@@ -56,6 +56,7 @@ class LanSyncService {
   final Ref _ref;
   final LanSyncPlatformImpl _platform = LanSyncPlatformImpl();
   Timer? _stateTimer;
+  Timer? _skPushTimer;
 
   /// deviceId → stateVersionMs we last successfully triggered a sync with.
   /// Prevents duplicate connections to the same peer at the same version.
@@ -105,6 +106,9 @@ class LanSyncService {
   /// Called when a notification receipt record arrives from a remote peer.
   void Function(Map<String, dynamic>)? onNotifReceiptSync;
 
+  /// Called when a mob_rule_sync message arrives from a remote peer.
+  void Function(Map<String, dynamic>)? onMobRuleSync;
+
   LanSyncService(this._ref) {
     _platform.onStateReceived = (state) {
       // Don't overwrite local SK data with LAN broadcasts — that causes
@@ -151,6 +155,14 @@ class LanSyncService {
     _platform.onAlarmActionSync = (data) => onAlarmActionSync?.call(data);
     _platform.onNotificationSync = (data) => onNotificationSync?.call(data);
     _platform.onNotifReceiptSync = (data) => onNotifReceiptSync?.call(data);
+    _platform.onMobRuleSync = (data) => onMobRuleSync?.call(data);
+    _platform.onVesselStatePush = (state) {
+      // A client is sharing their SK vessel state — apply only if we have no SK.
+      final skStatus = _ref.read(connectionProvider).signalK;
+      if (skStatus != ConnectionStatus.connected) {
+        _ref.read(vesselProvider.notifier).update(state);
+      }
+    };
     // Server: when a new client connects, send sync_hello to them
     _platform.onNewClientConnected = _sendSyncHello;
     _platform.onPeerDiscovered = _onPeerDiscovered;
@@ -464,7 +476,7 @@ class LanSyncService {
     final password = data['password'] as String? ?? '';
     if (host.isEmpty) return;
 
-    await _ref.read(settingsProvider.notifier).update(
+    await _ref.read(settingsProvider.notifier).applyRemote(
           _ref.read(settingsProvider).copyWith(
                 signalKHost: host,
                 signalKPort: port,
@@ -493,7 +505,7 @@ class LanSyncService {
     final skUser = data['skUser'] as String?;
     final skPass = data['skPass'] as String?;
 
-    await _ref.read(settingsProvider.notifier).update(
+    await _ref.read(settingsProvider.notifier).applyRemote(
           current.copyWith(
             vesselName: vesselName ?? current.vesselName,
             tileOrder: tileOrder ?? current.tileOrder,
@@ -660,11 +672,27 @@ class LanSyncService {
         _platform.updateHostState(_ref.read(vesselProvider));
       }
     });
+
+    // If this device has SK connected AND is also a LAN client (connected upstream),
+    // push vessel state to the host at 2 Hz so the host can relay it to all peers.
+    _skPushTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (_platform.isClientConnected) {
+        final skStatus = _ref.read(connectionProvider).signalK;
+        if (skStatus == ConnectionStatus.connected) {
+          _platform.sendJson({
+            'type': 'vessel_state_push',
+            'data': _ref.read(vesselProvider).toJson(),
+          });
+        }
+      }
+    });
   }
 
   Future<void> stop() async {
     _stateTimer?.cancel();
     _stateTimer = null;
+    _skPushTimer?.cancel();
+    _skPushTimer = null;
     _ref.read(lanBroadcastProvider.notifier).state = null;
     _peerSyncedVersions.clear();
     _platform.stopDiscovery();

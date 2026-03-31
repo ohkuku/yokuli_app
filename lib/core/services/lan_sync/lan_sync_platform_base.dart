@@ -42,6 +42,10 @@ abstract class LanSyncPlatform {
   void Function(Map<String, dynamic> data)? onNotifReceiptSync;
   void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
   void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
+  /// Called when a mob_rule_sync message arrives (add/update/delete a MOB trigger rule).
+  void Function(Map<String, dynamic> data)? onMobRuleSync;
+  /// Called when a client pushes its SK vessel-state to the host for relay.
+  void Function(VesselState state)? onVesselStatePush;
   /// Host only: called when a new client connects; receives a send-to-one function
   /// that LanSyncService uses to send sync_hello to the new client.
   void Function(void Function(Map<String, dynamic>))? onNewClientConnected;

@@ -62,6 +62,7 @@ class SyncClient {
   void Function(Map<String, dynamic> data)? onNotifReceiptSync;
   void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
   void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
+  void Function(Map<String, dynamic> data)? onMobRuleSync;
   /// Called when server sends sync_meta (stateVersionMs + deviceId of the server).
   void Function(int svMs, String peerId)? onSyncMetaReceived;
   /// Called when client receives sync_hello from the server.
@@ -204,6 +205,8 @@ class SyncClient {
           final svMs = json['sv'] as int?;
           final peerId = json['id'] as String? ?? '';
           if (svMs != null) onSyncMetaReceived?.call(svMs, peerId);
+        case 'mob_rule_sync':
+          if (data != null) onMobRuleSync?.call(data);
         case 'sync_hello':
           onSyncHelloReceived?.call(json);
         case 'sync_changes':

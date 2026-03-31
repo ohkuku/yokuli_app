@@ -40,6 +40,8 @@ class SyncHost {
   void Function(Map<String, dynamic> data)? onAlarmActionSync;
   void Function(Map<String, dynamic> data)? onNotificationSync;
   void Function(Map<String, dynamic> data)? onNotifReceiptSync;
+  void Function(Map<String, dynamic> data)? onMobRuleSync;
+  void Function(VesselState state)? onVesselStatePush;
   /// Called when a new client connects; receives a function that sends a
   /// JSON message directly to that specific client only.
   void Function(void Function(Map<String, dynamic>))? onNewClientConnected;
@@ -232,6 +234,19 @@ class SyncHost {
             channel,
             jsonEncode({'type': 'pong', 'at': json['at']}),
           );
+        case 'mob_rule_sync':
+          if (data != null) {
+            onMobRuleSync?.call(data);
+            broadcastJson(json);
+          }
+        case 'vessel_state_push':
+          // Client with SK is sharing its vessel state — apply if we lack SK data,
+          // then let the 2Hz stateTimer relay it to all other clients automatically.
+          if (data != null) {
+            try {
+              onVesselStatePush?.call(VesselState.fromJson(data));
+            } catch (_) {}
+          }
         case 'sync_hello':
           // Client is introducing itself — reply to this specific client only
           onSyncHello?.call(

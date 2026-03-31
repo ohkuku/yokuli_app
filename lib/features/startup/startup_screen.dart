@@ -214,6 +214,8 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     ref.read(signalKClientProvider).onRawDelta = mobWatcher.onDelta;
 
     // Wire new alarm rule / instance / action / notification sync callbacks
+    lanSync.onMobRuleSync = (data) =>
+        ref.read(mobProvider.notifier).applyRuleRemote(data);
     lanSync.onAlarmRuleSync = (data) =>
         ref.read(alarmRuleProvider.notifier).applyRemote([data]);
     lanSync.onAlarmInstanceSync = (data) =>

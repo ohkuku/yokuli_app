@@ -39,6 +39,8 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _host.onNewClientConnected = (sendTo) => onNewClientConnected?.call(sendTo);
     _host.onSyncHello = (msg, reply) => onSyncHello?.call(msg, reply);
     _host.onSyncChanges = (msg) => onSyncChanges?.call(msg);
+    _host.onMobRuleSync = (data) => onMobRuleSync?.call(data);
+    _host.onVesselStatePush = (state) => onVesselStatePush?.call(state);
     await _host.start(
       port: port,
       deviceName: deviceName,
@@ -86,6 +88,7 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
         onSyncMetaReceived?.call(svMs, peerId);
     _client.onSyncHelloReceived = (msg) => onSyncHelloReceived?.call(msg);
     _client.onSyncChanges = (msg) => onSyncChanges?.call(msg);
+    _client.onMobRuleSync = (data) => onMobRuleSync?.call(data);
     await _client.connect(wsUrl);
   }
 
