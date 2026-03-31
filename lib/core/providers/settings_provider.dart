@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'device_provider.dart';
 import 'lan_broadcast.dart';
 
@@ -158,30 +159,40 @@ class SettingsNotifier extends Notifier<AppSettings> {
   }
 
   Future<void> update(AppSettings updated) async {
+    final previous = state;
     state = updated;
     await _saveToPrefs(updated);
     ref.read(deviceProvider.notifier).bump();
-    // Broadcast shared fields to all LAN peers (vessel-level settings only;
-    // device-local fields like deviceName/role/hostIp are intentionally excluded).
-    ref.read(lanBroadcastProvider)?.call({
-      'type': 'settings_sync',
-      'data': {
-        'vesselName': updated.vesselName,
-        'tileOrder': updated.tileOrder,
-        'keepScreenOn': updated.keepScreenOn,
-        // Keep legacy URL in sync too, so peers still using old config path
-        // can connect without manual re-entry.
-        if (updated.signalKUrl.isNotEmpty) 'skUrl': updated.signalKUrl,
-        // Vessel-level auto connect preference should be shared across devices.
-        'autoConnectSignalK': updated.autoConnectSignalK,
-        if (updated.signalKHost.isNotEmpty) ...{
-          'skHost': updated.signalKHost,
-          'skPort': updated.signalKPort,
-          'skUser': updated.signalKUsername,
-          'skPass': updated.signalKPassword,
-        },
-      },
-    });
+    // Broadcast only CHANGED shared fields so a fresh device changing only
+    // local fields (e.g. deviceName) won't overwrite global vessel settings.
+    final data = <String, dynamic>{};
+    if (updated.vesselName != previous.vesselName) {
+      data['vesselName'] = updated.vesselName;
+    }
+    if (!listEquals(updated.tileOrder, previous.tileOrder)) {
+      data['tileOrder'] = updated.tileOrder;
+    }
+    if (updated.keepScreenOn != previous.keepScreenOn) {
+      data['keepScreenOn'] = updated.keepScreenOn;
+    }
+    if (updated.autoConnectSignalK != previous.autoConnectSignalK) {
+      data['autoConnectSignalK'] = updated.autoConnectSignalK;
+    }
+    if (updated.signalKUrl != previous.signalKUrl) {
+      data['skUrl'] = updated.signalKUrl;
+    }
+    final skChanged = updated.signalKHost != previous.signalKHost ||
+        updated.signalKPort != previous.signalKPort ||
+        updated.signalKUsername != previous.signalKUsername ||
+        updated.signalKPassword != previous.signalKPassword;
+    if (skChanged) {
+      data['skHost'] = updated.signalKHost;
+      data['skPort'] = updated.signalKPort;
+      data['skUser'] = updated.signalKUsername;
+      data['skPass'] = updated.signalKPassword;
+    }
+    if (data.isEmpty) return;
+    ref.read(lanBroadcastProvider)?.call({'type': 'settings_sync', 'data': data});
   }
 
   /// Apply settings received from a LAN peer WITHOUT re-broadcasting.

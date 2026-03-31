@@ -38,6 +38,7 @@ import 'lan_sync_platform_base.dart' show DiscoveredHost;
 
 /// Discovered peers on the LAN — exposed for the settings UI.
 final discoveredPeersProvider = StateProvider<List<DiscoveredHost>>((ref) => []);
+final networkJoinInProgressProvider = StateProvider<bool>((ref) => false);
 
 /// Sync cursor status — exposed for the settings sync panel.
 /// Returns a map of collection → ISO-8601 cursor string.
@@ -59,8 +60,8 @@ class LanSyncService {
   Timer? _skPushTimer;
   String? _localIp;
 
-  /// deviceId → stateVersionMs we last successfully triggered a sync with.
-  /// Prevents duplicate connections to the same peer at the same version.
+  /// peerKey(deviceId or ws) → unix-ms of last connect attempt.
+  /// Prevents repeated connection storms while discovery beacons are frequent.
   final Map<String, int> _peerSyncedVersions = {};
 
   /// Bounded set of processed sync_changes eventIds for idempotent dedup.
@@ -140,8 +141,11 @@ class LanSyncService {
         connected ? ConnectionStatus.connected : ConnectionStatus.disconnected,
       );
       if (connected) {
+        _ref.read(networkJoinInProgressProvider.notifier).state = false;
         // As client: send sync_hello to server so it can push missing records to us
         _sendSyncHello(_platform.sendJson);
+      } else {
+        _ref.read(networkJoinInProgressProvider.notifier).state = false;
       }
     };
     _platform.onPeerCountChanged = (count) => _conn.setPeerCount(count);
@@ -263,6 +267,7 @@ class LanSyncService {
   Future<void> _handleSyncHelloFromServer(Map<String, dynamic> msg) async {
     final peerCursors = _parseCursors(msg['cursors']);
     await _sendMissingRecords(peerCursors, _platform.sendJson);
+    _ref.read(networkJoinInProgressProvider.notifier).state = false;
   }
 
   /// Parse cursors map from sync_hello — gracefully handles nulls.
@@ -414,6 +419,7 @@ class LanSyncService {
     if (maxUa.millisecondsSinceEpoch > 0) {
       await SyncCursorStore.advance(collection, maxUa);
     }
+    _ref.read(networkJoinInProgressProvider.notifier).state = false;
   }
 
   // ---------------------------------------------------------------------------
@@ -456,26 +462,25 @@ class LanSyncService {
     _checkAndConnect(peer);
   }
 
-  /// Connect to [peer] as a WS client if they have newer data than us.
+  /// Connect to [peer] as a WS client (throttled), independent of peer sv.
   void _checkAndConnect(DiscoveredHost peer) {
-    final device = _ref.read(deviceProvider);
+    final peerKey = peer.deviceId.isNotEmpty ? peer.deviceId : peer.ws;
+    final ownDeviceId = _ref.read(deviceProvider).deviceId;
 
     // Never connect to ourselves.
-    if (peer.deviceId.isNotEmpty && peer.deviceId == device.deviceId) return;
+    if (peer.deviceId.isNotEmpty && peer.deviceId == ownDeviceId) return;
 
-    final ownSvMs = device.stateVersion.millisecondsSinceEpoch;
+    // Item-level LWW sync is cursor/timestamp driven. Device-level stateVersion
+    // should not gate whether we establish a sync channel.
+    if (_platform.isClientConnected) return;
 
-    // Only connect if peer has strictly newer data.
-    if (peer.stateVersionMs <= ownSvMs) return;
-
-    // Don't re-trigger if we already initiated a sync at this exact version.
-    final lastSynced = _peerSyncedVersions[peer.deviceId] ?? 0;
-    if (peer.stateVersionMs <= lastSynced) return;
-
-    // Record before connecting to prevent races / duplicate calls.
-    _peerSyncedVersions[peer.deviceId] = peer.stateVersionMs;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final lastAttemptMs = _peerSyncedVersions[peerKey] ?? 0;
+    if (nowMs - lastAttemptMs < 5000) return;
+    _peerSyncedVersions[peerKey] = nowMs;
 
     // Mark connecting before the attempt so the UI shows the right state.
+    _ref.read(networkJoinInProgressProvider.notifier).state = true;
     _conn.setLanSyncStatus(ConnectionStatus.connecting);
 
     // Connect — sync_hello exchange will happen automatically on connection
@@ -675,6 +680,7 @@ class LanSyncService {
   bool get supportsAutoDiscovery => _platform.supportsAutoDiscovery;
 
   Future<void> start() async {
+    _ref.read(networkJoinInProgressProvider.notifier).state = false;
     _localIp = await _platform.getLocalIp();
     if (kIsWeb) {
       // Web: client-only — connect to manually configured host IP.
@@ -688,6 +694,7 @@ class LanSyncService {
       };
 
       if (settings.hostIp.isNotEmpty) {
+        _ref.read(networkJoinInProgressProvider.notifier).state = true;
         _conn.setLanSyncStatus(ConnectionStatus.connecting);
         await _platform.connectAsClient(
           'ws://${settings.hostIp}:${settings.hostPort}',
@@ -724,6 +731,7 @@ class LanSyncService {
     await _platform.startDiscovery();
 
     _conn.setLanSyncStatus(ConnectionStatus.connected);
+    _ref.read(networkJoinInProgressProvider.notifier).state = false;
 
     // Push VesselState to connected clients at ~2 Hz.
     _stateTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
@@ -759,6 +767,7 @@ class LanSyncService {
     await _platform.disconnectClient();
     _conn.setLanSyncStatus(ConnectionStatus.disconnected);
     _ref.read(discoveredPeersProvider.notifier).state = [];
+    _ref.read(networkJoinInProgressProvider.notifier).state = false;
     _localIp = null;
   }
 
