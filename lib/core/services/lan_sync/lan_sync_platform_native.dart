@@ -55,8 +55,6 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _host.onAlarmRuleSync = (data) => onAlarmRuleSync?.call(data);
     _host.onAlarmInstanceSync = (data) => onAlarmInstanceSync?.call(data);
     _host.onAlarmActionSync = (data) => onAlarmActionSync?.call(data);
-    _host.onNotificationSync = (data) => onNotificationSync?.call(data);
-    _host.onNotifReceiptSync = (data) => onNotifReceiptSync?.call(data);
     _host.onNotifyChannelSync = (data) => onNotifyChannelSyncReceived?.call(data);
     _host.onNetworkJoinSync = () => onNetworkJoinSync?.call();
     _host.onVesselStatePush = (state) => onVesselStatePush?.call(state);
@@ -111,8 +109,6 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _client.onAlarmRuleSync = (data) => onAlarmRuleSync?.call(data);
     _client.onAlarmInstanceSync = (data) => onAlarmInstanceSync?.call(data);
     _client.onAlarmActionSync = (data) => onAlarmActionSync?.call(data);
-    _client.onNotificationSync = (data) => onNotificationSync?.call(data);
-    _client.onNotifReceiptSync = (data) => onNotifReceiptSync?.call(data);
     _client.onNotifyChannelSyncReceived = (data) => onNotifyChannelSyncReceived?.call(data);
     _client.onNetworkJoinSync = () => onNetworkJoinSync?.call();
     await _client.connect(wsUrl);
