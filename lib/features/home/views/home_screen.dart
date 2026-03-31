@@ -15,7 +15,7 @@ import '../../../core/providers/locale_provider.dart';
 import '../../../core/providers/alarm_instance_provider.dart';
 import '../../../core/providers/notification_provider.dart';
 import '../../../core/providers/kanban_provider.dart';
-import '../../../features/safety/providers/safety_provider.dart';
+import '../../../features/mob/providers/mob_provider.dart';
 import '../../../core/services/update/update_dialog.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../widgets/app_tile.dart';
@@ -582,7 +582,7 @@ class _DraggableMobFabState extends ConsumerState<_DraggableMobFab> {
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final s = ref.watch(stringsProvider);
-    final isMobActive = ref.watch(safetyProvider).isMobActive;
+    final isMobActive = ref.watch(mobProvider).isMobActive;
 
     // Default position: bottom-right
     final pos = _pos ?? Offset(size.width - 100, size.height - 160);
@@ -622,8 +622,8 @@ class _DraggableMobFabState extends ConsumerState<_DraggableMobFab> {
   }
 
   void _triggerMob(BuildContext context) {
-    ref.read(safetyProvider.notifier).triggerMob();
-    context.push('/safety');
+    ref.read(mobProvider.notifier).trigger();
+    context.push('/mob');
   }
 }
 

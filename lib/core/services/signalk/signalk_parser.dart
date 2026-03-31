@@ -260,6 +260,16 @@ class SignalKParser {
         ],
       };
 
+  /// Signal K subscribe message for MOB auto-trigger paths:
+  /// notifications (all states) and raw NMEA sentences.
+  static Map<String, dynamic> buildMobSubscribeMessage() => {
+        'context': 'vessels.self',
+        'subscribe': [
+          {'path': 'notifications.*', 'period': 0, 'policy': 'instant'},
+          {'path': 'sentences', 'period': 0, 'policy': 'instant'},
+        ],
+      };
+
   /// Signal K subscribe message for AIS data from all vessels.
   ///
   /// This must be sent as a separate message because it uses the

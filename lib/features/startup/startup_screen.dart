@@ -21,6 +21,8 @@ import '../../core/services/signalk/signalk_auth.dart';
 import '../../core/services/signalk/signalk_client.dart';
 import '../../core/services/lan_sync/lan_sync_service.dart';
 import '../../core/sync/sync_migration.dart';
+import '../../features/mob/providers/mob_provider.dart';
+import '../../features/mob/services/mob_watcher_service.dart';
 import '../../core/services/telemetry_service.dart';
 import '../safety/providers/safety_provider.dart';
 
@@ -182,18 +184,34 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
       ref.read(logProvider.notifier).load(),
     ]);
 
+    // Load MOB provider (rules + history)
+    await ref.read(mobProvider.notifier).load();
+
     // Start alarm evaluator (watches vessel state and fires alarm instances)
     ref.read(alarmEvaluatorProvider).start();
 
     // Wire LAN sync callbacks for MOB
     final lanSync = ref.read(lanSyncServiceProvider);
-    lanSync.onMobAlert = (alert) {
-      ref.read(safetyProvider.notifier).receiveMob(alert);
+    lanSync.onMobAlert = (alert) => ref.read(mobProvider.notifier).receiveMob(alert);
+    lanSync.onMobCancelReceived = () => ref.read(mobProvider.notifier).receiveMobCancel();
+    lanSync.getActiveMob = () => ref.read(mobProvider).activeMob;
+
+    // Wire MOB watcher to SignalK raw delta stream
+    final mobWatcher = MobWatcherService();
+    mobWatcher.updateRules(ref.read(mobProvider).rules);
+    mobWatcher.onRuleMatched = (rule) {
+      if (!ref.read(mobProvider).isMobActive) {
+        ref.read(mobProvider.notifier).trigger(
+          triggerSource: 'rule',
+          triggerRuleName: rule.name,
+        );
+      }
     };
-    lanSync.onMobCancelReceived = () {
-      ref.read(safetyProvider.notifier).receiveMobCancel();
-    };
-    lanSync.getActiveMob = () => ref.read(safetyProvider).activeMob;
+    // Keep watcher rules in sync when rules change
+    ref.listen(mobProvider.select((s) => s.rules), (_, rules) {
+      mobWatcher.updateRules(rules);
+    });
+    ref.read(signalKClientProvider).onRawDelta = mobWatcher.onDelta;
 
     // Wire new alarm rule / instance / action / notification sync callbacks
     lanSync.onAlarmRuleSync = (data) =>

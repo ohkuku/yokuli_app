@@ -8,7 +8,7 @@ import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/locale_provider.dart';
 import 'core/providers/alarm_instance_provider.dart';
-import 'features/safety/providers/safety_provider.dart';
+import 'features/mob/providers/mob_provider.dart';
 import 'router/app_router.dart';
 
 /// Provider that holds the alarm instance to display as an in-app banner.
@@ -23,12 +23,12 @@ class YokulApp extends ConsumerWidget {
     final router = ref.watch(appRouterProvider);
     final locale = ref.watch(flutterLocaleProvider);
 
-    // Navigate every device to the alarm center when a MOB is triggered.
+    // Navigate every device to the MOB screen when a MOB is triggered.
     ref.listen(
-      safetyProvider.select((s) => s.isMobActive),
+      mobProvider.select((s) => s.isMobActive),
       (prev, isActive) {
         if (isActive == true && prev != true) {
-          router.push('/alarm-center');
+          router.push('/mob');
         }
       },
     );

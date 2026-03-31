@@ -1,19 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/models/alarm.dart';
-import '../../../core/models/mob_alert.dart';
 import '../../../core/models/vessel_state.dart';
-import '../../../core/models/log_entry.dart';
 import '../../../core/providers/alarm_provider.dart';
-import '../../../core/providers/log_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/providers/lan_broadcast.dart';
-import '../../../core/services/lan_sync/lan_sync_service.dart';
-import '../../../core/utils/id_gen.dart';
-import '../../../core/services/telemetry_service.dart';
 
 class SafetyState {
-  final MobAlert? activeMob;
   final bool depthAlarmEnabled;
   final double depthAlarmThreshold; // meters
   final bool depthAlarmTriggered;
@@ -22,7 +15,6 @@ class SafetyState {
   final bool speedAlarmTriggered;
 
   const SafetyState({
-    this.activeMob,
     this.depthAlarmEnabled = false,
     this.depthAlarmThreshold = 2.0,
     this.depthAlarmTriggered = false,
@@ -31,11 +23,7 @@ class SafetyState {
     this.speedAlarmTriggered = false,
   });
 
-  bool get isMobActive => activeMob?.isActive == true;
-
   SafetyState copyWith({
-    MobAlert? activeMob,
-    bool clearMob = false,
     bool? depthAlarmEnabled,
     double? depthAlarmThreshold,
     bool? depthAlarmTriggered,
@@ -44,7 +32,6 @@ class SafetyState {
     bool? speedAlarmTriggered,
   }) =>
       SafetyState(
-        activeMob: clearMob ? null : activeMob ?? this.activeMob,
         depthAlarmEnabled: depthAlarmEnabled ?? this.depthAlarmEnabled,
         depthAlarmThreshold: depthAlarmThreshold ?? this.depthAlarmThreshold,
         depthAlarmTriggered: depthAlarmTriggered ?? this.depthAlarmTriggered,
@@ -62,7 +49,6 @@ class SafetyNotifier extends Notifier<SafetyState> {
 
   @override
   SafetyState build() {
-    // Watch vessel state for alarm checks
     ref.listen(vesselProvider, (prev, vessel) => _checkAlarms(vessel));
     return const SafetyState();
   }
@@ -85,67 +71,6 @@ class SafetyNotifier extends Notifier<SafetyState> {
     await prefs.setDouble(_keySpeedThreshold,  state.speedAlarmThreshold);
   }
 
-  void triggerMob() {
-    final vessel = ref.read(vesselProvider);
-    final alert = MobAlert(
-      id: generateId(),
-      triggeredAt: DateTime.now(),
-      position: vessel.position,
-      triggeredByDevice: 'this device',
-    );
-    state = state.copyWith(activeMob: alert);
-    TelemetryService.instance.recordMobActivated();
-    // Log MOB start
-    ref.read(logProvider.notifier).log(
-      type: LogEntryType.system,
-      subtype: 'mob_start',
-      message: 'MOB ALERT — person overboard triggered on this device',
-    );
-    // Broadcast to LAN peers
-    ref.read(lanSyncServiceProvider).triggerMob(alert);
-  }
-
-  void cancelMob() {
-    if (state.activeMob != null) {
-      final elapsed = state.activeMob!.elapsed;
-      final mins = elapsed.inMinutes;
-      final secs = elapsed.inSeconds % 60;
-      state.activeMob!.isActive = false;
-      state = state.copyWith(clearMob: true);
-      TelemetryService.instance.recordMobCleared();
-      // Log MOB end
-      ref.read(logProvider.notifier).log(
-        type: LogEntryType.system,
-        subtype: 'mob_end',
-        message: 'MOB CANCELLED — alert ended after ${mins}m ${secs}s',
-      );
-      ref.read(lanBroadcastProvider)?.call({'type': 'mob_cancel'});
-    }
-  }
-
-  void receiveMob(MobAlert alert) {
-    state = state.copyWith(activeMob: alert);
-    // Log receipt of remote MOB
-    ref.read(logProvider.notifier).log(
-      type: LogEntryType.system,
-      subtype: 'mob_start',
-      message: 'MOB ALERT — received from remote device',
-    );
-  }
-
-  /// Called when a remote device cancelled the MOB — clears locally without re-broadcasting.
-  void receiveMobCancel() {
-    if (state.activeMob != null) {
-      state.activeMob!.isActive = false;
-      state = state.copyWith(clearMob: true);
-      ref.read(logProvider.notifier).log(
-        type: LogEntryType.system,
-        subtype: 'mob_end',
-        message: 'MOB CANCELLED — received cancellation from remote device',
-      );
-    }
-  }
-
   void setDepthAlarm({required bool enabled, double? threshold}) {
     state = state.copyWith(
       depthAlarmEnabled: enabled,
@@ -164,7 +89,6 @@ class SafetyNotifier extends Notifier<SafetyState> {
     _broadcastAlarmSettings();
   }
 
-  /// Apply alarm settings received from a remote peer (no re-broadcast).
   void applyAlarmSync(Map<String, dynamic> data) {
     final depthEnabled = data['depthAlarmEnabled'] as bool?;
     final depthThreshold = (data['depthAlarmThreshold'] as num?)?.toDouble();

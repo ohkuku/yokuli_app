@@ -7,6 +7,7 @@ import '../../../core/providers/vessel_provider.dart';
 import '../../../core/providers/locale_provider.dart';
 import '../../../core/l10n/strings.dart';
 import '../providers/safety_provider.dart';
+import '../../mob/providers/mob_provider.dart';
 
 class SafetyScreen extends ConsumerStatefulWidget {
   const SafetyScreen({super.key});
@@ -29,13 +30,12 @@ class _SafetyScreenState extends ConsumerState<SafetyScreen> {
   }
 
   void _checkPendingMob() {
-    final safety = ref.read(safetyProvider);
-    if (safety.isMobActive) _startTimer();
+    if (ref.read(mobProvider).isMobActive) _startTimer();
   }
 
   void _startTimer() {
     _elapsedTimer?.cancel();
-    final mob = ref.read(safetyProvider).activeMob;
+    final mob = ref.read(mobProvider).activeMob;
     if (mob == null) return;
     _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
@@ -67,18 +67,19 @@ class _SafetyScreenState extends ConsumerState<SafetyScreen> {
   Widget build(BuildContext context) {
     final safety = ref.watch(safetyProvider);
     final vessel = ref.watch(vesselProvider);
+    final mob = ref.watch(mobProvider);
 
-    if (safety.isMobActive) {
+    if (mob.isMobActive) {
       final s = ref.watch(stringsProvider);
       return PopScope(
         canPop: false,
         child: _MobActiveScreen(
           s: s,
-          safety: safety,
+          activeMob: mob.activeMob!,
           vessel: vessel,
           elapsed: _formatElapsed(_elapsedSeconds),
           onCancel: () {
-            ref.read(safetyProvider.notifier).cancelMob();
+            ref.read(mobProvider.notifier).cancel();
             _stopTimer();
           },
         ),
@@ -97,7 +98,7 @@ class _SafetyScreenState extends ConsumerState<SafetyScreen> {
             _MobTriggerCard(
               s: s,
               onTrigger: () {
-                ref.read(safetyProvider.notifier).triggerMob();
+                ref.read(mobProvider.notifier).trigger();
                 _startTimer();
               },
             ),
@@ -156,14 +157,14 @@ class _SafetyScreenState extends ConsumerState<SafetyScreen> {
 
 class _MobActiveScreen extends StatelessWidget {
   final S s;
-  final SafetyState safety;
+  final activeMob;
   final vessel;
   final String elapsed;
   final VoidCallback onCancel;
 
   const _MobActiveScreen({
     required this.s,
-    required this.safety,
+    required this.activeMob,
     required this.vessel,
     required this.elapsed,
     required this.onCancel,
@@ -171,7 +172,7 @@ class _MobActiveScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mob = safety.activeMob!;
+    final mob = activeMob;
     final mobPos = mob.position;
     final currentPos = vessel.position;
     final distNm = (mobPos != null && currentPos != null)

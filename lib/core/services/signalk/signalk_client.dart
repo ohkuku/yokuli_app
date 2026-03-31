@@ -36,6 +36,10 @@ class SignalKClient {
 
   String? _httpBaseUrl; // e.g. http://host:port — derived from wsUrl on connect
 
+  /// Called with every raw delta JSON map before the parser processes it.
+  /// Wire this to [MobWatcherService.onDelta] to evaluate auto-trigger rules.
+  void Function(Map<String, dynamic> delta)? onRawDelta;
+
   SignalKClient(this._ref);
 
   ConnectionNotifier get _conn => _ref.read(connectionProvider.notifier);
@@ -89,6 +93,10 @@ class SignalKClient {
         _channel?.sink.add(
           jsonEncode(SignalKParser.buildAisSubscribeMessage()),
         );
+        // Subscribe to notifications and raw NMEA sentences (MOB auto-trigger).
+        _channel?.sink.add(
+          jsonEncode(SignalKParser.buildMobSubscribeMessage()),
+        );
         _startWatchdog();
         // Fetch static own-vessel info (name, MMSI) from REST API.
         _fetchSelfInfo(token: _currentToken);
@@ -98,6 +106,8 @@ class SignalKClient {
       // Delta message.
       if (json.containsKey('updates')) {
         _lastDeltaReceived = DateTime.now();
+        // Fire raw delta callback before processing (used by MobWatcherService).
+        onRawDelta?.call(json);
         final current = _ref.read(vesselProvider);
         final updated = SignalKParser.applyDelta(
           current,

@@ -14,6 +14,7 @@ import '../features/kanban/views/kanban_screen.dart';
 import '../features/notifications/views/notifications_screen.dart';
 import '../features/alarm_center/views/alarm_center_screen.dart';
 import '../features/alarm_center/views/alarm_rule_edit_screen.dart';
+import '../features/mob/views/mob_screen.dart';
 import '../core/models/alarm_rule.dart';
 import '../features/voyage/views/voyage_detail_screen.dart';
 
@@ -61,6 +62,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/kanban',
         name: 'kanban',
         pageBuilder: (context, state) => _slidePage(state, const KanbanScreen()),
+      ),
+      GoRoute(
+        path: '/mob',
+        name: 'mob',
+        pageBuilder: (context, state) => _slidePage(state, const MobScreen()),
       ),
       GoRoute(
         path: '/alarm-center',
