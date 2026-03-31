@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/log_entry.dart';
 import '../models/vessel_state.dart';
+import '../sync/sync_engine.dart';
 import '../utils/id_gen.dart';
 import 'vessel_provider.dart';
 import 'lan_broadcast.dart';
@@ -172,18 +173,19 @@ class LogNotifier extends Notifier<List<LogEntry>> {
   }
 
   /// Upsert a [LogEntry] received from a remote device (LAN sync).
-  /// Per-record LWW: only overwrites if incoming updatedAt is strictly newer.
+  /// Uses SyncEngine LWW with full tie-break (tombstone, then src lexicographic).
   Future<void> appendRemote(Map<String, dynamic> data) async {
     try {
-      final entry = LogEntry.fromJson(data);
-      final idx = state.indexWhere((e) => e.id == entry.id);
+      final idx = state.indexWhere((e) => e.id == (data['id'] as String?));
       if (idx >= 0) {
-        if (!entry.updatedAt.isAfter(state[idx].updatedAt)) return;
+        final existingJson = state[idx].toJson();
+        final winnerJson = SyncEngine.merge(existingJson, data);
+        if (identical(winnerJson, existingJson)) return;
         final updated = List<LogEntry>.from(state);
-        updated[idx] = entry;
+        updated[idx] = LogEntry.fromJson(winnerJson);
         state = updated;
       } else {
-        state = [entry, ...state];
+        state = [LogEntry.fromJson(data), ...state];
       }
       await save();
     } catch (_) {}

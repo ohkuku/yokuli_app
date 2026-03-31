@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/log_entry.dart';
 import '../models/vessel_state.dart';
 import '../models/voyage.dart';
+import '../sync/sync_engine.dart';
 import '../utils/id_gen.dart';
 import 'device_provider.dart';
 import 'log_provider.dart';
@@ -258,18 +259,26 @@ class VoyageNotifier extends Notifier<VoyageState> {
   // ---- Remote sync --------------------------------------------------------
 
   /// Upsert a [VoyageSession] received from a remote device (LAN sync).
-  /// Per-record LWW: only overwrites if incoming updatedAt is strictly newer.
+  /// Uses SyncEngine LWW with full tie-break (tombstone, then sdid lexicographic).
   Future<void> upsertRemote(Map<String, dynamic> data) async {
     try {
-      final session = VoyageSession.fromJson(data);
+      final id = data['id'] as String?;
+      if (id == null) return;
 
       // Check against any existing record with this ID.
-      final existingActive = state.active?.id == session.id ? state.active : null;
-      final existingHistoryIdx = state.history.indexWhere((s) => s.id == session.id);
+      final existingActive = state.active?.id == id ? state.active : null;
+      final existingHistoryIdx = state.history.indexWhere((s) => s.id == id);
       final existing = existingActive ??
           (existingHistoryIdx >= 0 ? state.history[existingHistoryIdx] : null);
 
-      if (existing != null && !session.updatedAt.isAfter(existing.updatedAt)) return;
+      if (existing != null) {
+        final existingJson = existing.toJson();
+        final winnerJson = SyncEngine.merge(existingJson, data, srcKey: 'sdid');
+        if (identical(winnerJson, existingJson)) return;
+        data = winnerJson;
+      }
+
+      final session = VoyageSession.fromJson(data);
 
       if (session.deleted) {
         // Tombstone: remove from active/history but keep tombstone in history.

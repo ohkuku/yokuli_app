@@ -27,7 +27,12 @@ class SignalKAuth {
     String password,
   ) async {
     final base = httpBase(wsUrl);
-    final uri  = Uri.parse('$base/signalk/v1/auth/login');
+    final Uri uri;
+    try {
+      uri = Uri.parse('$base/signalk/v1/auth/login');
+    } on FormatException {
+      throw SignalKAuthException('Invalid server URL: $wsUrl');
+    }
 
     late http.Response response;
     try {
@@ -60,11 +65,18 @@ class SignalKAuth {
   }
 
   /// Appends token as a query parameter to a WebSocket URL.
-  /// Handles existing query params correctly.
+  /// Handles existing query params correctly. Returns the original URL unchanged
+  /// if it cannot be parsed (malformed input guard).
   static String withToken(String wsUrl, String token) {
-    final uri    = Uri.parse(wsUrl);
-    final params = Map<String, String>.from(uri.queryParameters)
-      ..['token'] = token;
-    return uri.replace(queryParameters: params).toString();
+    try {
+      final uri    = Uri.parse(wsUrl);
+      final params = Map<String, String>.from(uri.queryParameters)
+        ..['token'] = token;
+      return uri.replace(queryParameters: params).toString();
+    } on FormatException {
+      // Malformed URL — append token as a simple query parameter.
+      final sep = wsUrl.contains('?') ? '&' : '?';
+      return '$wsUrl${sep}token=${Uri.encodeQueryComponent(token)}';
+    }
   }
 }

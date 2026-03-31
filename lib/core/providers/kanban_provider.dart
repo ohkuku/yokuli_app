@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/kanban.dart';
+import '../sync/sync_engine.dart';
 import '../utils/id_gen.dart';
 import 'device_provider.dart';
 import 'lan_broadcast.dart';
@@ -242,8 +243,14 @@ class KanbanNotifier extends Notifier<KanbanState> {
     };
     for (final inc in incomingCols) {
       final existing = colsById[inc.id];
-      if (existing == null || inc.updatedAt.isAfter(existing.updatedAt)) {
+      if (existing == null) {
         colsById[inc.id] = inc;
+      } else {
+        final existingJson = existing.toJson();
+        final winnerJson = SyncEngine.merge(existingJson, inc.toJson());
+        if (!identical(winnerJson, existingJson)) {
+          colsById[inc.id] = KanbanColumn.fromJson(winnerJson);
+        }
       }
     }
     final mergedCols = colsById.values
@@ -263,8 +270,14 @@ class KanbanNotifier extends Notifier<KanbanState> {
     };
     for (final inc in incomingCards) {
       final existing = cardsById[inc.id];
-      if (existing == null || inc.updatedAt.isAfter(existing.updatedAt)) {
+      if (existing == null) {
         cardsById[inc.id] = inc;
+      } else {
+        final existingJson = existing.toJson();
+        final winnerJson = SyncEngine.merge(existingJson, inc.toJson());
+        if (!identical(winnerJson, existingJson)) {
+          cardsById[inc.id] = KanbanCard.fromJson(winnerJson);
+        }
       }
     }
     state = KanbanState(

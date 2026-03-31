@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/alarm.dart';
 import '../models/vessel_state.dart';
+import '../sync/sync_engine.dart';
 import '../utils/id_gen.dart';
 import 'device_provider.dart';
 import 'lan_broadcast.dart';
@@ -260,18 +261,19 @@ class AlarmNotifier extends Notifier<List<Alarm>> {
       state.where((a) => a.status != AlarmStatus.cleared && !a.deleted).toList();
 
   /// Upsert an [Alarm] received from a remote device (LAN sync).
-  /// Per-record LWW: only overwrites if incoming updatedAt is strictly newer.
+  /// Uses SyncEngine LWW with full tie-break (tombstone, then src lexicographic).
   Future<void> upsertRemote(Map<String, dynamic> data) async {
     try {
-      final alarm = Alarm.fromJson(data);
-      final idx = state.indexWhere((a) => a.id == alarm.id);
+      final idx = state.indexWhere((a) => a.id == (data['id'] as String?));
       if (idx >= 0) {
-        if (!alarm.updatedAt.isAfter(state[idx].updatedAt)) return;
+        final existingJson = state[idx].toJson();
+        final winnerJson = SyncEngine.merge(existingJson, data);
+        if (identical(winnerJson, existingJson)) return;
         final updated = List<Alarm>.from(state);
-        updated[idx] = alarm;
+        updated[idx] = Alarm.fromJson(winnerJson);
         state = updated;
       } else {
-        state = [...state, alarm];
+        state = [...state, Alarm.fromJson(data)];
       }
       await save();
     } catch (_) {}

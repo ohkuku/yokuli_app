@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/task.dart';
+import '../sync/sync_engine.dart';
 import '../utils/id_gen.dart';
 import 'device_provider.dart';
 import 'lan_broadcast.dart';
@@ -233,18 +234,19 @@ class TaskNotifier extends Notifier<TaskState> {
   }
 
   /// Upsert a [TaskInstance] received from a remote device (LAN sync).
-  /// Per-record LWW: only overwrites if incoming updatedAt is strictly newer.
+  /// Uses SyncEngine LWW with full tie-break (tombstone, then src lexicographic).
   Future<void> upsertInstanceRemote(Map<String, dynamic> data) async {
     try {
-      final instance = TaskInstance.fromJson(data);
-      final idx = state.instances.indexWhere((i) => i.id == instance.id);
+      final idx = state.instances.indexWhere((i) => i.id == (data['id'] as String?));
       final List<TaskInstance> updated;
       if (idx >= 0) {
-        if (!instance.updatedAt.isAfter(state.instances[idx].updatedAt)) return;
+        final existingJson = state.instances[idx].toJson();
+        final winnerJson = SyncEngine.merge(existingJson, data);
+        if (identical(winnerJson, existingJson)) return;
         updated = List<TaskInstance>.from(state.instances);
-        updated[idx] = instance;
+        updated[idx] = TaskInstance.fromJson(winnerJson);
       } else {
-        updated = [...state.instances, instance];
+        updated = [...state.instances, TaskInstance.fromJson(data)];
       }
       state = TaskState(templates: state.templates, instances: updated);
       await save();

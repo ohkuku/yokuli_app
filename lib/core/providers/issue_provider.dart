@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/issue.dart';
+import '../sync/sync_engine.dart';
 import '../utils/id_gen.dart';
 import 'device_provider.dart';
 import 'lan_broadcast.dart';
@@ -138,18 +139,19 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
   }
 
   /// Upsert an [IssueTicket] received from a remote device (LAN sync).
-  /// Per-record LWW: only overwrites if incoming updatedAt is strictly newer.
+  /// Uses SyncEngine LWW with full tie-break (tombstone, then sdid lexicographic).
   Future<void> upsertRemote(Map<String, dynamic> data) async {
     try {
-      final ticket = IssueTicket.fromJson(data);
-      final idx = state.indexWhere((i) => i.id == ticket.id);
+      final idx = state.indexWhere((i) => i.id == (data['id'] as String?));
       if (idx >= 0) {
-        if (!ticket.updatedAt.isAfter(state[idx].updatedAt)) return;
+        final existingJson = state[idx].toJson();
+        final winnerJson = SyncEngine.merge(existingJson, data, srcKey: 'sdid');
+        if (identical(winnerJson, existingJson)) return;
         final updated = List<IssueTicket>.from(state);
-        updated[idx] = ticket;
+        updated[idx] = IssueTicket.fromJson(winnerJson);
         state = updated;
       } else {
-        state = [...state, ticket];
+        state = [...state, IssueTicket.fromJson(data)];
       }
       await save();
     } catch (_) {}
