@@ -6,15 +6,15 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/models/mob_alert.dart';
 import '../../../core/models/mob_trigger_rule.dart';
-import '../../../core/providers/lan_broadcast.dart';
-// mob_rule_sync message type constant
-const _kMobRuleSync = 'mob_rule_sync';
 import '../../../core/models/log_entry.dart';
+import '../../../core/providers/lan_broadcast.dart';
 import '../../../core/providers/log_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
 import '../../../core/services/telemetry_service.dart';
 import '../../../core/utils/id_gen.dart';
+
+const _kMobRuleSync = 'mob_rule_sync';
 
 // ---------------------------------------------------------------------------
 // State
