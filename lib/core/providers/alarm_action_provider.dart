@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/alarm_action.dart';
 import '../sync/sync_engine.dart';
+import 'device_provider.dart';
 import 'lan_broadcast.dart';
 
 // ---------------------------------------------------------------------------
@@ -68,6 +69,7 @@ class AlarmActionNotifier extends Notifier<List<AlarmAction>> {
     if (state.any((a) => a.id == action.id)) return;
     state = [...state, action]..sort((a, b) => a.at.compareTo(b.at));
     await _save();
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call({
       'type': 'alarm_action_sync',
       'data': action.toJson(),

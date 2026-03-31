@@ -125,6 +125,7 @@ class AlarmInstanceNotifier extends Notifier<List<AlarmInstance>> {
     state = [instance, ...state];
     await _save();
     TelemetryService.instance.recordAlarmTriggered(instance.id);
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call({
       'type': 'alarm_instance_sync',
       'data': instance.toJson(),
@@ -151,6 +152,7 @@ class AlarmInstanceNotifier extends Notifier<List<AlarmInstance>> {
     state = list;
     await _save();
     TelemetryService.instance.recordAlarmAcknowledged(instanceId);
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call({
       'type': 'alarm_instance_sync',
       'data': updated.toJson(),
@@ -194,6 +196,7 @@ class AlarmInstanceNotifier extends Notifier<List<AlarmInstance>> {
     list[idx] = updated;
     state = list;
     await _save();
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call({
       'type': 'alarm_instance_sync',
       'data': updated.toJson(),
@@ -238,6 +241,7 @@ class AlarmInstanceNotifier extends Notifier<List<AlarmInstance>> {
     state = list;
     await _save();
     TelemetryService.instance.recordAlarmCleared(instanceId);
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call({
       'type': 'alarm_instance_sync',
       'data': updated.toJson(),
@@ -284,6 +288,7 @@ class AlarmInstanceNotifier extends Notifier<List<AlarmInstance>> {
     state = list;
     await _save();
     TelemetryService.instance.recordAlarmCleared(instanceId, auto: true);
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call({
       'type': 'alarm_instance_sync',
       'data': updated.toJson(),
@@ -334,6 +339,7 @@ class AlarmInstanceNotifier extends Notifier<List<AlarmInstance>> {
     if (reactivatedIds.isEmpty) return;
     state = list;
     await _save();
+    ref.read(deviceProvider.notifier).bump();
 
     // Broadcast each reactivated instance and append a reactivate action.
     for (final id in reactivatedIds) {
