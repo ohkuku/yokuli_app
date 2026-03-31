@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder - the generated file from `flutter build web` will
+    include the correct value.
+  -->
+  <base href="/yokuli_app/preview/codex-fix-severe-synchronization-bugs-gbn2e0/9ff71a1/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Yokuli — Vessel Control Platform">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Yokuli">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="icons/Icon-192.png"/>
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="manifest.json">
+
+  <title>Yokuli</title>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background-color: #07111F;
+      overflow: hidden;
+    }
+
+    /* Splash shown while Flutter loads */
+    #splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background-color: #07111F;
+      z-index: 9999;
+      transition: opacity 0.4s ease;
+    }
+
+    #splash.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #splash-logo {
+      width: 72px;
+      height: 72px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, #00D9FF22, #00D9FF44);
+      border: 1.5px solid #00D9FF55;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+
+    #splash-logo svg {
+      width: 40px;
+      height: 40px;
+      fill: #00D9FF;
+    }
+
+    #splash-title {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      color: #E8F4F8;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    #splash-sub {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 12px;
+      color: #4A6FA5;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 40px;
+    }
+
+    #splash-spinner {
+      width: 32px;
+      height: 32px;
+      border: 2px solid #0D2135;
+      border-top-color: #00D9FF;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <!-- Splash screen -->
+  <div id="splash">
+    <div id="splash-logo">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <!-- Anchor icon -->
+        <path d="M12 2a3 3 0 1 1 0 6 3 3 0 0 1 0-6zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm0 4v1H7a1 1 0 0 0 0 2h5v7.93A8.001 8.001 0 0 1 4.07 11H6a1 1 0 0 0 0-2H2.07A10.003 10.003 0 0 0 12 22a10.003 10.003 0 0 0 9.93-11H18a1 1 0 0 0 0 2h1.93A8.001 8.001 0 0 1 13 17.93V11h5a1 1 0 0 0 0-2h-5V8h-1z"/>
+      </svg>
+    </div>
+    <div id="splash-title">Yokuli</div>
+    <div id="splash-sub">Vessel Control Platform</div>
+    <div id="splash-spinner"></div>
+  </div>
+
+  <script>
+    // Hide splash once Flutter signals it's ready
+    window.addEventListener('flutter-first-frame', function() {
+      var splash = document.getElementById('splash');
+      if (splash) {
+        splash.classList.add('hidden');
+        setTimeout(function() { splash.remove(); }, 500);
+      }
+    });
+  </script>
+
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
