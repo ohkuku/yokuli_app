@@ -10,6 +10,7 @@ import '../../../core/providers/vessel_provider.dart';
 import '../../../core/providers/lan_broadcast.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
 import '../../../core/utils/id_gen.dart';
+import '../../../core/services/telemetry_service.dart';
 
 class SafetyState {
   final MobAlert? activeMob;
@@ -93,6 +94,7 @@ class SafetyNotifier extends Notifier<SafetyState> {
       triggeredByDevice: 'this device',
     );
     state = state.copyWith(activeMob: alert);
+    TelemetryService.instance.recordMobActivated();
     // Log MOB start
     ref.read(logProvider.notifier).log(
       type: LogEntryType.system,
@@ -110,6 +112,7 @@ class SafetyNotifier extends Notifier<SafetyState> {
       final secs = elapsed.inSeconds % 60;
       state.activeMob!.isActive = false;
       state = state.copyWith(clearMob: true);
+      TelemetryService.instance.recordMobCleared();
       // Log MOB end
       ref.read(logProvider.notifier).log(
         type: LogEntryType.system,

@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' show min, Random;
 
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as ws_status;
 
 import '../../models/vessel_state.dart';
 import '../../models/mob_alert.dart';
+import '../../services/telemetry_service.dart';
 import 'sync_host.dart' show SyncHost;
 
 typedef DiscoveredHost = ({
@@ -25,6 +27,22 @@ class SyncClient {
   bool _intentionalDisconnect = false;
   Timer? _reconnectTimer;
   String? _currentWsUrl;
+
+  // Exponential back-off state
+  int _reconnectAttempts = 0;
+  static const int _maxBackoffMs = 30000;
+  static const int _baseBackoffMs = 1000;
+
+  // Heartbeat & watchdog
+  Timer? _pingTimer;
+  Timer? _watchdogTimer;
+  DateTime? _lastMessageAt;
+  DateTime? _lastPingSentAt;
+  static const Duration _pingInterval = Duration(seconds: 15);
+  static const Duration _watchdogThreshold = Duration(seconds: 35);
+
+  // Reconnect duration tracking
+  DateTime? _connectAttemptAt;
 
   // Callbacks
   void Function(VesselState state)? onStateReceived;
@@ -59,32 +77,79 @@ class SyncClient {
   }
 
   Future<void> _doConnect(String wsUrl) async {
+    _connectAttemptAt = DateTime.now();
+    TelemetryService.instance.recordConnectionAttempt();
     onConnectionChanged?.call(false);
     try {
       _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
-      // Wait for the WebSocket handshake to complete before reporting connected
       await _channel!.ready;
       _sub = _channel!.stream.listen(
         _onMessage,
         onError: (_) {
-          onConnectionChanged?.call(false);
-          if (!_intentionalDisconnect) _scheduleReconnect();
+          _onDisconnected();
         },
         onDone: () {
-          onConnectionChanged?.call(false);
-          if (!_intentionalDisconnect) _scheduleReconnect();
+          _onDisconnected();
         },
         cancelOnError: true,
       );
+      _reconnectAttempts = 0;
+      _lastMessageAt = DateTime.now();
+      if (_connectAttemptAt != null) {
+        final durationMs =
+            DateTime.now().difference(_connectAttemptAt!).inMilliseconds;
+        TelemetryService.instance.recordConnectionSuccess(durationMs);
+      }
       onConnectionChanged?.call(true);
-    } catch (_) {
+      _startHeartbeat();
+    } catch (e) {
       _channel = null;
+      TelemetryService.instance.recordConnectionFailure();
       onConnectionChanged?.call(false);
       if (!_intentionalDisconnect) _scheduleReconnect();
     }
   }
 
+  void _onDisconnected() {
+    _stopHeartbeat();
+    onConnectionChanged?.call(false);
+    if (!_intentionalDisconnect) {
+      TelemetryService.instance.recordDisconnect();
+      _scheduleReconnect();
+    }
+  }
+
+  void _startHeartbeat() {
+    _stopHeartbeat();
+    _pingTimer = Timer.periodic(_pingInterval, (_) {
+      if (_channel == null) return;
+      _lastPingSentAt = DateTime.now();
+      _channel?.sink.add(jsonEncode({
+        'type': 'ping',
+        'at': _lastPingSentAt!.toIso8601String(),
+      }));
+    });
+    _watchdogTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (_intentionalDisconnect || _channel == null) return;
+      final last = _lastMessageAt;
+      if (last != null && DateTime.now().difference(last) > _watchdogThreshold) {
+        TelemetryService.instance.log('warn', 'watchdog_reconnect',
+            {'silentMs': DateTime.now().difference(last).inMilliseconds});
+        _onDisconnected();
+        _doConnect(_currentWsUrl!);
+      }
+    });
+  }
+
+  void _stopHeartbeat() {
+    _pingTimer?.cancel();
+    _pingTimer = null;
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
+  }
+
   void _onMessage(dynamic raw) {
+    _lastMessageAt = DateTime.now();
     try {
       final json = jsonDecode(raw as String) as Map<String, dynamic>;
 
@@ -143,6 +208,9 @@ class SyncClient {
           onSyncHelloReceived?.call(json);
         case 'sync_changes':
           onSyncChanges?.call(json);
+        case 'pong':
+          // Pong received — connection is alive; watchdog reset happens via _lastMessageAt
+          break;
       }
     } catch (_) {}
   }
@@ -153,7 +221,15 @@ class SyncClient {
 
   void _scheduleReconnect() {
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(const Duration(seconds: 5), () {
+    _reconnectAttempts++;
+    TelemetryService.instance.recordReconnectScheduled(_reconnectAttempts);
+
+    // Exponential backoff with jitter: base * 2^n + rand(0..base), capped at 30s
+    final expMs = _baseBackoffMs * (1 << min(_reconnectAttempts - 1, 5));
+    final jitterMs = Random().nextInt(_baseBackoffMs);
+    final delayMs = min(expMs + jitterMs, _maxBackoffMs);
+
+    _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
       if (!_intentionalDisconnect && _currentWsUrl != null) {
         _doConnect(_currentWsUrl!);
       }
@@ -168,6 +244,7 @@ class SyncClient {
   Future<void> disconnect() async {
     _intentionalDisconnect = true;
     _reconnectTimer?.cancel();
+    _stopHeartbeat();
     await _sub?.cancel();
     await _channel?.sink.close(ws_status.goingAway);
     _channel = null;

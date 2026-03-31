@@ -21,6 +21,7 @@ import '../../core/services/signalk/signalk_auth.dart';
 import '../../core/services/signalk/signalk_client.dart';
 import '../../core/services/lan_sync/lan_sync_service.dart';
 import '../../core/sync/sync_migration.dart';
+import '../../core/services/telemetry_service.dart';
 import '../safety/providers/safety_provider.dart';
 
 // ---------------------------------------------------------------------------
@@ -156,6 +157,7 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
   }
 
   Future<void> _loadLocalData() async {
+    await TelemetryService.instance.init();
     await ref.read(settingsProvider.notifier).load();
     await ref.read(safetyProvider.notifier).load();
     ref.read(deviceProvider);

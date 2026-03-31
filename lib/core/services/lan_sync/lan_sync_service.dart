@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection' show LinkedHashSet;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,6 +27,8 @@ import '../../providers/issue_provider.dart';
 import '../../providers/voyage_provider.dart';
 import '../../providers/kanban_provider.dart';
 import '../../providers/lan_broadcast.dart';
+import '../../utils/id_gen.dart';
+import '../telemetry_service.dart';
 import '../../sync/sync_cursor_store.dart';
 import '../../sync/sync_engine.dart';
 import '../signalk/signalk_auth.dart';
@@ -57,6 +60,11 @@ class LanSyncService {
   /// deviceId → stateVersionMs we last successfully triggered a sync with.
   /// Prevents duplicate connections to the same peer at the same version.
   final Map<String, int> _peerSyncedVersions = {};
+
+  /// Bounded set of processed sync_changes eventIds for idempotent dedup.
+  /// Keeps the last 2 000 entries; older ones are evicted as new ones arrive.
+  final LinkedHashSet<String> _processedEventIds = LinkedHashSet();
+  static const int _eventIdCacheSize = 2000;
 
   void Function(MobAlert alert)? onMobAlert;
   void Function()? onMobCancelReceived;
@@ -255,6 +263,7 @@ class LanSyncService {
         'type': 'sync_changes',
         'collection': collection,
         'records': missing,
+        'eventId': generateId(),
       });
     }
   }
@@ -298,6 +307,19 @@ class LanSyncService {
   /// Apply a batch of incoming records for a collection (LWW merge) and
   /// advance the local cursor.
   Future<void> _applySyncChanges(Map<String, dynamic> msg) async {
+    // Idempotent dedup: skip if this exact batch was already applied.
+    final eventId = msg['eventId'] as String?;
+    if (eventId != null) {
+      if (_processedEventIds.contains(eventId)) {
+        TelemetryService.instance.recordSyncDeduplicated();
+        return;
+      }
+      _processedEventIds.add(eventId);
+      if (_processedEventIds.length > _eventIdCacheSize) {
+        _processedEventIds.remove(_processedEventIds.first);
+      }
+    }
+
     final collection = msg['collection'] as String?;
     final recordsRaw = msg['records'] as List<dynamic>?;
     if (collection == null || recordsRaw == null || recordsRaw.isEmpty) return;

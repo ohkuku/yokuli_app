@@ -9,6 +9,7 @@ import '../models/alarm_instance.dart';
 import '../models/alarm_rule.dart';
 import '../sync/sync_engine.dart';
 import '../utils/id_gen.dart';
+import '../services/telemetry_service.dart';
 import 'alarm_action_provider.dart';
 import 'device_provider.dart';
 import 'lan_broadcast.dart';
@@ -123,6 +124,7 @@ class AlarmInstanceNotifier extends Notifier<List<AlarmInstance>> {
 
     state = [instance, ...state];
     await _save();
+    TelemetryService.instance.recordAlarmTriggered(instance.id);
     ref.read(lanBroadcastProvider)?.call({
       'type': 'alarm_instance_sync',
       'data': instance.toJson(),
@@ -148,6 +150,7 @@ class AlarmInstanceNotifier extends Notifier<List<AlarmInstance>> {
     list[idx] = updated;
     state = list;
     await _save();
+    TelemetryService.instance.recordAlarmAcknowledged(instanceId);
     ref.read(lanBroadcastProvider)?.call({
       'type': 'alarm_instance_sync',
       'data': updated.toJson(),
@@ -234,6 +237,7 @@ class AlarmInstanceNotifier extends Notifier<List<AlarmInstance>> {
     list[idx] = updated;
     state = list;
     await _save();
+    TelemetryService.instance.recordAlarmCleared(instanceId);
     ref.read(lanBroadcastProvider)?.call({
       'type': 'alarm_instance_sync',
       'data': updated.toJson(),
@@ -279,6 +283,7 @@ class AlarmInstanceNotifier extends Notifier<List<AlarmInstance>> {
     list[idx] = updated;
     state = list;
     await _save();
+    TelemetryService.instance.recordAlarmCleared(instanceId, auto: true);
     ref.read(lanBroadcastProvider)?.call({
       'type': 'alarm_instance_sync',
       'data': updated.toJson(),

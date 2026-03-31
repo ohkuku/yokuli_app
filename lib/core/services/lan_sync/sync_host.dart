@@ -226,6 +226,12 @@ class SyncHost {
             onNotifReceiptSync?.call(data);
             broadcastJson(json);
           }
+        case 'ping':
+          // Respond immediately so client watchdog stays satisfied.
+          _sendToChannel(
+            channel,
+            jsonEncode({'type': 'pong', 'at': json['at']}),
+          );
         case 'sync_hello':
           // Client is introducing itself — reply to this specific client only
           onSyncHello?.call(
