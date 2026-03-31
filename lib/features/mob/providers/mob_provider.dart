@@ -9,6 +9,7 @@ import '../../../core/models/mob_trigger_rule.dart';
 import '../../../core/providers/lan_broadcast.dart';
 // mob_rule_sync message type constant
 const _kMobRuleSync = 'mob_rule_sync';
+import '../../../core/models/log_entry.dart';
 import '../../../core/providers/log_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';

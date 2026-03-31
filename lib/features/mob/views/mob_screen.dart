@@ -76,7 +76,7 @@ class _MobScreenState extends ConsumerState<MobScreen>
           ),
           bottom: TabBar(
             controller: _tabs,
-            indicatorColor: isActive ? AppColors.danger : AppColors.primary,
+            indicatorColor: isActive ? AppColors.danger : AppColors.cyan,
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white54,
             tabs: const [
@@ -476,7 +476,7 @@ class _RulesTab extends ConsumerWidget {
     return Scaffold(
       backgroundColor: Colors.transparent,
       floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.primary,
+        backgroundColor: AppColors.cyan,
         child: const Icon(Icons.add),
         onPressed: () => _showAddSheet(context, ref),
       ),
@@ -587,7 +587,7 @@ class _RuleCard extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Icon(typeIcon, color: rule.enabled ? AppColors.primary : Colors.white24, size: 26),
+        leading: Icon(typeIcon, color: rule.enabled ? AppColors.cyan : Colors.white24, size: 26),
         title: Text(rule.name, style: TextStyle(color: rule.enabled ? Colors.white : Colors.white54)),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -603,7 +603,7 @@ class _RuleCard extends StatelessWidget {
             Switch(
               value: rule.enabled,
               onChanged: onToggle,
-              activeColor: AppColors.primary,
+              activeColor: AppColors.cyan,
             ),
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert, color: Colors.white38),
@@ -796,7 +796,7 @@ class _AddRuleSheetState extends ConsumerState<_AddRuleSheet> {
               SegmentedButton<MobTriggerType>(
                 style: ButtonStyle(
                   backgroundColor: WidgetStateProperty.resolveWith(
-                    (s) => s.contains(WidgetState.selected) ? AppColors.primary.withValues(alpha: 0.3) : null,
+                    (s) => s.contains(WidgetState.selected) ? AppColors.cyan.withValues(alpha: 0.3) : null,
                   ),
                 ),
                 segments: MobTriggerType.values.map((t) => ButtonSegment(
@@ -851,7 +851,7 @@ class _AddRuleSheetState extends ConsumerState<_AddRuleSheet> {
               const SizedBox(height: 20),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: AppColors.cyan,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
                 onPressed: _save,
@@ -1010,7 +1010,7 @@ class _PresetTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: ListTile(
-        leading: Icon(icon, color: AppColors.primary),
+        leading: Icon(icon, color: AppColors.cyan),
         title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 14)),
         subtitle: Text(subtitle, style: const TextStyle(color: Colors.white38, fontSize: 12)),
         trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white24, size: 14),
