@@ -24,6 +24,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late TextEditingController _deviceNameCtrl;
   late TextEditingController _vesselNameCtrl;
   late TextEditingController _hostIpCtrl; // web only: manual host address
+  late TextEditingController _metServiceKeyCtrl;
   String? _localIp;
 
   @override
@@ -33,6 +34,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _deviceNameCtrl = TextEditingController(text: s.deviceName);
     _vesselNameCtrl = TextEditingController(text: s.vesselName);
     _hostIpCtrl = TextEditingController(text: s.hostIp);
+    _metServiceKeyCtrl = TextEditingController(text: s.metServiceApiKey);
     if (!kIsWeb) _loadLocalIp();
   }
 
@@ -41,6 +43,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _deviceNameCtrl.dispose();
     _vesselNameCtrl.dispose();
     _hostIpCtrl.dispose();
+    _metServiceKeyCtrl.dispose();
     super.dispose();
   }
 
@@ -283,6 +286,63 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _SyncStatusPanel(
               onForceResync: _forceFullResync,
               onShowDiagnostics: _showSyncDiagnostics,
+            ),
+            const SizedBox(height: 24),
+
+            // --- Weather ---
+            _SectionHeader('天气'),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.cardBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '数据源',
+                    style: TextStyle(
+                        color: AppColors.textMuted, fontSize: 11),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    settings.metServiceApiKey.isNotEmpty
+                        ? 'MetService NZ (API key 已配置)'
+                        : 'Open-Meteo — 免费，全球覆盖，无需密钥',
+                    style: const TextStyle(
+                        color: AppColors.textSecondary, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _metServiceKeyCtrl,
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: 'MetService API 密钥（可选）',
+                hintText: '留空则使用 Open-Meteo',
+                prefixIcon: const Icon(Icons.vpn_key_rounded),
+                helperText: '从 data.metservice.com 获取密钥（限 NZ）',
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.check_rounded),
+                  onPressed: () async {
+                    await ref
+                        .read(settingsProvider.notifier)
+                        .update(settings.copyWith(
+                            metServiceApiKey:
+                                _metServiceKeyCtrl.text.trim()));
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('天气配置已保存')));
+                    }
+                  },
+                ),
+              ),
+              textInputAction: TextInputAction.done,
             ),
             const SizedBox(height: 24),
 

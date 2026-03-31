@@ -22,6 +22,9 @@ class AppSettings {
   final bool autoConnectLan;
   final bool keepScreenOn;
   final List<String> tileOrder; // home screen tile ordering
+  /// Optional MetService NZ API key (from data.metservice.com).
+  /// Leave empty to use Open-Meteo (default, free, no key required).
+  final String metServiceApiKey;
 
   const AppSettings({
     this.deviceName = '',
@@ -38,6 +41,7 @@ class AppSettings {
     this.autoConnectLan = false,
     this.keepScreenOn = true,
     this.tileOrder = const [],
+    this.metServiceApiKey = '',
   });
 
   bool get hasCredentials =>
@@ -88,6 +92,7 @@ class AppSettings {
     bool? autoConnectLan,
     bool? keepScreenOn,
     List<String>? tileOrder,
+    String? metServiceApiKey,
   }) =>
       AppSettings(
         deviceName: deviceName ?? this.deviceName,
@@ -104,6 +109,7 @@ class AppSettings {
         autoConnectLan: autoConnectLan ?? this.autoConnectLan,
         keepScreenOn: keepScreenOn ?? this.keepScreenOn,
         tileOrder: tileOrder ?? this.tileOrder,
+        metServiceApiKey: metServiceApiKey ?? this.metServiceApiKey,
       );
 }
 
@@ -118,10 +124,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
   static const _keyDeviceRole     = 'device_role';
   static const _keyHostIp         = 'host_ip';
   static const _keyHostPort       = 'host_port';
-  static const _keyAutoConnectSK  = 'auto_connect_sk';
-  static const _keyAutoConnectLan = 'auto_connect_lan';
-  static const _keyKeepScreenOn   = 'keep_screen_on';
-  static const _keyTileOrder      = 'tile_order';
+  static const _keyAutoConnectSK    = 'auto_connect_sk';
+  static const _keyAutoConnectLan   = 'auto_connect_lan';
+  static const _keyKeepScreenOn     = 'keep_screen_on';
+  static const _keyTileOrder        = 'tile_order';
+  static const _keyMetServiceApiKey = 'metservice_api_key';
 
   @override
   AppSettings build() {
@@ -155,6 +162,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       tileOrder: tileOrderStr.isEmpty
           ? const []
           : tileOrderStr.split(',').where((s) => s.isNotEmpty).toList(),
+      metServiceApiKey: prefs.getString(_keyMetServiceApiKey) ?? '',
     );
   }
 
@@ -226,7 +234,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
     await prefs.setBool(_keyAutoConnectSK,   s.autoConnectSignalK);
     await prefs.setBool(_keyAutoConnectLan,  s.autoConnectLan);
     await prefs.setBool(_keyKeepScreenOn,    s.keepScreenOn);
-    await prefs.setString(_keyTileOrder,     s.tileOrder.join(','));
+    await prefs.setString(_keyTileOrder,        s.tileOrder.join(','));
+    await prefs.setString(_keyMetServiceApiKey, s.metServiceApiKey);
   }
 }
 

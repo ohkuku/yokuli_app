@@ -17,6 +17,7 @@ import '../features/alarm_center/views/alarm_rule_edit_screen.dart';
 import '../features/mob/views/mob_screen.dart';
 import '../core/models/alarm_rule.dart';
 import '../features/voyage/views/voyage_detail_screen.dart';
+import '../features/weather/views/weather_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -80,6 +81,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final extra = state.extra as AlarmRule?;
           return _slidePage(state, AlarmRuleEditScreen(existing: extra));
         },
+      ),
+      GoRoute(
+        path: '/weather',
+        name: 'weather',
+        pageBuilder: (context, state) => _slidePage(state, const WeatherScreen()),
       ),
       GoRoute(
         path: '/settings',

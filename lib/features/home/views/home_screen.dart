@@ -17,9 +17,12 @@ import '../../../core/providers/notification_provider.dart';
 import '../../../core/providers/kanban_provider.dart';
 import '../../../features/mob/providers/mob_provider.dart';
 import '../../../core/services/update/update_dialog.dart';
+import '../../../core/providers/weather_provider.dart';
+import '../../../core/models/weather_state.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../widgets/app_tile.dart';
 import '../widgets/vessel_status_bar.dart';
+import '../widgets/weather_background.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -58,8 +61,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     final alarmCount  = ref.watch(alarmInstanceCountProvider);
     final kanbanCount = ref.watch(kanbanProvider).cards.length;
+    final weather     = ref.watch(weatherProvider);
 
-    var tiles = _buildTiles(vessel, conn, s, alarmCount, kanbanCount);
+    var tiles = _buildTiles(vessel, conn, s, alarmCount, kanbanCount, weather);
 
     // Apply saved tile order
     if (settings.tileOrder.isNotEmpty) {
@@ -74,8 +78,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          // ── Aurora background ──────────────────────────────────────
-          const Positioned.fill(child: AuroraBackground()),
+          // ── Weather sky background (iOS Weather-style) ────────────
+          const Positioned.fill(child: WeatherBackground()),
 
           // ── Content ───────────────────────────────────────────────
           SafeArea(
@@ -122,12 +126,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     s,
     int alarmCount,
     int kanbanCount,
+    WeatherState weather,
   ) {
     final sogStr = vessel.speedOverGround != null
         ? '${vessel.speedOverGround!.toStringAsFixed(1)} kn'
         : null;
 
     final signalKBadge = conn.isSignalKConnected ? s.connected : s.disconnected;
+
+    final weatherBadge = weather.temperature != null
+        ? '${weather.temperature!.round()}° ${weather.description ?? ''}'.trim()
+        : weather.isLoading
+            ? '获取中…'
+            : null;
 
     return [
       AppTileData(
@@ -194,6 +205,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         route: '/log',
       ),
       AppTileData(
+        id: 'weather',
+        label: '天气',
+        icon: Icons.wb_sunny_rounded,
+        accentColor: AppColors.modWeather,
+        route: '/weather',
+        badge: weatherBadge,
+      ),
+      AppTileData(
         id: 'settings',
         label: s.settings,
         icon: Icons.settings_rounded,
@@ -247,6 +266,7 @@ class _Header extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final weather = ref.watch(weatherProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
       child: GlassCard(
@@ -260,14 +280,54 @@ class _Header extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    vesselName.toUpperCase(),
-                    style: const TextStyle(
-                      color: AppColors.cyan,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 2.5,
-                    ),
+                  // Vessel name + optional temperature chip
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          vesselName.toUpperCase(),
+                          style: const TextStyle(
+                            color: AppColors.cyan,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 2.5,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (weather.temperature != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.modWeather.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(
+                                color: AppColors.modWeather.withOpacity(0.28)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                iconForCode(weather.weatherCode ?? 0),
+                                size: 11,
+                                color: AppColors.modWeather,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                '${weather.temperature!.round()}°',
+                                style: const TextStyle(
+                                  color: AppColors.modWeather,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 3),
                   Text(
