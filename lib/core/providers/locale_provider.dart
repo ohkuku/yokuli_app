@@ -9,7 +9,7 @@ const _kLangKey = 'app_language';
 
 class LocaleNotifier extends Notifier<String> {
   @override
-  String build() => 'en'; // default; will be overridden in initState
+  String build() => 'zh'; // default Chinese; overridden from prefs in init
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();

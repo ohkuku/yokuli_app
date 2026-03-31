@@ -216,12 +216,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               const SizedBox(height: 16),
             ],
 
-            // --- Language ---
-            _SectionHeader(s.language.toUpperCase()),
-            const SizedBox(height: 8),
-            _LanguageSelector(),
-            const SizedBox(height: 24),
-
             // --- This Device ---
             _SectionHeader(s.sectionThisDevice),
             const SizedBox(height: 8),
@@ -895,73 +889,6 @@ class _ToggleTile extends StatelessWidget {
       );
 }
 
-class _LanguageSelector extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final lang = ref.watch(localeProvider);
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          _LangBtn(
-              code: 'en',
-              label: '🇬🇧  English',
-              selected: lang == 'en',
-              onTap: () => ref.read(localeProvider.notifier).setLanguage('en')),
-          Container(width: 1, height: 44, color: AppColors.border),
-          _LangBtn(
-              code: 'zh',
-              label: '🇨🇳  中文',
-              selected: lang == 'zh',
-              onTap: () => ref.read(localeProvider.notifier).setLanguage('zh')),
-        ],
-      ),
-    );
-  }
-}
-
-class _LangBtn extends StatelessWidget {
-  final String code;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  const _LangBtn(
-      {required this.code,
-      required this.label,
-      required this.selected,
-      required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          height: 44,
-          decoration: BoxDecoration(
-            color: selected ? AppColors.cyan.withAlpha(25) : Colors.transparent,
-            borderRadius: code == 'en'
-                ? const BorderRadius.horizontal(left: Radius.circular(12))
-                : const BorderRadius.horizontal(right: Radius.circular(12)),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected ? AppColors.cyan : AppColors.textMuted,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-              fontSize: 14,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Sync Status Panel
