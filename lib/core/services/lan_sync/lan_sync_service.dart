@@ -79,14 +79,18 @@ class LanSyncService {
   /// Called when alarm settings arrive from a remote peer.
   void Function(Map<String, dynamic>)? onAlarmSettingsReceived;
 
-  /// Called to get alarm rules (per-type) to push to new clients.
-  Map<String, dynamic>? Function()? getAlarmRules;
+  /// Called to get alarm rules payload to push to new clients.
+  /// Supports either:
+  ///   - {'rules': [ ... ]}
+  ///   - [ ... ]  (legacy direct list)
+  Object? Function()? getAlarmRules;
 
   /// Called to get notify channel config to push to new clients.
   Map<String, dynamic>? Function()? getNotifyChannelCfg;
 
   /// Called when alarm rules arrive from a remote peer.
-  void Function(Map<String, dynamic>)? onAlarmRulesReceived;
+  /// Receives normalized rule records.
+  void Function(List<Map<String, dynamic>>)? onAlarmRulesReceived;
 
   /// Called when notify channel config arrives from a remote peer.
   void Function(Map<String, dynamic>)? onNotifyChannelReceived;
@@ -230,6 +234,8 @@ class LanSyncService {
         'vesselName': s.vesselName,
         'tileOrder': s.tileOrder,
         'keepScreenOn': s.keepScreenOn,
+        if (s.signalKUrl.isNotEmpty) 'skUrl': s.signalKUrl,
+        'autoConnectSignalK': s.autoConnectSignalK,
         if (s.signalKHost.isNotEmpty) ...{
           'skHost': s.signalKHost,
           'skPort': s.signalKPort,
@@ -514,6 +520,8 @@ class LanSyncService {
     final vesselName = data['vesselName'] as String?;
     final tileOrder = (data['tileOrder'] as List?)?.cast<String>();
     final keepScreenOn = data['keepScreenOn'] as bool?;
+    final autoConnectSignalK = data['autoConnectSignalK'] as bool?;
+    final skUrl = data['skUrl'] as String?;
     final skHost = data['skHost'] as String?;
     final skPort = data['skPort'] as int?;
     final skUser = data['skUser'] as String?;
@@ -524,6 +532,9 @@ class LanSyncService {
             vesselName: vesselName ?? current.vesselName,
             tileOrder: tileOrder ?? current.tileOrder,
             keepScreenOn: keepScreenOn ?? current.keepScreenOn,
+            autoConnectSignalK:
+                autoConnectSignalK ?? current.autoConnectSignalK,
+            signalKUrl: skUrl ?? current.signalKUrl,
             signalKHost: skHost ?? current.signalKHost,
             signalKPort: skPort ?? current.signalKPort,
             signalKUsername: skUser ?? current.signalKUsername,
@@ -541,6 +552,11 @@ class LanSyncService {
           'username': skUser ?? '',
           'password': skPass ?? '',
         });
+      }
+    } else if (skUrl != null && skUrl.isNotEmpty) {
+      final skStatus = _ref.read(connectionProvider).signalK;
+      if (skStatus != ConnectionStatus.connected) {
+        await _ref.read(signalKClientProvider).connect(skUrl);
       }
     }
 
@@ -560,9 +576,10 @@ class LanSyncService {
     }
 
     // Apply alarm rules if present
-    final alarmRulesRaw = data['alarmRules'] as Map<String, dynamic>?;
-    if (alarmRulesRaw != null) {
-      onAlarmRulesReceived?.call(alarmRulesRaw);
+    final alarmRulesRaw = data['alarmRules'];
+    final normalizedAlarmRules = _parseAlarmRulesPayload(alarmRulesRaw);
+    if (normalizedAlarmRules.isNotEmpty) {
+      onAlarmRulesReceived?.call(normalizedAlarmRules);
     }
 
     // Apply notify channel config if present
@@ -570,6 +587,19 @@ class LanSyncService {
     if (notifyChannelRaw != null) {
       onNotifyChannelReceived?.call(notifyChannelRaw);
     }
+  }
+
+  List<Map<String, dynamic>> _parseAlarmRulesPayload(dynamic raw) {
+    if (raw is List) {
+      return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+    if (raw is Map) {
+      final rules = raw['rules'];
+      if (rules is List) {
+        return rules.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      }
+    }
+    return const [];
   }
 
   /// Broadcast current settings to all peers (call after any settings change).
@@ -584,6 +614,8 @@ class LanSyncService {
         'vesselName': s.vesselName,
         'tileOrder': s.tileOrder,
         'keepScreenOn': s.keepScreenOn,
+        if (s.signalKUrl.isNotEmpty) 'skUrl': s.signalKUrl,
+        'autoConnectSignalK': s.autoConnectSignalK,
         if (s.signalKHost.isNotEmpty) ...{
           'skHost': s.signalKHost,
           'skPort': s.signalKPort,
