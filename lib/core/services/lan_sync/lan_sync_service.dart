@@ -27,6 +27,8 @@ import '../../providers/issue_provider.dart';
 import '../../providers/voyage_provider.dart';
 import '../../providers/kanban_provider.dart';
 import '../../providers/lan_broadcast.dart';
+import '../../../features/mob/providers/mob_provider.dart';
+import '../../../features/safety/providers/safety_provider.dart';
 import '../../utils/id_gen.dart';
 import '../telemetry_service.dart';
 import '../../sync/sync_cursor_store.dart';
@@ -135,8 +137,14 @@ class LanSyncService {
         _ref.read(vesselProvider.notifier).update(state);
       }
     };
-    _platform.onMobReceived = (alert) => onMobAlert?.call(alert);
-    _platform.onMobCancelReceived = () => onMobCancelReceived?.call();
+    _platform.onMobReceived = (alert) {
+      onMobAlert?.call(alert);
+      _ref.read(mobProvider.notifier).receiveMob(alert);
+    };
+    _platform.onMobCancelReceived = () {
+      onMobCancelReceived?.call();
+      _ref.read(mobProvider.notifier).receiveMobCancel();
+    };
     _platform.onKanbanSync = (data) {
       _ref.read(kanbanProvider.notifier).applySync(data);
     };
@@ -172,11 +180,26 @@ class LanSyncService {
     _platform.onVoyageUpsert = (data) {
       _ref.read(voyageProvider.notifier).upsertRemote(data);
     };
-    _platform.onAlarmRuleSync = (data) => onAlarmRuleSync?.call(data);
-    _platform.onAlarmInstanceSync = (data) => onAlarmInstanceSync?.call(data);
-    _platform.onAlarmActionSync = (data) => onAlarmActionSync?.call(data);
-    _platform.onMobRuleSync = (data) => onMobRuleSync?.call(data);
-    _platform.onNotifyChannelSyncReceived = (data) => onNotifyChannelReceived?.call(data);
+    _platform.onAlarmRuleSync = (data) {
+      onAlarmRuleSync?.call(data);
+      _ref.read(alarmRuleProvider.notifier).applyRemote([data]);
+    };
+    _platform.onAlarmInstanceSync = (data) {
+      onAlarmInstanceSync?.call(data);
+      _ref.read(alarmInstanceProvider.notifier).upsertRemote(data);
+    };
+    _platform.onAlarmActionSync = (data) {
+      onAlarmActionSync?.call(data);
+      _ref.read(alarmActionProvider.notifier).applyRemote(data);
+    };
+    _platform.onMobRuleSync = (data) {
+      onMobRuleSync?.call(data);
+      _ref.read(mobProvider.notifier).applyRuleRemote(data);
+    };
+    _platform.onNotifyChannelSyncReceived = (data) {
+      onNotifyChannelReceived?.call(data);
+      _ref.read(notifyChannelProvider.notifier).applySync(data);
+    };
     _platform.onVesselStatePush = (state) {
       // A client is sharing their SK vessel state — apply only if we have no SK.
       final skStatus = _ref.read(connectionProvider).signalK;
@@ -229,21 +252,36 @@ class LanSyncService {
     Map<String, dynamic> msg,
     void Function(Map<String, dynamic>) reply,
   ) async {
-    final peerCursors = _parseCursors(msg['cursors']);
-    await _sendMissingRecords(peerCursors, reply);
-    // Push current settings, SK credentials, and active MOB to the new client
-    // so it becomes fully operational without any manual configuration.
-    _pushCurrentStateTo(reply);
-    _setJoinInProgress(false);
+    try {
+      debugPrint('[LanSync] _handleSyncHelloFromClient from ${msg['deviceId']}');
+      final peerCursors = _parseCursors(msg['cursors']);
+      await _sendMissingRecords(peerCursors, reply);
+      // Push current settings, SK credentials, and active MOB to the new client
+      // so it becomes fully operational without any manual configuration.
+      _pushCurrentStateTo(reply);
+      debugPrint('[LanSync] _pushCurrentStateTo completed');
+      _setJoinInProgress(false);
+    } catch (e, st) {
+      debugPrint('[LanSync] ERROR in _handleSyncHelloFromClient: $e\n$st');
+    }
   }
 
   /// Push current settings and MOB state to a specific client (e.g. on first connect).
   void _pushCurrentStateTo(void Function(Map<String, dynamic>) sendTo) {
     final s = _ref.read(settingsProvider);
     final lang = _ref.read(localeProvider);
-    final alarmData = getAlarmSettings?.call();
-    final alarmRules = getAlarmRules?.call();
-    final notifyChannelCfg = getNotifyChannelCfg?.call();
+    final safety = _ref.read(safetyProvider);
+    final alarmData = getAlarmSettings?.call() ?? {
+      'depthAlarmEnabled': safety.depthAlarmEnabled,
+      'depthAlarmThreshold': safety.depthAlarmThreshold,
+      'speedAlarmEnabled': safety.speedAlarmEnabled,
+      'speedAlarmThreshold': safety.speedAlarmThreshold,
+    };
+    final alarmRules = getAlarmRules?.call() ?? {
+      'rules': _ref.read(alarmRuleProvider).map((r) => r.toJson()).toList(),
+    };
+    final notifyChannelCfg = getNotifyChannelCfg?.call() ??
+        _ref.read(notifyChannelProvider).toJson();
     sendTo({
       'type': 'settings_sync',
       'data': {
@@ -262,27 +300,34 @@ class LanSyncService {
           'skUser': s.signalKUsername,
           'skPass': s.signalKPassword,
         },
-        if (alarmData != null) ...alarmData,
-        if (alarmRules != null) 'alarmRules': alarmRules,
-        if (notifyChannelCfg != null) 'notifyChannel': notifyChannelCfg,
+        ...alarmData,
+        'alarmRules': alarmRules,
+        'notifyChannel': notifyChannelCfg,
       },
     });
-    final mob = getActiveMob?.call();
+    // Push active MOB alert
+    final mob = getActiveMob?.call() ?? _ref.read(mobProvider).activeMob;
     if (mob != null) {
       sendTo({'type': 'mob', 'data': mob.toJson()});
     }
     // Push each MOB trigger rule individually so new client has full rule set.
-    final mobRules = getMobRules?.call() ?? [];
-    for (final rule in mobRules) {
+    final mobRulesList = getMobRules?.call() ??
+        _ref.read(mobProvider).rules.map((r) => r.toJson()).toList();
+    for (final rule in mobRulesList) {
       sendTo({'type': 'mob_rule_sync', 'data': rule});
     }
   }
 
   /// Client received sync_hello from the server.
   Future<void> _handleSyncHelloFromServer(Map<String, dynamic> msg) async {
-    final peerCursors = _parseCursors(msg['cursors']);
-    await _sendMissingRecords(peerCursors, _platform.sendJson);
-    _setJoinInProgress(false);
+    try {
+      debugPrint('[LanSync] _handleSyncHelloFromServer from ${msg['deviceId']}');
+      final peerCursors = _parseCursors(msg['cursors']);
+      await _sendMissingRecords(peerCursors, _platform.sendJson);
+      _setJoinInProgress(false);
+    } catch (e, st) {
+      debugPrint('[LanSync] ERROR in _handleSyncHelloFromServer: $e\n$st');
+    }
   }
 
   /// Parse cursors map from sync_hello — gracefully handles nulls.
@@ -353,6 +398,14 @@ class LanSyncService {
   /// Apply a batch of incoming records for a collection (LWW merge) and
   /// advance the local cursor.
   Future<void> _applySyncChanges(Map<String, dynamic> msg) async {
+    try {
+    return _applySyncChangesInner(msg);
+    } catch (e, st) {
+      debugPrint('[LanSync] ERROR in _applySyncChanges: $e\n$st');
+    }
+  }
+
+  Future<void> _applySyncChangesInner(Map<String, dynamic> msg) async {
     // Idempotent dedup: skip if this exact batch was already applied.
     final eventId = msg['eventId'] as String?;
     if (eventId != null) {
@@ -566,6 +619,7 @@ class LanSyncService {
   }
 
   Future<void> _onSettingsSyncReceived(Map<String, dynamic> data) async {
+    debugPrint('[LanSync] _onSettingsSyncReceived: keys=${data.keys.toList()}');
     final current = _ref.read(settingsProvider);
     final vesselName = data['vesselName'] as String?;
     final normalizedVesselName = vesselName?.trim();
@@ -638,12 +692,14 @@ class LanSyncService {
     final speedThreshold = (data['speedAlarmThreshold'] as num?)?.toDouble();
     if (depthEnabled != null || depthThreshold != null ||
         speedEnabled != null || speedThreshold != null) {
-      onAlarmSettingsReceived?.call({
+      final alarmSettingsData = {
         if (depthEnabled != null) 'depthAlarmEnabled': depthEnabled,
         if (depthThreshold != null) 'depthAlarmThreshold': depthThreshold,
         if (speedEnabled != null) 'speedAlarmEnabled': speedEnabled,
         if (speedThreshold != null) 'speedAlarmThreshold': speedThreshold,
-      });
+      };
+      onAlarmSettingsReceived?.call(alarmSettingsData);
+      _ref.read(safetyProvider.notifier).applyAlarmSync(alarmSettingsData);
     }
 
     // Apply alarm rules if present
@@ -651,12 +707,14 @@ class LanSyncService {
     final normalizedAlarmRules = _parseAlarmRulesPayload(alarmRulesRaw);
     if (normalizedAlarmRules.isNotEmpty) {
       onAlarmRulesReceived?.call(normalizedAlarmRules);
+      _ref.read(alarmRuleProvider.notifier).applyRemote(normalizedAlarmRules);
     }
 
     // Apply notify channel config if present
     final notifyChannelRaw = data['notifyChannel'] as Map<String, dynamic>?;
     if (notifyChannelRaw != null) {
       onNotifyChannelReceived?.call(notifyChannelRaw);
+      _ref.read(notifyChannelProvider.notifier).applySync(notifyChannelRaw);
     }
   }
 
@@ -677,9 +735,7 @@ class LanSyncService {
   void broadcastSettings() {
     final s = _ref.read(settingsProvider);
     final lang = _ref.read(localeProvider);
-    final alarmData = getAlarmSettings?.call();
-    final alarmRules = getAlarmRules?.call();
-    final notifyChannelCfg = getNotifyChannelCfg?.call();
+    final safety = _ref.read(safetyProvider);
     broadcastJson({
       'type': 'settings_sync',
       'data': {
@@ -698,9 +754,14 @@ class LanSyncService {
           'skUser': s.signalKUsername,
           'skPass': s.signalKPassword,
         },
-        if (alarmData != null) ...alarmData,
-        if (alarmRules != null) 'alarmRules': alarmRules,
-        if (notifyChannelCfg != null) 'notifyChannel': notifyChannelCfg,
+        'depthAlarmEnabled': safety.depthAlarmEnabled,
+        'depthAlarmThreshold': safety.depthAlarmThreshold,
+        'speedAlarmEnabled': safety.speedAlarmEnabled,
+        'speedAlarmThreshold': safety.speedAlarmThreshold,
+        'alarmRules': {
+          'rules': _ref.read(alarmRuleProvider).map((r) => r.toJson()).toList(),
+        },
+        'notifyChannel': _ref.read(notifyChannelProvider).toJson(),
       },
     });
   }
