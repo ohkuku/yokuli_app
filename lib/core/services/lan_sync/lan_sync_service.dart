@@ -17,6 +17,10 @@ import '../../providers/device_provider.dart';
 import '../../providers/vessel_provider.dart';
 import '../../providers/log_provider.dart';
 import '../../providers/alarm_provider.dart';
+import '../../providers/alarm_rule_provider.dart';
+import '../../providers/alarm_instance_provider.dart';
+import '../../providers/alarm_action_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/issue_provider.dart';
 import '../../providers/voyage_provider.dart';
@@ -78,6 +82,21 @@ class LanSyncService {
   /// Called when notify channel config arrives from a remote peer.
   void Function(Map<String, dynamic>)? onNotifyChannelReceived;
 
+  /// Called when an alarm rule record arrives from a remote peer.
+  void Function(Map<String, dynamic>)? onAlarmRuleSync;
+
+  /// Called when an alarm instance record arrives from a remote peer.
+  void Function(Map<String, dynamic>)? onAlarmInstanceSync;
+
+  /// Called when an alarm action record arrives from a remote peer.
+  void Function(Map<String, dynamic>)? onAlarmActionSync;
+
+  /// Called when a notification record arrives from a remote peer.
+  void Function(Map<String, dynamic>)? onNotificationSync;
+
+  /// Called when a notification receipt record arrives from a remote peer.
+  void Function(Map<String, dynamic>)? onNotifReceiptSync;
+
   LanSyncService(this._ref) {
     _platform.onStateReceived = (state) {
       // Don't overwrite local SK data with LAN broadcasts — that causes
@@ -119,6 +138,11 @@ class LanSyncService {
     _platform.onVoyageUpsert = (data) {
       _ref.read(voyageProvider.notifier).upsertRemote(data);
     };
+    _platform.onAlarmRuleSync = (data) => onAlarmRuleSync?.call(data);
+    _platform.onAlarmInstanceSync = (data) => onAlarmInstanceSync?.call(data);
+    _platform.onAlarmActionSync = (data) => onAlarmActionSync?.call(data);
+    _platform.onNotificationSync = (data) => onNotificationSync?.call(data);
+    _platform.onNotifReceiptSync = (data) => onNotifReceiptSync?.call(data);
     // Server: when a new client connects, send sync_hello to them
     _platform.onNewClientConnected = _sendSyncHello;
     _platform.onPeerDiscovered = _onPeerDiscovered;
@@ -256,6 +280,16 @@ class LanSyncService {
         return _ref.read(kanbanProvider).columns.map((c) => c.toJson()).toList();
       case SyncCollections.kanbanCards:
         return _ref.read(kanbanProvider).cards.map((c) => c.toJson()).toList();
+      case SyncCollections.alarmRules:
+        return _ref.read(alarmRuleProvider).map((r) => r.toJson()).toList();
+      case SyncCollections.alarmInstances:
+        return _ref.read(alarmInstanceProvider).map((i) => i.toJson()).toList();
+      case SyncCollections.alarmActions:
+        return _ref.read(alarmActionProvider).map((a) => a.toJson()).toList();
+      case SyncCollections.notifications:
+        return _ref.read(notificationProvider).map((n) => n.toJson()).toList();
+      case SyncCollections.notifReceipts:
+        return _ref.read(notificationReceiptProvider).map((r) => r.toJson()).toList();
       default:
         return [];
     }
@@ -295,6 +329,24 @@ class LanSyncService {
         _ref.read(kanbanProvider.notifier).applySyncColumns(records);
       case SyncCollections.kanbanCards:
         _ref.read(kanbanProvider.notifier).applySyncCards(records);
+      case SyncCollections.alarmRules:
+        await _ref.read(alarmRuleProvider.notifier).applyRemote(records);
+      case SyncCollections.alarmInstances:
+        for (final r in records) {
+          await _ref.read(alarmInstanceProvider.notifier).upsertRemote(r);
+        }
+      case SyncCollections.alarmActions:
+        for (final r in records) {
+          await _ref.read(alarmActionProvider.notifier).applyRemote(r);
+        }
+      case SyncCollections.notifications:
+        for (final r in records) {
+          await _ref.read(notificationProvider.notifier).applyRemote(r);
+        }
+      case SyncCollections.notifReceipts:
+        for (final r in records) {
+          await _ref.read(notificationReceiptProvider.notifier).applyRemote(r);
+        }
     }
 
     // Advance local cursor to max ua across received records
@@ -495,6 +547,30 @@ class LanSyncService {
         if (notifyChannelCfg != null) 'notifyChannel': notifyChannelCfg,
       },
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Broadcast helpers for new entity types
+  // ---------------------------------------------------------------------------
+
+  void broadcastAlarmRule(Map<String, dynamic> data) {
+    broadcastJson({'type': 'alarm_rules_sync', 'rules': [data]});
+  }
+
+  void broadcastAlarmInstance(Map<String, dynamic> data) {
+    broadcastJson({'type': 'alarm_instance_sync', 'data': data});
+  }
+
+  void broadcastAlarmAction(Map<String, dynamic> data) {
+    broadcastJson({'type': 'alarm_action_sync', 'data': data});
+  }
+
+  void broadcastNotification(Map<String, dynamic> data) {
+    broadcastJson({'type': 'notification_sync', 'data': data});
+  }
+
+  void broadcastNotifReceipt(Map<String, dynamic> data) {
+    broadcastJson({'type': 'notification_receipt_sync', 'data': data});
   }
 
   // ---------------------------------------------------------------------------

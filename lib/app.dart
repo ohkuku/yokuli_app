@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'core/models/alarm.dart';
-import 'core/services/alarm_dispatcher.dart';
+import 'core/models/alarm_instance.dart';
+import 'core/models/alarm_rule.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/locale_provider.dart';
+import 'core/providers/alarm_instance_provider.dart';
 import 'features/safety/providers/safety_provider.dart';
 import 'router/app_router.dart';
+
+/// Provider that holds the alarm instance to display as an in-app banner.
+/// The alarm evaluator sets this when a new alarm triggers.
+final inAppAlarmBannerProvider = StateProvider<AlarmInstance?>((ref) => null);
 
 class YokulApp extends ConsumerWidget {
   const YokulApp({super.key});
@@ -18,13 +23,27 @@ class YokulApp extends ConsumerWidget {
     final router = ref.watch(appRouterProvider);
     final locale = ref.watch(flutterLocaleProvider);
 
-    // Navigate every device to the safety screen when a MOB is triggered
-    // (whether local or received from a LAN peer).
+    // Navigate every device to the alarm center when a MOB is triggered.
     ref.listen(
       safetyProvider.select((s) => s.isMobActive),
       (prev, isActive) {
         if (isActive == true && prev != true) {
-          router.push('/safety');
+          router.push('/alarm-center');
+        }
+      },
+    );
+
+    // Show in-app banner when a new active alarm instance appears.
+    ref.listen(
+      activeAlarmInstancesProvider,
+      (prev, next) {
+        final prevIds = prev?.map((a) => a.id).toSet() ?? {};
+        final newAlarm = next.where((a) =>
+          a.status == AlarmInstanceStatus.active &&
+          !prevIds.contains(a.id)
+        ).firstOrNull;
+        if (newAlarm != null) {
+          ref.read(inAppAlarmBannerProvider.notifier).state = newAlarm;
         }
       },
     );
@@ -52,25 +71,6 @@ class YokulApp extends ConsumerWidget {
 // In-app alarm banner overlay
 // ---------------------------------------------------------------------------
 
-String _typeLabel(AlarmType type) {
-  switch (type) {
-    case AlarmType.battery:
-      return '电池低压';
-    case AlarmType.depth:
-      return '水深告警';
-    case AlarmType.speed:
-      return '航速告警';
-    case AlarmType.mob:
-      return 'MOB落水告警';
-    case AlarmType.ais:
-      return 'AIS碰撞风险';
-    case AlarmType.solar:
-      return '太阳能告警';
-    case AlarmType.connection:
-      return '连接告警';
-  }
-}
-
 Color _levelColor(AlarmLevel level) {
   switch (level) {
     case AlarmLevel.critical:
@@ -93,8 +93,6 @@ class _AlarmBannerOverlay extends ConsumerWidget {
     return Stack(
       children: [
         child,
-        // Banner sits above everything but does not block touch on the rest
-        // of the app (IgnorePointer only on the transparent area).
         if (alarm != null)
           Positioned(
             top: 0,
@@ -103,9 +101,8 @@ class _AlarmBannerOverlay extends ConsumerWidget {
             child: SafeArea(
               child: _AlarmBanner(
                 alarm: alarm,
-                onDismiss: () => ref
-                    .read(inAppAlarmBannerProvider.notifier)
-                    .state = null,
+                onDismiss: () =>
+                    ref.read(inAppAlarmBannerProvider.notifier).state = null,
               ),
             ),
           ),
@@ -115,7 +112,7 @@ class _AlarmBannerOverlay extends ConsumerWidget {
 }
 
 class _AlarmBanner extends StatefulWidget {
-  final Alarm alarm;
+  final AlarmInstance alarm;
   final VoidCallback onDismiss;
   const _AlarmBanner({required this.alarm, required this.onDismiss});
 
@@ -180,21 +177,20 @@ class _AlarmBannerState extends State<_AlarmBanner>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        _typeLabel(widget.alarm.type),
+                        widget.alarm.ruleName,
                         style: const TextStyle(
                             color: Colors.white,
                             fontSize: 13,
                             fontWeight: FontWeight.w700),
                       ),
-                      if (widget.alarm.message != null)
-                        Text(
-                          widget.alarm.message!,
-                          style: TextStyle(
-                              color: Colors.white.withOpacity(0.85),
-                              fontSize: 12),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                      Text(
+                        widget.alarm.message,
+                        style: TextStyle(
+                            color: Colors.white.withOpacity(0.85),
+                            fontSize: 12),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ],
                   ),
                 ),

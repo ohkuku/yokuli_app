@@ -12,7 +12,8 @@ import '../../../core/providers/connection_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/providers/locale_provider.dart';
-import '../../../core/providers/alarm_provider.dart';
+import '../../../core/providers/alarm_instance_provider.dart';
+import '../../../core/providers/notification_provider.dart';
 import '../../../core/providers/kanban_provider.dart';
 import '../../../features/safety/providers/safety_provider.dart';
 import '../../../core/services/update/update_dialog.dart';
@@ -55,7 +56,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final vessel  = ref.watch(vesselProvider);
     final s       = ref.watch(stringsProvider);
 
-    final alarmCount  = ref.watch(activeAlarmCountProvider);
+    final alarmCount  = ref.watch(alarmInstanceCountProvider);
     final kanbanCount = ref.watch(kanbanProvider).cards.length;
 
     var tiles = _buildTiles(vessel, conn, s, alarmCount, kanbanCount);
@@ -157,10 +158,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       AppTileData(
         id: 'safety',
-        label: s.safety,
+        label: '告警中心',
         icon: Icons.emergency_rounded,
         accentColor: AppColors.modSafety,
-        route: '/safety',
+        route: '/alarm-center',
         notificationCount: alarmCount,
       ),
       AppTileData(
@@ -330,7 +331,7 @@ class _NotificationBell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final count = ref.watch(activeAlarmCountProvider);
+    final count = ref.watch(unreadNotificationCountProvider);
 
     return GestureDetector(
       onTap: () => context.push('/notifications'),

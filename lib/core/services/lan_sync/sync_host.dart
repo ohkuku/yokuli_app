@@ -35,6 +35,11 @@ class SyncHost {
   void Function(Map<String, dynamic> data)? onIssueUpsert;
   void Function(Map<String, dynamic> data)? onVoyageUpsert;
   void Function(Map<String, dynamic>)? onKanbanSync;
+  void Function(Map<String, dynamic> data)? onAlarmRuleSync;
+  void Function(Map<String, dynamic> data)? onAlarmInstanceSync;
+  void Function(Map<String, dynamic> data)? onAlarmActionSync;
+  void Function(Map<String, dynamic> data)? onNotificationSync;
+  void Function(Map<String, dynamic> data)? onNotifReceiptSync;
   /// Called when a new client connects; receives a function that sends a
   /// JSON message directly to that specific client only.
   void Function(void Function(Map<String, dynamic>))? onNewClientConnected;
@@ -193,6 +198,34 @@ class SyncHost {
         case 'kanban_sync':
           broadcastJson(json);
           onKanbanSync?.call(json);
+        case 'alarm_rules_sync':
+          broadcastJson(json);
+          final rules = json['rules'] as List<dynamic>?;
+          if (rules != null) {
+            for (final r in rules) {
+              onAlarmRuleSync?.call(r as Map<String, dynamic>);
+            }
+          }
+        case 'alarm_instance_sync':
+          if (data != null) {
+            onAlarmInstanceSync?.call(data);
+            broadcastJson(json);
+          }
+        case 'alarm_action_sync':
+          if (data != null) {
+            onAlarmActionSync?.call(data);
+            broadcastJson(json);
+          }
+        case 'notification_sync':
+          if (data != null) {
+            onNotificationSync?.call(data);
+            broadcastJson(json);
+          }
+        case 'notification_receipt_sync':
+          if (data != null) {
+            onNotifReceiptSync?.call(data);
+            broadcastJson(json);
+          }
         case 'sync_hello':
           // Client is introducing itself — reply to this specific client only
           onSyncHello?.call(

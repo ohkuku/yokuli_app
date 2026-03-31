@@ -37,6 +37,11 @@ class SyncClient {
   void Function(Map<String, dynamic> data)? onIssueUpsert;
   void Function(Map<String, dynamic> data)? onVoyageUpsert;
   void Function(Map<String, dynamic>)? onKanbanSync;
+  void Function(Map<String, dynamic> data)? onAlarmRuleSync;
+  void Function(Map<String, dynamic> data)? onAlarmInstanceSync;
+  void Function(Map<String, dynamic> data)? onAlarmActionSync;
+  void Function(Map<String, dynamic> data)? onNotificationSync;
+  void Function(Map<String, dynamic> data)? onNotifReceiptSync;
   void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
   void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
   /// Called when server sends sync_meta (stateVersionMs + deviceId of the server).
@@ -111,6 +116,21 @@ class SyncClient {
           if (data != null) onVoyageUpsert?.call(data);
         case 'kanban_sync':
           onKanbanSync?.call(json);
+        case 'alarm_rules_sync':
+          final rules = json['rules'] as List<dynamic>?;
+          if (rules != null) {
+            for (final r in rules) {
+              onAlarmRuleSync?.call(r as Map<String, dynamic>);
+            }
+          }
+        case 'alarm_instance_sync':
+          if (data != null) onAlarmInstanceSync?.call(data);
+        case 'alarm_action_sync':
+          if (data != null) onAlarmActionSync?.call(data);
+        case 'notification_sync':
+          if (data != null) onNotificationSync?.call(data);
+        case 'notification_receipt_sync':
+          if (data != null) onNotifReceiptSync?.call(data);
         case 'sk_credentials':
           if (data != null) onSkCredentialsReceived?.call(data);
         case 'settings_sync':

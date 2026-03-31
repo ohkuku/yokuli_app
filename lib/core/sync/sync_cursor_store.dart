@@ -9,6 +9,11 @@ class SyncCollections {
   static const voyages       = 'voyages';
   static const kanbanColumns = 'kanban_columns';
   static const kanbanCards   = 'kanban_cards';
+  static const alarmRules    = 'alarm_rules';
+  static const alarmInstances = 'alarm_instances';
+  static const alarmActions  = 'alarm_actions';
+  static const notifications = 'notifications';
+  static const notifReceipts = 'notif_receipts';
 
   static const all = <String>[
     logs,
@@ -18,6 +23,11 @@ class SyncCollections {
     voyages,
     kanbanColumns,
     kanbanCards,
+    alarmRules,
+    alarmInstances,
+    alarmActions,
+    notifications,
+    notifReceipts,
   ];
 }
 

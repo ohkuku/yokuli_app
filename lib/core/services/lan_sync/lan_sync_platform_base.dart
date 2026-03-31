@@ -35,6 +35,11 @@ abstract class LanSyncPlatform {
   void Function(Map<String, dynamic> data)? onIssueUpsert;
   void Function(Map<String, dynamic> data)? onVoyageUpsert;
   void Function(Map<String, dynamic>)? onKanbanSync;
+  void Function(Map<String, dynamic> data)? onAlarmRuleSync;
+  void Function(Map<String, dynamic> data)? onAlarmInstanceSync;
+  void Function(Map<String, dynamic> data)? onAlarmActionSync;
+  void Function(Map<String, dynamic> data)? onNotificationSync;
+  void Function(Map<String, dynamic> data)? onNotifReceiptSync;
   void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
   void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
   /// Host only: called when a new client connects; receives a send-to-one function

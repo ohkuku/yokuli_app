@@ -7,13 +7,14 @@ import '../features/dashboard/views/dashboard_screen.dart';
 import '../features/signalk/views/signalk_screen.dart';
 import '../features/power/views/power_screen.dart';
 import '../features/logbook/views/log_screen.dart';
-import '../features/safety/views/safety_screen.dart';
 import '../features/settings/views/settings_screen.dart';
 import '../features/ais/views/ais_screen.dart';
 import '../features/voyage/views/voyage_screen.dart';
 import '../features/kanban/views/kanban_screen.dart';
 import '../features/notifications/views/notifications_screen.dart';
-import '../features/alarm_management/views/alarm_management_screen.dart';
+import '../features/alarm_center/views/alarm_center_screen.dart';
+import '../features/alarm_center/views/alarm_rule_edit_screen.dart';
+import '../core/models/alarm_rule.dart';
 import '../features/voyage/views/voyage_detail_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -62,9 +63,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => _slidePage(state, const KanbanScreen()),
       ),
       GoRoute(
-        path: '/safety',
-        name: 'safety',
-        pageBuilder: (context, state) => _slidePage(state, const SafetyScreen()),
+        path: '/alarm-center',
+        name: 'alarm-center',
+        pageBuilder: (context, state) => _slidePage(state, const AlarmCenterScreen()),
+      ),
+      GoRoute(
+        path: '/alarm-rule-edit',
+        name: 'alarm-rule-edit',
+        pageBuilder: (context, state) {
+          final extra = state.extra as AlarmRule?;
+          return _slidePage(state, AlarmRuleEditScreen(existing: extra));
+        },
       ),
       GoRoute(
         path: '/settings',
@@ -76,12 +85,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'notifications',
         pageBuilder: (context, state) =>
             _slidePage(state, const NotificationsScreen()),
-      ),
-      GoRoute(
-        path: '/alarm-management',
-        name: 'alarm-management',
-        pageBuilder: (context, state) =>
-            _slidePage(state, const AlarmManagementScreen()),
       ),
       GoRoute(
         path: '/voyage/:id',

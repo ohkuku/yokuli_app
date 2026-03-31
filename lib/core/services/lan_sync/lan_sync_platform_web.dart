@@ -129,6 +129,21 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
           onSyncHelloReceived?.call(json);
         case 'sync_changes':
           onSyncChanges?.call(json);
+        case 'alarm_rules_sync':
+          final rules = json['rules'] as List<dynamic>?;
+          if (rules != null) {
+            for (final r in rules) {
+              onAlarmRuleSync?.call(r as Map<String, dynamic>);
+            }
+          }
+        case 'alarm_instance_sync':
+          if (data != null) onAlarmInstanceSync?.call(data);
+        case 'alarm_action_sync':
+          if (data != null) onAlarmActionSync?.call(data);
+        case 'notification_sync':
+          if (data != null) onNotificationSync?.call(data);
+        case 'notification_receipt_sync':
+          if (data != null) onNotifReceiptSync?.call(data);
       }
     } catch (_) {}
   }
