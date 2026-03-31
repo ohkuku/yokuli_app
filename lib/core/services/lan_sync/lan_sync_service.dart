@@ -14,6 +14,7 @@ import '../../models/voyage.dart';
 import '../../providers/connection_provider.dart'
     show ConnectionNotifier, ConnectionStatus, connectionProvider;
 import '../../providers/settings_provider.dart' show settingsProvider;
+import '../../providers/locale_provider.dart' show localeProvider;
 import '../../providers/device_provider.dart';
 import '../../providers/vessel_provider.dart';
 import '../../providers/log_provider.dart';
@@ -239,6 +240,7 @@ class LanSyncService {
   /// Push current settings and MOB state to a specific client (e.g. on first connect).
   void _pushCurrentStateTo(void Function(Map<String, dynamic>) sendTo) {
     final s = _ref.read(settingsProvider);
+    final lang = _ref.read(localeProvider);
     final alarmData = getAlarmSettings?.call();
     final alarmRules = getAlarmRules?.call();
     final notifyChannelCfg = getNotifyChannelCfg?.call();
@@ -249,6 +251,7 @@ class LanSyncService {
         'tileOrder': s.tileOrder,
         'keepScreenOn': s.keepScreenOn,
         'autoConnectLan': s.autoConnectLan,
+        'language': lang,
         if (s.hostIp.isNotEmpty) 'hostIp': s.hostIp,
         'hostPort': s.hostPort,
         if (s.signalKUrl.isNotEmpty) 'skUrl': s.signalKUrl,
@@ -622,6 +625,12 @@ class LanSyncService {
       }
     }
 
+    // Apply language if present
+    final language = data['language'] as String?;
+    if (language != null && language.isNotEmpty) {
+      _ref.read(localeProvider.notifier).applyRemote(language);
+    }
+
     // Apply alarm threshold settings if present
     final depthEnabled = data['depthAlarmEnabled'] as bool?;
     final depthThreshold = (data['depthAlarmThreshold'] as num?)?.toDouble();
@@ -667,6 +676,7 @@ class LanSyncService {
   /// Broadcast current settings to all peers (call after any settings change).
   void broadcastSettings() {
     final s = _ref.read(settingsProvider);
+    final lang = _ref.read(localeProvider);
     final alarmData = getAlarmSettings?.call();
     final alarmRules = getAlarmRules?.call();
     final notifyChannelCfg = getNotifyChannelCfg?.call();
@@ -677,6 +687,7 @@ class LanSyncService {
         'tileOrder': s.tileOrder,
         'keepScreenOn': s.keepScreenOn,
         'autoConnectLan': s.autoConnectLan,
+        'language': lang,
         if (s.hostIp.isNotEmpty) 'hostIp': s.hostIp,
         'hostPort': s.hostPort,
         if (s.signalKUrl.isNotEmpty) 'skUrl': s.signalKUrl,

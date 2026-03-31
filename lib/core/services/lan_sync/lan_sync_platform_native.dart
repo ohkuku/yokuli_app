@@ -56,6 +56,8 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _host.onAlarmInstanceSync = (data) => onAlarmInstanceSync?.call(data);
     _host.onAlarmActionSync = (data) => onAlarmActionSync?.call(data);
     _host.onNotifyChannelSync = (data) => onNotifyChannelSyncReceived?.call(data);
+    _host.onSettingsSyncReceived = (data) => onSettingsSyncReceived?.call(data);
+    _host.onSkCredentialsReceived = (data) => onSkCredentialsReceived?.call(data);
     _host.onNetworkJoinSync = () => onNetworkJoinSync?.call();
     _host.onVesselStatePush = (state) => onVesselStatePush?.call(state);
     await _host.start(

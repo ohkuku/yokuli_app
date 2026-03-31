@@ -40,6 +40,8 @@ class SyncHost {
   void Function(Map<String, dynamic> data)? onAlarmActionSync;
   void Function(Map<String, dynamic> data)? onMobRuleSync;
   void Function(Map<String, dynamic> data)? onNotifyChannelSync;
+  void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
+  void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
   void Function()? onNetworkJoinSync;
   void Function(VesselState state)? onVesselStatePush;
   /// Called when a new client connects; receives a function that sends a
@@ -245,6 +247,18 @@ class SyncHost {
         case 'notify_channel_sync':
           if (data != null) {
             onNotifyChannelSync?.call(data);
+            broadcastJson(json);
+          }
+          break;
+        case 'settings_sync':
+          if (data != null) {
+            onSettingsSyncReceived?.call(data);
+            broadcastJson(json);
+          }
+          break;
+        case 'sk_credentials':
+          if (data != null) {
+            onSkCredentialsReceived?.call(data);
             broadcastJson(json);
           }
           break;
