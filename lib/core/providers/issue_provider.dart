@@ -94,6 +94,7 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
 
     state = [...state, ticket];
     await save();
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'issue_upsert', 'data': ticket.toJson()});
     return ticket;
@@ -110,6 +111,7 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
     }).toList();
     await save();
     final updated = state.firstWhere((t) => t.id == id);
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'issue_upsert', 'data': updated.toJson()});
   }
@@ -123,6 +125,7 @@ class IssueNotifier extends Notifier<List<IssueTicket>> {
     }).toList();
     await save();
     final updated = state.firstWhere((t) => t.id == id);
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call(
         {'type': 'issue_upsert', 'data': updated.toJson()});
   }

@@ -202,6 +202,7 @@ class AlarmRuleNotifier extends Notifier<List<AlarmRule>> {
       state = [...state, rule];
     }
     await _save();
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call({
       'type': 'alarm_rules_sync',
       'rules': [rule.toJson()],
@@ -233,6 +234,7 @@ class AlarmRuleNotifier extends Notifier<List<AlarmRule>> {
     updated[idx] = deleted;
     state = updated;
     await _save();
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call({
       'type': 'alarm_rules_sync',
       'rules': [deleted.toJson()],
@@ -280,6 +282,7 @@ class NotifyChannelNotifier extends Notifier<NotifyChannelConfig> {
   Future<void> update(NotifyChannelConfig config) async {
     state = config;
     await _save();
+    ref.read(deviceProvider.notifier).bump();
     ref.read(lanBroadcastProvider)?.call({
       'type': 'notify_channel_sync',
       'data': config.toJson(),

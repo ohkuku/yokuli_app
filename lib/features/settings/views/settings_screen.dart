@@ -455,6 +455,7 @@ class _LanDevicesPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(stringsProvider);
+    final totalDevices = peers.length + 1; // include this device
     if (peers.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(16),
@@ -468,9 +469,13 @@ class _LanDevicesPanel extends ConsumerWidget {
             const Icon(Icons.wifi_off_rounded,
                 size: 16, color: AppColors.textMuted),
             const SizedBox(width: 10),
-            Text(s.noOtherDevices,
+            Expanded(
+              child: Text(
+                '${s.noOtherDevices}（当前共 $totalDevices 台，含本机）',
                 style: const TextStyle(
-                    color: AppColors.textMuted, fontSize: 13)),
+                    color: AppColors.textMuted, fontSize: 13),
+              ),
+            ),
           ],
         ),
       );
@@ -483,7 +488,21 @@ class _LanDevicesPanel extends ConsumerWidget {
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
-        children: peers.asMap().entries.map((e) {
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '已发现 ${peers.length} 台其他设备（当前共 $totalDevices 台，含本机）',
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          ...peers.asMap().entries.map((e) {
           final isFirst = e.key == 0;
           final isLast = e.key == peers.length - 1;
           return Column(
@@ -496,7 +515,8 @@ class _LanDevicesPanel extends ConsumerWidget {
               ),
             ],
           );
-        }).toList(),
+        }),
+        ],
       ),
     );
   }

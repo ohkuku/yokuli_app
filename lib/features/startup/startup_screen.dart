@@ -216,8 +216,13 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
           'speedAlarmEnabled': ref.read(safetyProvider).speedAlarmEnabled,
           'speedAlarmThreshold': ref.read(safetyProvider).speedAlarmThreshold,
         };
+    lanSync.getAlarmRules = () => {
+          'rules': ref.read(alarmRuleProvider).map((r) => r.toJson()).toList(),
+        };
     lanSync.onAlarmSettingsReceived = (data) =>
         ref.read(safetyProvider.notifier).applyAlarmSync(data);
+    lanSync.onAlarmRulesReceived = (records) =>
+        ref.read(alarmRuleProvider.notifier).applyRemote(records);
     lanSync.getNotifyChannelCfg = () =>
         ref.read(notifyChannelProvider).toJson();
     lanSync.onNotifyChannelReceived = (data) =>
