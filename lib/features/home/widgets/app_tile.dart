@@ -1,5 +1,5 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_lts/liquid_glass_lts.dart';
 import '../../../core/theme/app_colors.dart';
 
 class AppTileData {
@@ -196,75 +196,36 @@ class _GlassTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const radius = BorderRadius.all(Radius.circular(22));
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: radius,
-        // Gradient border: bright top (light source), faint bottom
-        border: Border.all(
-          color: isStub
-              ? Colors.white.withOpacity(0.08)
-              : Colors.white.withOpacity(0.20),
-          width: 0.8,
+    return LiquidGlassWidget(
+      expand: true, // fills the GridView cell
+      config: LiquidGlassConfig(
+        borderRadius: 22.0,
+        blur: const BlurConfig(sigma: 18.0),
+        tint: TintConfig(
+          color: isStub ? const Color(0x14FFFFFF) : accent.withOpacity(0.08),
         ),
-        boxShadow: isStub
-            ? null
+        fresnel: const FresnelConfig(intensity: 0.55, power: 3.5),
+        glare: const GlareConfig(opacity: 0.35, angle: -35.0, size: 0.6, hardness: 0.25),
+        refraction: const RefractionConfig(strength: 0.18, dispersion: 0.012, edgeSoftness: 0.06),
+        shadows: isStub
+            ? const []
             : [
                 BoxShadow(
-                  color: accent.withOpacity(0.15),
-                  blurRadius: 24,
+                  color: accent.withOpacity(0.20),
+                  blurRadius: 20,
                   spreadRadius: -4,
                   offset: const Offset(0, 8),
                 ),
                 BoxShadow(
                   color: Colors.black.withOpacity(0.22),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
+                  blurRadius: 12,
+                  offset: const Offset(0, 3),
                 ),
               ],
       ),
-      child: ClipRRect(
-        borderRadius: radius,
-        child: BackdropFilter(
-          // 1σ — almost no blur, just enough to separate from background
-          filter: ImageFilter.blur(sigmaX: 1, sigmaY: 1),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            // White-silver fill makes the tile visible on dark backgrounds
-            // without frosting. Top brighter (incident light), bottom dimmer.
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isStub
-                    ? [
-                        Colors.white.withOpacity(0.10),
-                        Colors.white.withOpacity(0.05),
-                      ]
-                    : [
-                        Colors.white.withOpacity(0.22),
-                        Colors.white.withOpacity(0.10),
-                      ],
-              ),
-            ),
-            foregroundDecoration: isStub
-                ? null
-                : BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      stops: const [0.0, 0.03, 0.30, 1.0],
-                      colors: [
-                        Colors.white.withOpacity(0.55),
-                        Colors.white.withOpacity(0.20),
-                        Colors.white.withOpacity(0.04),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-            child: child,
-          ),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: child,
       ),
     );
   }

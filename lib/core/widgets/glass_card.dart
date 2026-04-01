@@ -1,19 +1,17 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_lts/liquid_glass_lts.dart';
 
-/// iOS 26-style liquid glass card.
+/// iOS 26 Liquid Glass card using the liquid_glass_lts package.
 ///
-/// Clear glass — nearly transparent, no heavy blur.
-/// Visual depth comes from specular edge highlights and a subtle inner caustic,
-/// not frosting. Requires a rich colourful background to show through.
+/// Implements authentic Apple Liquid Glass physics:
+/// refraction (UV lens distortion), Fresnel rim glow,
+/// diagonal specular highlight, chromatic dispersion, and
+/// subtle blur — in that order of visual importance.
 class GlassCard extends StatelessWidget {
   final Widget child;
   final BorderRadius? borderRadius;
   final EdgeInsetsGeometry? padding;
   final Color? tint;
-  /// Minimal haze — keeps text legible on very busy backgrounds.
-  final double blur;
-  final double opacity;
   final VoidCallback? onTap;
 
   const GlassCard({
@@ -22,71 +20,34 @@ class GlassCard extends StatelessWidget {
     this.borderRadius,
     this.padding,
     this.tint,
-    this.blur = 1,
-    this.opacity = 0.20,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final radius = borderRadius ?? BorderRadius.circular(22);
-    final color = tint ?? Colors.white;
+    final r = borderRadius?.topLeft.x ?? 22.0;
+    final tintColor = tint?.withOpacity(0.08) ?? const Color(0x22FFFFFF);
 
-    Widget card = Container(
-      decoration: BoxDecoration(
-        borderRadius: radius,
-        border: Border.all(
-          color: Colors.white.withOpacity(0.22),
-          width: 0.8,
-        ),
-        boxShadow: [
+    Widget card = LiquidGlassWidget(
+      config: LiquidGlassConfig(
+        borderRadius: r,
+        blur: const BlurConfig(sigma: 18.0),
+        tint: TintConfig(color: tintColor),
+        fresnel: const FresnelConfig(intensity: 0.55, power: 3.5),
+        glare: const GlareConfig(opacity: 0.35, angle: -35.0, size: 0.6, hardness: 0.25),
+        refraction: const RefractionConfig(strength: 0.18, dispersion: 0.012, edgeSoftness: 0.06),
+        shadows: [
           BoxShadow(
             color: Colors.black.withOpacity(0.28),
-            blurRadius: 40,
+            blurRadius: 32,
             spreadRadius: -4,
             offset: const Offset(0, 12),
           ),
-          BoxShadow(
-            color: Colors.black.withOpacity(0.10),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: radius,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-          child: Container(
-            padding: padding,
-            decoration: BoxDecoration(
-              // White-silver fill: visible on dark background, clear on light.
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.white.withOpacity(opacity),
-                  Colors.white.withOpacity(opacity * 0.55),
-                ],
-              ),
-            ),
-            foregroundDecoration: BoxDecoration(
-              // Top specular edge + inner caustic combined
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                stops: const [0.0, 0.04, 0.30, 1.0],
-                colors: [
-                  Colors.white.withOpacity(0.55), // bright top edge (specular)
-                  Colors.white.withOpacity(0.20), // caustic fade
-                  Colors.white.withOpacity(0.04),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-            child: child,
-          ),
-        ),
+      child: Padding(
+        padding: padding ?? const EdgeInsets.all(16),
+        child: child,
       ),
     );
 
