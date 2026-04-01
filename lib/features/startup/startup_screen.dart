@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/providers/settings_provider.dart';
@@ -15,6 +16,7 @@ import '../../core/providers/log_provider.dart';
 import '../../core/providers/alarm_rule_provider.dart';
 import '../../core/providers/alarm_instance_provider.dart';
 import '../../core/providers/alarm_action_provider.dart';
+import '../../core/providers/weather_provider.dart';
 import '../../core/services/alarm_evaluator.dart';
 import '../../core/services/signalk/signalk_auth.dart';
 import '../../core/services/signalk/signalk_client.dart';
@@ -44,7 +46,9 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
   _Phase _phase = _Phase.loading;
 
   // Loading step statuses (index → done?)
-  final List<bool> _steps = [false, false, false, false];
+  final List<bool> _steps = [false, false, false, false, false];
+  List<String?> _stepErrors = List.filled(5, null);
+  bool _isBlocked = false;
   int _peersFound = 0;
   String _currentStep = '初始化…';
   bool _skConnected = false;
@@ -54,12 +58,16 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
   final _pageCtrl = PageController();
   final _deviceNameCtrl = TextEditingController();
   final _vesselNameCtrl = TextEditingController();
+  final _metKeyCtrl = TextEditingController();
   final _skHostCtrl = TextEditingController();
   final _skPortCtrl = TextEditingController(text: '3000');
   final _skUserCtrl = TextEditingController();
   final _skPassCtrl = TextEditingController();
   bool _wizardConnecting = false;
   String? _wizardError;
+  bool _metKeyValidating = false;
+  bool? _metKeyStatus; // null = not tested, true = valid, false = invalid
+  String? _metKeyError;
 
   late final AnimationController _pulseCtrl;
 
@@ -80,6 +88,7 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     _pageCtrl.dispose();
     _deviceNameCtrl.dispose();
     _vesselNameCtrl.dispose();
+    _metKeyCtrl.dispose();
     _skHostCtrl.dispose();
     _skPortCtrl.dispose();
     _skUserCtrl.dispose();
@@ -130,22 +139,50 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
       _markStep(2);
     }
 
-    // Step 3: Connect Signal K if configured
-    // Re-read settings here: LAN sync may have updated them from a peer.
-    final latestSettings = ref.read(settingsProvider);
-    final url = latestSettings.effectiveSignalKUrl;
-    if (url.isNotEmpty) {
-      _setStep('连接 Signal K…');
-      await _connectSK(latestSettings);
+    await _runFromStep(3);
+  }
+
+  Future<void> _runFromStep(int step) async {
+    if (!mounted) return;
+
+    if (step <= 3) {
+      // Step 3: Validate MetService API key
+      final latestSettings3 = ref.read(settingsProvider);
+      _setStep('验证 MetService Key…');
+      final metError = await WeatherNotifier.validateApiKey(latestSettings3.metServiceApiKey);
+      if (metError != null) {
+        _markStepError(3, metError);
+        if (mounted) setState(() => _isBlocked = true);
+        return;
+      }
       _markStep(3);
-    } else {
-      _markStep(3);
+    }
+
+    if (!mounted) return;
+
+    if (step <= 4) {
+      // Step 4: Connect Signal K
+      final latestSettings4 = ref.read(settingsProvider);
+      final url = latestSettings4.effectiveSignalKUrl;
+      if (url.isNotEmpty) {
+        _setStep('连接 Signal K…');
+        final skOk = await _connectSK(latestSettings4);
+        if (!skOk) {
+          _markStepError(4, 'Signal K 连接失败 — 请检查地址和网络');
+          if (mounted) setState(() => _isBlocked = true);
+          return;
+        }
+        _markStep(4);
+      } else {
+        _markStep(4);
+      }
     }
 
     if (!mounted) return;
 
     // Decide: first-time wizard or go straight to app.
     // Wizard is shown only when device has no name yet.
+    final latestSettings = ref.read(settingsProvider);
     final isFirstTime = latestSettings.deviceName.isEmpty;
 
     if (isFirstTime) {
@@ -161,12 +198,34 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     }
   }
 
+  Future<void> _retryFromStep(int step) async {
+    if (!mounted) return;
+    setState(() {
+      _isBlocked = false;
+      for (int i = step; i < _steps.length; i++) {
+        _steps[i] = false;
+        _stepErrors[i] = null;
+      }
+    });
+    await _runFromStep(step);
+  }
+
   void _setStep(String label) {
     if (mounted) setState(() => _currentStep = label);
   }
 
   void _markStep(int index) {
-    if (mounted) setState(() => _steps[index] = true);
+    if (mounted) setState(() {
+      _steps[index] = true;
+      _stepErrors[index] = null;
+    });
+  }
+
+  void _markStepError(int index, String error) {
+    if (mounted) setState(() {
+      _steps[index] = false;
+      _stepErrors[index] = error;
+    });
   }
 
   Future<void> _loadLocalData() async {
@@ -225,7 +284,7 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
 
   }
 
-  Future<void> _connectSK(AppSettings settings) async {
+  Future<bool> _connectSK(AppSettings settings) async {
     String? token;
     if (settings.hasCredentials) {
       try {
@@ -241,7 +300,10 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
           .read(signalKClientProvider)
           .connect(settings.effectiveSignalKUrl, token: token);
       if (mounted) setState(() => _skConnected = true);
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   // ── Wizard actions ─────────────────────────────────────────────────────────
@@ -284,7 +346,35 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     if (_vesselNameCtrl.text.trim().isNotEmpty) _goToPage(3);
   }
 
-  /// Called from page 3 (Signal K). Saves vessel name + SK then finishes.
+  /// Called from page 3 (MetService) — validate button.
+  Future<void> _wizardValidateMet() async {
+    if (_metKeyCtrl.text.trim().isEmpty) return;
+    setState(() {
+      _metKeyValidating = true;
+      _metKeyStatus = null;
+      _metKeyError = null;
+    });
+    final error = await WeatherNotifier.validateApiKey(_metKeyCtrl.text.trim());
+    if (mounted) {
+      setState(() {
+        _metKeyValidating = false;
+        _metKeyStatus = error == null ? true : false;
+        _metKeyError = error;
+      });
+    }
+  }
+
+  /// Called from page 3 (MetService) — next button.
+  Future<void> _wizardNextMet() async {
+    final key = _metKeyCtrl.text.trim();
+    // Save whatever they typed (even empty — they can skip)
+    await ref.read(settingsProvider.notifier).update(
+          ref.read(settingsProvider).copyWith(metServiceApiKey: key),
+        );
+    _goToPage(4);
+  }
+
+  /// Called from page 4 (Signal K). Saves vessel name + SK then finishes.
   Future<void> _wizardFinish() async {
     final vesselName = _vesselNameCtrl.text.trim();
     if (vesselName.isEmpty) return;
@@ -349,6 +439,17 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
   }
 
   Widget _buildLoading() {
+    // Find the blocked step error (if any)
+    String? blockedError;
+    int? blockedStep;
+    for (int i = 0; i < _stepErrors.length; i++) {
+      if (_stepErrors[i] != null) {
+        blockedError = _stepErrors[i];
+        blockedStep = i;
+        break;
+      }
+    }
+
     return Center(
       key: const ValueKey('loading'),
       child: Padding(
@@ -385,6 +486,7 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
               label: '加载本地数据',
               pulse: !_steps[0],
               pulseCtrl: _pulseCtrl,
+              error: _stepErrors[0],
             ),
             const SizedBox(height: 12),
             _StepRow(
@@ -392,6 +494,7 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
               label: '启动局域网同步',
               pulse: _steps[0] && !_steps[1],
               pulseCtrl: _pulseCtrl,
+              error: _stepErrors[1],
             ),
             const SizedBox(height: 12),
             _StepRow(
@@ -401,25 +504,76 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
                   : '搜索设备中…',
               pulse: _steps[1] && !_steps[2],
               pulseCtrl: _pulseCtrl,
+              error: _stepErrors[2],
             ),
             const SizedBox(height: 12),
             _StepRow(
               done: _steps[3],
-              label: _skConnected ? 'Signal K 已连接' : '连接 Signal K',
-              pulse: _steps[2] && !_steps[3],
+              label: '验证 MetService',
+              pulse: _steps[2] && !_steps[3] && _stepErrors[3] == null,
               pulseCtrl: _pulseCtrl,
+              error: _stepErrors[3],
+            ),
+            const SizedBox(height: 12),
+            _StepRow(
+              done: _steps[4],
+              label: _skConnected ? 'Signal K 已连接' : '连接 Signal K',
+              pulse: _steps[3] && !_steps[4] && _stepErrors[4] == null,
+              pulseCtrl: _pulseCtrl,
+              error: _stepErrors[4],
             ),
 
             const SizedBox(height: 32),
-            AnimatedOpacity(
-              opacity: _phase == _Phase.ready ? 1.0 : 0.6,
-              duration: const Duration(milliseconds: 300),
-              child: Text(
-                _currentStep,
-                style: const TextStyle(
-                    color: AppColors.textMuted, fontSize: 12),
+            if (_isBlocked && blockedError != null && blockedStep != null) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.danger.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.danger.withOpacity(0.3)),
+                ),
+                child: Text(
+                  blockedError,
+                  style: const TextStyle(color: AppColors.danger, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
               ),
-            ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => _retryFromStep(blockedStep!),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.cyan,
+                        side: const BorderSide(color: AppColors.cyan),
+                      ),
+                      child: const Text('重试'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => context.push('/settings'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.cyan,
+                        foregroundColor: AppColors.background,
+                      ),
+                      child: const Text('修改配置'),
+                    ),
+                  ),
+                ],
+              ),
+            ] else
+              AnimatedOpacity(
+                opacity: _phase == _Phase.ready ? 1.0 : 0.6,
+                duration: const Duration(milliseconds: 300),
+                child: Text(
+                  _currentStep,
+                  style: const TextStyle(
+                      color: AppColors.textMuted, fontSize: 12),
+                ),
+              ),
           ],
         ),
       ),
@@ -428,8 +582,8 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
 
   Widget _buildWizard() {
     // When peers are found: Welcome(0) + DeviceName(1) = 2 dots total.
-    // When no peers: Welcome(0) + DeviceName(1) + VesselName(2) + SK(3) = 4 dots.
-    final totalDots = _peersFound > 0 ? 2 : 4;
+    // When no peers: Welcome(0) + DeviceName(1) + VesselName(2) + MetService(3) + SK(4) = 5 dots.
+    final totalDots = _peersFound > 0 ? 2 : 5;
     return Column(
       key: const ValueKey('wizard'),
       children: [
@@ -473,7 +627,16 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
                 controller: _vesselNameCtrl,
                 onNext: _wizardNextVessel,
               ),
-              // Page 3: Signal K (only reached if no peers)
+              // Page 3: MetService Key (only reached if no peers)
+              _WizardPageMetService(
+                controller: _metKeyCtrl,
+                validating: _metKeyValidating,
+                validationStatus: _metKeyStatus,
+                error: _metKeyError,
+                onValidate: _wizardValidateMet,
+                onNext: _wizardNextMet,
+              ),
+              // Page 4: Signal K (only reached if no peers)
               _WizardPageSignalK(
                 hostCtrl: _skHostCtrl,
                 portCtrl: _skPortCtrl,
@@ -500,50 +663,71 @@ class _StepRow extends StatelessWidget {
   final String label;
   final bool pulse;
   final AnimationController pulseCtrl;
+  final String? error;
 
   const _StepRow({
     required this.done,
     required this.label,
     required this.pulse,
     required this.pulseCtrl,
+    this.error,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final hasError = error != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 24,
-          height: 24,
-          child: done
-              ? const Icon(Icons.check_circle_rounded,
-                  color: AppColors.cyan, size: 20)
-              : pulse
-                  ? AnimatedBuilder(
-                      animation: pulseCtrl,
-                      builder: (_, __) => Opacity(
-                        opacity: 0.4 + 0.6 * pulseCtrl.value,
-                        child: const Icon(
-                          Icons.radio_button_unchecked_rounded,
-                          color: AppColors.textMuted,
-                          size: 20,
-                        ),
-                      ),
-                    )
-                  : const Icon(Icons.radio_button_unchecked_rounded,
-                      color: AppColors.inactive, size: 20),
+        Row(
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: hasError
+                  ? const Icon(Icons.cancel_rounded, color: AppColors.danger, size: 20)
+                  : done
+                      ? const Icon(Icons.check_circle_rounded, color: AppColors.cyan, size: 20)
+                      : pulse
+                          ? AnimatedBuilder(
+                              animation: pulseCtrl,
+                              builder: (_, __) => Opacity(
+                                opacity: 0.4 + 0.6 * pulseCtrl.value,
+                                child: const Icon(
+                                  Icons.radio_button_unchecked_rounded,
+                                  color: AppColors.textMuted,
+                                  size: 20,
+                                ),
+                              ),
+                            )
+                          : const Icon(Icons.radio_button_unchecked_rounded,
+                              color: AppColors.inactive, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: hasError
+                      ? AppColors.danger
+                      : done
+                          ? AppColors.textPrimary
+                          : AppColors.textSecondary,
+                  fontSize: 14,
+                  fontWeight: done ? FontWeight.w500 : FontWeight.w400,
+                ),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: done ? AppColors.textPrimary : AppColors.textSecondary,
-              fontSize: 14,
-              fontWeight: done ? FontWeight.w500 : FontWeight.w400,
+        if (hasError)
+          Padding(
+            padding: const EdgeInsets.only(left: 36, top: 2),
+            child: Text(
+              error!,
+              style: const TextStyle(color: AppColors.danger, fontSize: 11),
             ),
           ),
-        ),
       ],
     );
   }
@@ -862,6 +1046,126 @@ class _WizardPageSignalK extends StatelessWidget {
                 '稍后配置',
                 style: TextStyle(
                     color: AppColors.textSecondary, fontSize: 13),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Wizard page: MetService Key
+// ---------------------------------------------------------------------------
+
+class _WizardPageMetService extends StatelessWidget {
+  final TextEditingController controller;
+  final bool validating;
+  final bool? validationStatus; // null = not tested, true = valid, false = invalid
+  final String? error;
+  final VoidCallback onValidate;
+  final VoidCallback onNext;
+
+  const _WizardPageMetService({
+    required this.controller,
+    required this.validating,
+    required this.validationStatus,
+    required this.error,
+    required this.onValidate,
+    required this.onNext,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 40),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.cloud_rounded, size: 48, color: AppColors.cyan),
+          const SizedBox(height: 20),
+          const Text(
+            '配置天气服务',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '输入 MetService API 密钥以获取新西兰航行天气预报',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 32),
+          TextField(
+            controller: controller,
+            autofocus: true,
+            obscureText: true,
+            style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
+            decoration: InputDecoration(
+              labelText: 'MetService API 密钥',
+              hintText: 'data.metservice.com 开发者密钥',
+              hintStyle: const TextStyle(color: AppColors.textMuted),
+              prefixIcon: const Icon(Icons.vpn_key_rounded, color: AppColors.textMuted),
+              suffixIcon: validationStatus == true
+                  ? const Icon(Icons.check_circle_rounded, color: AppColors.cyan)
+                  : validationStatus == false
+                      ? const Icon(Icons.cancel_rounded, color: AppColors.danger)
+                      : null,
+            ),
+            textInputAction: TextInputAction.done,
+          ),
+          if (error != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.error_outline_rounded, size: 13, color: AppColors.danger),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    error!,
+                    style: const TextStyle(color: AppColors.danger, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 16),
+          OutlinedButton(
+            onPressed: validating ? null : onValidate,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(44),
+              foregroundColor: AppColors.cyan,
+              side: const BorderSide(color: AppColors.cyan),
+            ),
+            child: validating
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.cyan),
+                  )
+                : const Text('测试密钥', style: TextStyle(fontSize: 14)),
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton(
+            onPressed: onNext,
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              backgroundColor: AppColors.cyan,
+              foregroundColor: AppColors.background,
+            ),
+            child: const Text('继续', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          ),
+          const SizedBox(height: 12),
+          Center(
+            child: TextButton(
+              onPressed: onNext,
+              child: const Text(
+                '暂时跳过',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
               ),
             ),
           ),

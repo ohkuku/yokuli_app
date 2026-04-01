@@ -617,6 +617,56 @@ class SkyParticlePainter extends CustomPainter {
 }
 
 // ---------------------------------------------------------------------------
+// Forecast data models
+// ---------------------------------------------------------------------------
+
+class HourlyForecast {
+  final DateTime time;
+  final double? temp;       // °C
+  final double? windSpeed;  // knots (converted from m/s × 1.944)
+  final int? windDir;       // degrees
+  final double? windGust;   // knots
+  final double? precip;     // mm
+  final double? waveHeight; // m (null if not in API)
+  final double? wavePeriod; // s
+  final String? symbolCode; // MetService symbol
+
+  const HourlyForecast({
+    required this.time,
+    this.temp,
+    this.windSpeed,
+    this.windDir,
+    this.windGust,
+    this.precip,
+    this.waveHeight,
+    this.wavePeriod,
+    this.symbolCode,
+  });
+}
+
+class DailyForecast {
+  final DateTime date;
+  final double? tempMax;
+  final double? tempMin;
+  final double? windSpeedMax; // knots
+  final int? windDirDominant; // degrees
+  final double? precipTotal;  // mm
+  final double? waveHeightMax; // m
+  final String? symbolCode;
+
+  const DailyForecast({
+    required this.date,
+    this.tempMax,
+    this.tempMin,
+    this.windSpeedMax,
+    this.windDirDominant,
+    this.precipTotal,
+    this.waveHeightMax,
+    this.symbolCode,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // WeatherState
 // ---------------------------------------------------------------------------
 
@@ -634,6 +684,13 @@ class WeatherState {
   final String? error;
   /// Location label used for display (e.g. "Auckland", or lat/lon)
   final String? locationLabel;
+  final double? waveHeight;    // current, metres
+  final double? wavePeriod;    // current, seconds
+  final double? swellHeight;   // current, metres
+  final int? swellDirection;   // current, degrees
+  final double? windGust;      // current, knots
+  final List<HourlyForecast> hourly;
+  final List<DailyForecast> daily;
 
   const WeatherState({
     this.temperature,
@@ -648,6 +705,13 @@ class WeatherState {
     this.isLoading = false,
     this.error,
     this.locationLabel,
+    this.waveHeight,
+    this.wavePeriod,
+    this.swellHeight,
+    this.swellDirection,
+    this.windGust,
+    this.hourly = const [],
+    this.daily = const [],
   });
 
   const WeatherState.loading() : this(isLoading: true);
@@ -679,6 +743,13 @@ class WeatherState {
     bool? isLoading,
     String? error,
     String? locationLabel,
+    double? waveHeight,
+    double? wavePeriod,
+    double? swellHeight,
+    int? swellDirection,
+    double? windGust,
+    List<HourlyForecast>? hourly,
+    List<DailyForecast>? daily,
   }) =>
       WeatherState(
         temperature: temperature ?? this.temperature,
@@ -693,5 +764,12 @@ class WeatherState {
         isLoading: isLoading ?? this.isLoading,
         error: error,
         locationLabel: locationLabel ?? this.locationLabel,
+        waveHeight: waveHeight ?? this.waveHeight,
+        wavePeriod: wavePeriod ?? this.wavePeriod,
+        swellHeight: swellHeight ?? this.swellHeight,
+        swellDirection: swellDirection ?? this.swellDirection,
+        windGust: windGust ?? this.windGust,
+        hourly: hourly ?? this.hourly,
+        daily: daily ?? this.daily,
       );
 }

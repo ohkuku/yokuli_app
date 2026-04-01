@@ -67,19 +67,30 @@ class WeatherNotifier extends Notifier<WeatherState> {
         return;
       }
 
-      // 2. Try MetService NZ if configured; fall back to Open-Meteo
+      // 2. MetService NZ is the only source
       final settings = ref.read(settingsProvider);
-      WeatherState? result;
 
-      if (settings.metServiceApiKey.isNotEmpty) {
-        result = await _fetchMetService(
-          lat: pos.latitude,
-          lon: pos.longitude,
-          apiKey: settings.metServiceApiKey,
+      if (settings.metServiceApiKey.isEmpty) {
+        state = state.copyWith(
+          isLoading: false,
+          error: 'MetService API Key 未配置，请在设置中配置',
         );
+        return;
       }
 
-      result ??= await _fetchOpenMeteo(lat: pos.latitude, lon: pos.longitude);
+      final result = await _fetchMetService(
+        lat: pos.latitude,
+        lon: pos.longitude,
+        apiKey: settings.metServiceApiKey,
+      );
+
+      if (result == null) {
+        state = state.copyWith(
+          isLoading: false,
+          error: 'MetService 请求失败，请检查 API Key 和网络',
+        );
+        return;
+      }
 
       state = result.copyWith(isLoading: false, error: null);
     } catch (e) {
@@ -129,60 +140,33 @@ class WeatherNotifier extends Notifier<WeatherState> {
   }
 
   // --------------------------------------------------------------------------
-  // Open-Meteo (free, no API key, global coverage — perfect for maritime)
-  // https://open-meteo.com/
-  // --------------------------------------------------------------------------
-
-  Future<WeatherState> _fetchOpenMeteo({
-    required double lat,
-    required double lon,
-  }) async {
-    final uri = Uri.https('api.open-meteo.com', '/v1/forecast', {
-      'latitude': lat.toStringAsFixed(4),
-      'longitude': lon.toStringAsFixed(4),
-      'current': 'temperature_2m,apparent_temperature,weather_code'
-          ',wind_speed_10m,wind_direction_10m,precipitation',
-      'wind_speed_unit': 'kn',
-      'timezone': 'auto',
-    });
-
-    final resp = await http
-        .get(uri, headers: {'Accept': 'application/json'})
-        .timeout(const Duration(seconds: 15));
-
-    if (resp.statusCode != 200) {
-      throw Exception('Open-Meteo HTTP ${resp.statusCode}: '
-          '${resp.body.length > 120 ? resp.body.substring(0, 120) : resp.body}');
-    }
-
-    final body = jsonDecode(resp.body) as Map<String, dynamic>;
-    final cur = body['current'] as Map<String, dynamic>?;
-    if (cur == null) {
-      throw Exception('Open-Meteo: 响应中无 current 字段，body=${resp.body.substring(0, 200)}');
-    }
-
-    final code = (cur['weather_code'] as num?)?.toInt() ?? 0;
-    final lat4 = lat.toStringAsFixed(2);
-    final lon4 = lon.toStringAsFixed(2);
-
-    return WeatherState(
-      temperature: (cur['temperature_2m'] as num?)?.toDouble(),
-      feelsLike: (cur['apparent_temperature'] as num?)?.toDouble(),
-      weatherCode: code,
-      condition: conditionFromCode(code),
-      windSpeed: (cur['wind_speed_10m'] as num?)?.toDouble(),
-      windDirection: (cur['wind_direction_10m'] as num?)?.toInt(),
-      precipitation: (cur['precipitation'] as num?)?.toDouble(),
-      description: descriptionForCode(code),
-      fetchedAt: DateTime.now(),
-      locationLabel: '$lat4°, $lon4°',
-    );
-  }
-
-  // --------------------------------------------------------------------------
   // MetService NZ (commercial API — requires API key from data.metservice.com)
   // Register at https://data.metservice.com/ to get a key.
   // --------------------------------------------------------------------------
+
+  /// Tests MetService API key with a known NZ position (Auckland).
+  /// Returns null on success, or an error string on failure.
+  static Future<String?> validateApiKey(String apiKey) async {
+    if (apiKey.isEmpty) return 'API Key 为空';
+    try {
+      final uri = Uri.https('data.metservice.com', '/v1/point_forecast', {
+        'lat': '-36.8485',
+        'lon': '174.7633',
+      });
+      final resp = await http
+          .get(uri, headers: {'apikey': apiKey, 'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 12));
+      if (resp.statusCode == 200) return null; // valid
+      if (resp.statusCode == 401 || resp.statusCode == 403) {
+        return '无效的 API Key (HTTP ${resp.statusCode})';
+      }
+      return 'MetService 返回 HTTP ${resp.statusCode}';
+    } on TimeoutException {
+      return '连接超时，请检查网络';
+    } catch (e) {
+      return '网络错误: $e';
+    }
+  }
 
   Future<WeatherState?> _fetchMetService({
     required double lat,
@@ -196,36 +180,114 @@ class WeatherNotifier extends Notifier<WeatherState> {
       });
       final resp = await http
           .get(uri, headers: {'apikey': apiKey, 'Accept': 'application/json'})
-          .timeout(const Duration(seconds: 10));
-      if (resp.statusCode != 200) return null; // fall through to Open-Meteo
+          .timeout(const Duration(seconds: 15));
+      if (resp.statusCode != 200) return null;
 
       final body = jsonDecode(resp.body) as Map<String, dynamic>;
-      // MetService response schema varies; extract current conditions
-      final current = body['current'] as Map<String, dynamic>?;
-      if (current == null) return null;
 
-      // Temperature in °C
+      // --- Current ---
+      final current = body['current'] as Map<String, dynamic>? ?? {};
       final tempC = (current['airTemperature'] as num?)?.toDouble();
-      // Wind speed — MetService returns m/s; convert to knots (×1.944)
       final windMs = (current['windSpeed'] as num?)?.toDouble();
       final windKn = windMs != null ? windMs * 1.944 : null;
       final windDir = (current['windDirection'] as num?)?.toInt();
-      // MetService weather symbol code → use a simple mapping
+      final gustMs = (current['windGust'] as num?)?.toDouble();
+      final gustKn = gustMs != null ? gustMs * 1.944 : null;
       final symbolCode = current['symbolCode'] as String? ?? '';
       final (code, description) = _metServiceSymbolToWmo(symbolCode);
-      final condition = conditionFromCode(code);
+      final waveHeight = (current['waveHeight'] as num?)?.toDouble();
+      final wavePeriod = (current['wavePeriod'] as num?)?.toDouble();
+      final swellHeight = (current['swellHeight'] as num?)?.toDouble();
+      final swellDir = (current['swellDirection'] as num?)?.toInt();
+
+      // --- Hourly ---
+      final hourlyRaw = body['hourly'] as List<dynamic>? ?? [];
+      final hourly = <HourlyForecast>[];
+      for (final h in hourlyRaw) {
+        if (h is! Map<String, dynamic>) continue;
+        try {
+          final t = DateTime.tryParse(h['time'] as String? ?? '');
+          if (t == null) continue;
+          final wSpeedMs = (h['windSpeed'] as num?)?.toDouble();
+          final gMs = (h['windGust'] as num?)?.toDouble();
+          hourly.add(HourlyForecast(
+            time: t,
+            temp: (h['airTemperature'] as num?)?.toDouble(),
+            windSpeed: wSpeedMs != null ? wSpeedMs * 1.944 : null,
+            windDir: (h['windDirection'] as num?)?.toInt(),
+            windGust: gMs != null ? gMs * 1.944 : null,
+            precip: (h['precipitation'] as num?)?.toDouble(),
+            waveHeight: (h['waveHeight'] as num?)?.toDouble(),
+            wavePeriod: (h['wavePeriod'] as num?)?.toDouble(),
+            symbolCode: h['symbolCode'] as String?,
+          ));
+        } catch (_) {}
+      }
+
+      // --- Daily ---
+      final dailyRaw = body['daily'] as List<dynamic>? ?? [];
+      final daily = <DailyForecast>[];
+      for (final d in dailyRaw) {
+        if (d is! Map<String, dynamic>) continue;
+        try {
+          // Try 'date', 'time', or 'day' key
+          final dateStr = (d['date'] ?? d['time'] ?? d['day']) as String?;
+          if (dateStr == null) continue;
+          final date = DateTime.tryParse(dateStr);
+          if (date == null) continue;
+          final maxWSpeedMs = (d['maxWindSpeed'] as num?)?.toDouble();
+          daily.add(DailyForecast(
+            date: date,
+            tempMax: (d['maxTemperature'] ?? d['maxAirTemperature']) is num
+                ? ((d['maxTemperature'] ?? d['maxAirTemperature']) as num)
+                    .toDouble()
+                : null,
+            tempMin: (d['minTemperature'] ?? d['minAirTemperature']) is num
+                ? ((d['minTemperature'] ?? d['minAirTemperature']) as num)
+                    .toDouble()
+                : null,
+            windSpeedMax:
+                maxWSpeedMs != null ? maxWSpeedMs * 1.944 : null,
+            windDirDominant:
+                (d['dominantWindDirection'] ?? d['windDirection']) is num
+                    ? ((d['dominantWindDirection'] ?? d['windDirection']) as num)
+                        .toInt()
+                    : null,
+            precipTotal:
+                (d['totalPrecipitation'] ?? d['precipitation']) is num
+                    ? ((d['totalPrecipitation'] ?? d['precipitation']) as num)
+                        .toDouble()
+                    : null,
+            waveHeightMax:
+                (d['maxWaveHeight'] ?? d['waveHeight']) is num
+                    ? ((d['maxWaveHeight'] ?? d['waveHeight']) as num)
+                        .toDouble()
+                    : null,
+            symbolCode: d['symbolCode'] as String?,
+          ));
+        } catch (_) {}
+      }
 
       return WeatherState(
         temperature: tempC,
-        feelsLike: tempC, // MetService doesn't always provide feels-like
+        feelsLike: (current['feelsLike'] as num?)?.toDouble() ?? tempC,
         weatherCode: code,
-        condition: condition,
+        condition: conditionFromCode(code),
         windSpeed: windKn,
         windDirection: windDir,
+        windGust: gustKn,
         precipitation: (current['precipitation'] as num?)?.toDouble(),
+        waveHeight: waveHeight,
+        wavePeriod: wavePeriod,
+        swellHeight: swellHeight,
+        swellDirection: swellDir,
         description: description,
         fetchedAt: DateTime.now(),
-        locationLabel: 'MetService NZ',
+        locationLabel: (body['location'] as Map<String, dynamic>?)?['name']
+                as String? ??
+            'MetService NZ',
+        hourly: hourly,
+        daily: daily,
       );
     } catch (_) {
       return null;
@@ -235,11 +297,13 @@ class WeatherNotifier extends Notifier<WeatherState> {
   /// Map MetService symbol codes to WMO codes + Chinese description.
   (int, String) _metServiceSymbolToWmo(String symbol) {
     if (symbol.contains('sun') || symbol.contains('clear')) return (0, '晴朗');
-    if (symbol.contains('few_cloud') || symbol.contains('partly')) return (2, '局部多云');
+    if (symbol.contains('few_cloud') || symbol.contains('partly'))
+      return (2, '局部多云');
     if (symbol.contains('cloud')) return (3, '多云');
     if (symbol.contains('fog')) return (45, '有雾');
     if (symbol.contains('drizzle')) return (51, '毛毛雨');
-    if (symbol.contains('heavy_rain') || symbol.contains('rain_heavy')) return (65, '大雨');
+    if (symbol.contains('heavy_rain') || symbol.contains('rain_heavy'))
+      return (65, '大雨');
     if (symbol.contains('rain')) return (61, '小雨');
     if (symbol.contains('snow')) return (71, '降雪');
     if (symbol.contains('thunder')) return (95, '雷阵雨');

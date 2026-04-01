@@ -8,6 +8,7 @@ import '../../../core/providers/locale_provider.dart';
 import '../../../core/l10n/strings.dart' show S;
 import '../../../core/providers/device_provider.dart' show deviceProvider;
 import '../../../core/providers/connection_provider.dart';
+import '../../../core/providers/weather_provider.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
 import '../../../core/services/lan_sync/lan_sync_platform_base.dart' show DiscoveredHost;
 import '../../../core/services/lan_sync/lan_sync_service.dart' show syncCursorStatusProvider;
@@ -26,6 +27,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late TextEditingController _hostIpCtrl; // web only: manual host address
   late TextEditingController _metServiceKeyCtrl;
   String? _localIp;
+  bool _metKeyValidating = false;
+  bool? _metKeyStatus; // null = not tested, true = valid, false = invalid
+  String? _metKeyError;
 
   @override
   void initState() {
@@ -298,16 +302,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 children: [
                   const Text(
                     '数据源',
-                    style: TextStyle(
-                        color: AppColors.textMuted, fontSize: 11),
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 11),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     settings.metServiceApiKey.isNotEmpty
                         ? 'MetService NZ (API key 已配置)'
-                        : 'Open-Meteo — 免费，全球覆盖，无需密钥',
-                    style: const TextStyle(
-                        color: AppColors.textSecondary, fontSize: 13),
+                        : 'MetService NZ — 需要 API 密钥',
+                    style: TextStyle(
+                      color: settings.metServiceApiKey.isNotEmpty
+                          ? AppColors.textSecondary
+                          : AppColors.warning,
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),
@@ -317,23 +324,73 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               controller: _metServiceKeyCtrl,
               obscureText: true,
               decoration: InputDecoration(
-                labelText: 'MetService API 密钥（可选）',
-                hintText: '留空则使用 Open-Meteo',
-                prefixIcon: const Icon(Icons.vpn_key_rounded),
-                helperText: '从 data.metservice.com 获取密钥（限 NZ）',
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.check_rounded),
-                  onPressed: () async {
-                    await ref
-                        .read(settingsProvider.notifier)
-                        .update(settings.copyWith(
-                            metServiceApiKey:
-                                _metServiceKeyCtrl.text.trim()));
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('天气配置已保存')));
-                    }
-                  },
+                labelText: 'MetService API 密钥（必填）',
+                hintText: 'data.metservice.com 开发者密钥',
+                prefixIcon: Icon(
+                  Icons.vpn_key_rounded,
+                  color: _metKeyStatus == true
+                      ? AppColors.cyan
+                      : _metKeyStatus == false
+                          ? AppColors.danger
+                          : null,
+                ),
+                helperText: _metKeyError ??
+                    (_metKeyStatus == true ? '密钥有效' : '从 data.metservice.com 获取密钥（限 NZ）'),
+                helperStyle: TextStyle(
+                  color: _metKeyStatus == true
+                      ? AppColors.cyan
+                      : _metKeyStatus == false
+                          ? AppColors.danger
+                          : AppColors.textMuted,
+                ),
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Test button
+                    IconButton(
+                      icon: _metKeyValidating
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.wifi_tethering_rounded),
+                      tooltip: '测试密钥',
+                      onPressed: _metKeyValidating
+                          ? null
+                          : () async {
+                              setState(() {
+                                _metKeyValidating = true;
+                                _metKeyStatus = null;
+                                _metKeyError = null;
+                              });
+                              final error = await WeatherNotifier.validateApiKey(
+                                  _metServiceKeyCtrl.text.trim());
+                              if (mounted) {
+                                setState(() {
+                                  _metKeyValidating = false;
+                                  _metKeyStatus = error == null ? true : false;
+                                  _metKeyError = error;
+                                });
+                              }
+                            },
+                    ),
+                    // Save button
+                    IconButton(
+                      icon: const Icon(Icons.check_rounded),
+                      tooltip: '保存',
+                      onPressed: () async {
+                        await ref.read(settingsProvider.notifier).update(
+                            settings.copyWith(
+                                metServiceApiKey:
+                                    _metServiceKeyCtrl.text.trim()));
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('天气配置已保存')));
+                        }
+                      },
+                    ),
+                  ],
                 ),
               ),
               textInputAction: TextInputAction.done,
