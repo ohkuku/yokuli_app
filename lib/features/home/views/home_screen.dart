@@ -87,7 +87,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   onArrange: () => _showArrangeSheet(context, tiles, settings),
                 ),
                 Expanded(
-                  child: RepaintBoundary(
                   child: GridView.builder(
                     padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -102,7 +101,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       data: tiles[i],
                       onTap: () => context.push(tiles[i].route),
                     ),
-                  ),
                   ),
                 ),
                 const VesselStatusBar(),
