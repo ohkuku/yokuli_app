@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'dart:async' show Timer;
 import 'dart:ui';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -31,15 +31,9 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  late Timer _clockTimer;
-  DateTime _now = DateTime.now();
-
   @override
   void initState() {
     super.initState();
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _now = DateTime.now());
-    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) showUpdateDialogIfNeeded(context);
       // Auto-navigate to MOB screen when a remote MOB arrives
@@ -52,12 +46,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         },
       );
     });
-  }
-
-  @override
-  void dispose() {
-    _clockTimer.cancel();
-    super.dispose();
   }
 
   @override
@@ -94,12 +82,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: Column(
               children: [
                 _Header(
-                  now: _now,
                   vesselName: settings.vesselName,
                   conn: conn,
                   onArrange: () => _showArrangeSheet(context, tiles, settings),
                 ),
                 Expanded(
+                  child: RepaintBoundary(
                   child: GridView.builder(
                     padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -114,6 +102,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       data: tiles[i],
                       onTap: () => context.push(tiles[i].route),
                     ),
+                  ),
                   ),
                 ),
                 const VesselStatusBar(),
@@ -259,21 +248,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _Header extends ConsumerWidget {
-  final DateTime now;
+class _Header extends ConsumerStatefulWidget {
   final String vesselName;
   final AppConnectionState conn;
   final VoidCallback? onArrange;
 
   const _Header({
-    required this.now,
     required this.vesselName,
     required this.conn,
     this.onArrange,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_Header> createState() => _HeaderState();
+}
+
+class _HeaderState extends ConsumerState<_Header> {
+  late Timer _clockTimer;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _clockTimer.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final weather = ref.watch(weatherProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
@@ -293,7 +302,7 @@ class _Header extends ConsumerWidget {
                     children: [
                       Flexible(
                         child: Text(
-                          vesselName.toUpperCase(),
+                          widget.vesselName.toUpperCase(),
                           style: const TextStyle(
                             color: AppColors.cyan,
                             fontSize: 11,
@@ -339,7 +348,7 @@ class _Header extends ConsumerWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    DateFormat('EEE d MMM  HH:mm:ss').format(now),
+                    DateFormat('EEE d MMM  HH:mm:ss').format(_now),
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.55),
                       fontSize: 12,
@@ -352,23 +361,23 @@ class _Header extends ConsumerWidget {
             // Connection badges
             _ConnBadge(
               icon: Icons.hub_rounded,
-              active: conn.isSignalKConnected,
+              active: widget.conn.isSignalKConnected,
               color: AppColors.cyan,
               label: 'SK',
             ),
             const SizedBox(width: 8),
             _ConnBadge(
               icon: Icons.wifi_rounded,
-              active: conn.isLanSyncActive,
+              active: widget.conn.isLanSyncActive,
               color: AppColors.teal,
-              label: conn.isLanSyncActive && conn.peerCount > 0
-                  ? 'LAN ×${conn.peerCount}'
+              label: widget.conn.isLanSyncActive && widget.conn.peerCount > 0
+                  ? 'LAN ×${widget.conn.peerCount}'
                   : 'LAN',
             ),
             const SizedBox(width: 8),
             // Arrange tiles button
             GestureDetector(
-              onTap: onArrange,
+              onTap: widget.onArrange,
               child: Container(
                 padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(

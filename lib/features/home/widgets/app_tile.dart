@@ -224,25 +224,50 @@ class _GlassTile extends StatelessWidget {
       child: ClipRRect(
         borderRadius: radius,
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isStub
-                    ? [
-                        Colors.white.withOpacity(0.04),
-                        Colors.white.withOpacity(0.02),
-                      ]
-                    : [
-                        accent.withOpacity(0.12),
-                        Colors.white.withOpacity(0.06),
-                      ],
+          filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+          child: Stack(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: isStub
+                        ? [
+                            Colors.white.withOpacity(0.05),
+                            Colors.white.withOpacity(0.02),
+                          ]
+                        : [
+                            accent.withOpacity(0.14),
+                            Colors.white.withOpacity(0.05),
+                          ],
+                  ),
+                ),
+                child: child,
               ),
-            ),
-            child: child,
+              // Specular top highlight
+              if (!isStub)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 1.0,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.white.withOpacity(0.50),
+                          Colors.white.withOpacity(0.08),
+                          Colors.transparent,
+                        ],
+                        stops: const [0.0, 0.5, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),

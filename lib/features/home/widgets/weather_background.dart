@@ -104,6 +104,7 @@ class _WeatherBackgroundState extends ConsumerState<WeatherBackground>
                   particleType: _curr.particleType,
                   t: isRain ? _fastCtrl.value : _slowCtrl.value,
                   primaryColor: _curr.primaryColor,
+                  now: DateTime.now(),
                 ),
               ),
             ),

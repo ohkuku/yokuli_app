@@ -86,13 +86,18 @@ class WeatherSkyTheme {
   });
 }
 
-enum _TimeOfDay { night, sunrise, day, sunset }
+// 8 time bands for smooth realistic sky progression
+enum _TimeOfDay { deepNight, preDawn, dawn, morning, midday, afternoon, goldenHour, dusk }
 
 _TimeOfDay _tod(int hour) {
-  if (hour >= 5 && hour < 8) return _TimeOfDay.sunrise;
-  if (hour >= 8 && hour < 17) return _TimeOfDay.day;
-  if (hour >= 17 && hour < 20) return _TimeOfDay.sunset;
-  return _TimeOfDay.night;
+  if (hour >= 22 || hour < 4) return _TimeOfDay.deepNight;
+  if (hour < 5) return _TimeOfDay.preDawn;
+  if (hour < 7) return _TimeOfDay.dawn;
+  if (hour < 10) return _TimeOfDay.morning;
+  if (hour < 16) return _TimeOfDay.midday;
+  if (hour < 18) return _TimeOfDay.afternoon;
+  if (hour < 19) return _TimeOfDay.goldenHour;
+  return _TimeOfDay.dusk;
 }
 
 WeatherSkyTheme weatherSkyThemeFor({
@@ -104,114 +109,162 @@ WeatherSkyTheme weatherSkyThemeFor({
   switch (condition) {
     case WeatherCondition.clear:
       switch (tod) {
-        case _TimeOfDay.night:
+        case _TimeOfDay.deepNight:
           return const WeatherSkyTheme(
-            gradientColors: [Color(0xFF0B1426), Color(0xFF1A2D50), Color(0xFF0D1E35)],
-            primaryColor: Color(0xFF5E7CB8),
+            gradientColors: [Color(0xFF040A16), Color(0xFF0A1528), Color(0xFF06101E)],
+            primaryColor: Color(0xFF4A6FA5),
             particleType: 'stars',
           );
-        case _TimeOfDay.sunrise:
+        case _TimeOfDay.preDawn:
           return const WeatherSkyTheme(
-            gradientColors: [Color(0xFFFF7043), Color(0xFFFFB300), Color(0xFF64B5F6), Color(0xFF1976D2)],
-            primaryColor: Color(0xFFFF7043),
+            gradientColors: [Color(0xFF080C28), Color(0xFF14103A), Color(0xFF200E30)],
+            primaryColor: Color(0xFF6A5CC0),
+            particleType: 'stars',
+          );
+        case _TimeOfDay.dawn:
+          return const WeatherSkyTheme(
+            gradientColors: [Color(0xFF0E0C35), Color(0xFF5C2280), Color(0xFFD45820), Color(0xFFFFCC80)],
+            primaryColor: Color(0xFFE87040),
             particleType: 'none',
           );
-        case _TimeOfDay.day:
+        case _TimeOfDay.morning:
           return const WeatherSkyTheme(
-            gradientColors: [Color(0xFF2196F3), Color(0xFF42A5F5), Color(0xFF64B5F6)],
-            primaryColor: Color(0xFF42A5F5),
+            gradientColors: [Color(0xFF0B50C0), Color(0xFF1A8AE8), Color(0xFF78C8F5), Color(0xFFEED8B0)],
+            primaryColor: Color(0xFF2090E0),
             particleType: 'clouds',
           );
-        case _TimeOfDay.sunset:
+        case _TimeOfDay.midday:
           return const WeatherSkyTheme(
-            gradientColors: [Color(0xFFFF5252), Color(0xFFFF9800), Color(0xFF9C27B0), Color(0xFF1A237E)],
-            primaryColor: Color(0xFFFF7043),
+            gradientColors: [Color(0xFF0840A8), Color(0xFF1068C8), Color(0xFF40A8E8), Color(0xFF80C8F0)],
+            primaryColor: Color(0xFF1878D0),
+            particleType: 'clouds',
+          );
+        case _TimeOfDay.afternoon:
+          return const WeatherSkyTheme(
+            gradientColors: [Color(0xFF083898), Color(0xFF1560C0), Color(0xFF3C90D5), Color(0xFFA8D5F0)],
+            primaryColor: Color(0xFF1565C0),
+            particleType: 'clouds',
+          );
+        case _TimeOfDay.goldenHour:
+          return const WeatherSkyTheme(
+            gradientColors: [Color(0xFF100630), Color(0xFF601880), Color(0xFFD05818), Color(0xFFFFD060)],
+            primaryColor: Color(0xFFE06820),
             particleType: 'none',
+          );
+        case _TimeOfDay.dusk:
+          return const WeatherSkyTheme(
+            gradientColors: [Color(0xFF06081E), Color(0xFF1A0C38), Color(0xFF340A50), Color(0xFF1A1028)],
+            primaryColor: Color(0xFF7040A0),
+            particleType: 'stars',
           );
       }
 
     case WeatherCondition.partlyCloudy:
       switch (tod) {
-        case _TimeOfDay.night:
+        case _TimeOfDay.deepNight || _TimeOfDay.preDawn:
           return const WeatherSkyTheme(
-            gradientColors: [Color(0xFF1A2332), Color(0xFF263547), Color(0xFF1E3250)],
-            primaryColor: Color(0xFF4A6FA5),
+            gradientColors: [Color(0xFF080E20), Color(0xFF111C30), Color(0xFF0C1828)],
+            primaryColor: Color(0xFF3A5888),
             particleType: 'stars',
           );
-        case _TimeOfDay.sunrise || _TimeOfDay.sunset:
+        case _TimeOfDay.dawn:
           return const WeatherSkyTheme(
-            gradientColors: [Color(0xFFFF6F00), Color(0xFFFFCA28), Color(0xFF5C6BC0)],
-            primaryColor: Color(0xFFFFB347),
+            gradientColors: [Color(0xFF181040), Color(0xFF703890), Color(0xFFCC6030), Color(0xFFEEAA60)],
+            primaryColor: Color(0xFFCC6838),
             particleType: 'clouds',
           );
-        case _TimeOfDay.day:
+        case _TimeOfDay.morning:
           return const WeatherSkyTheme(
-            gradientColors: [Color(0xFF3D87C8), Color(0xFF6AB0D8), Color(0xFF89B4DA)],
-            primaryColor: Color(0xFF5B9BD5),
+            gradientColors: [Color(0xFF1860B8), Color(0xFF3098D8), Color(0xFF80C0E8), Color(0xFFD8E8F5)],
+            primaryColor: Color(0xFF3898D0),
+            particleType: 'clouds',
+          );
+        case _TimeOfDay.midday || _TimeOfDay.afternoon:
+          return const WeatherSkyTheme(
+            gradientColors: [Color(0xFF1050A0), Color(0xFF2878C0), Color(0xFF5AA0D8), Color(0xFF90C0E8)],
+            primaryColor: Color(0xFF3080C0),
+            particleType: 'clouds',
+          );
+        case _TimeOfDay.goldenHour || _TimeOfDay.dusk:
+          return const WeatherSkyTheme(
+            gradientColors: [Color(0xFF180838), Color(0xFF683080), Color(0xFFB84820), Color(0xFFEEA840)],
+            primaryColor: Color(0xFFC05030),
             particleType: 'clouds',
           );
       }
 
     case WeatherCondition.overcast:
-      if (tod == _TimeOfDay.night) {
-        return const WeatherSkyTheme(
-          gradientColors: [Color(0xFF1A1F2E), Color(0xFF2D3448), Color(0xFF1E2535)],
-          primaryColor: Color(0xFF3A4560),
-          particleType: 'none',
-        );
+      switch (tod) {
+        case _TimeOfDay.deepNight || _TimeOfDay.preDawn:
+          return const WeatherSkyTheme(
+            gradientColors: [Color(0xFF0C1018), Color(0xFF181E28), Color(0xFF101820)],
+            primaryColor: Color(0xFF283848),
+            particleType: 'none',
+          );
+        case _TimeOfDay.dawn || _TimeOfDay.dusk:
+          return const WeatherSkyTheme(
+            gradientColors: [Color(0xFF281820), Color(0xFF403040), Color(0xFF504050)],
+            primaryColor: Color(0xFF604858),
+            particleType: 'none',
+          );
+        default:
+          return const WeatherSkyTheme(
+            gradientColors: [Color(0xFF384048), Color(0xFF505860), Color(0xFF686870)],
+            primaryColor: Color(0xFF607080),
+            particleType: 'clouds',
+          );
       }
-      return const WeatherSkyTheme(
-        gradientColors: [Color(0xFF455A64), Color(0xFF607D8B), Color(0xFF78909C)],
-        primaryColor: Color(0xFF607D8B),
-        particleType: 'clouds',
-      );
 
     case WeatherCondition.fog:
       return const WeatherSkyTheme(
-        gradientColors: [Color(0xFF6E7E8A), Color(0xFFB0C4CE), Color(0xFFCFD9DF)],
-        primaryColor: Color(0xFFB0C4CE),
+        gradientColors: [Color(0xFF586068), Color(0xFF8898A0), Color(0xFFC0CCCC), Color(0xFFD8E0DC)],
+        primaryColor: Color(0xFF98B0B0),
         particleType: 'fog',
       );
 
     case WeatherCondition.drizzle:
-      if (tod == _TimeOfDay.night) {
-        return const WeatherSkyTheme(
-          gradientColors: [Color(0xFF0F1B2E), Color(0xFF1A2A40), Color(0xFF1E3250)],
-          primaryColor: Color(0xFF2E5688),
-          particleType: 'rain',
-        );
+      switch (tod) {
+        case _TimeOfDay.deepNight || _TimeOfDay.preDawn:
+          return const WeatherSkyTheme(
+            gradientColors: [Color(0xFF081018), Color(0xFF101C28), Color(0xFF0C1820)],
+            primaryColor: Color(0xFF204060),
+            particleType: 'rain',
+          );
+        default:
+          return const WeatherSkyTheme(
+            gradientColors: [Color(0xFF203060), Color(0xFF304870), Color(0xFF405880)],
+            primaryColor: Color(0xFF406090),
+            particleType: 'rain',
+          );
       }
-      return const WeatherSkyTheme(
-        gradientColors: [Color(0xFF2C3E6A), Color(0xFF3A5280), Color(0xFF4A6898)],
-        primaryColor: Color(0xFF4A6898),
-        particleType: 'rain',
-      );
 
     case WeatherCondition.rain:
-      if (tod == _TimeOfDay.night) {
-        return const WeatherSkyTheme(
-          gradientColors: [Color(0xFF0A1020), Color(0xFF111D30), Color(0xFF162340)],
-          primaryColor: Color(0xFF1E3A5F),
-          particleType: 'rain',
-        );
+      switch (tod) {
+        case _TimeOfDay.deepNight || _TimeOfDay.preDawn:
+          return const WeatherSkyTheme(
+            gradientColors: [Color(0xFF060A14), Color(0xFF0C1428), Color(0xFF101A30)],
+            primaryColor: Color(0xFF182A48),
+            particleType: 'rain',
+          );
+        default:
+          return const WeatherSkyTheme(
+            gradientColors: [Color(0xFF1A2A50), Color(0xFF243860), Color(0xFF3060A0)],
+            primaryColor: Color(0xFF2878B0),
+            particleType: 'rain',
+          );
       }
-      return const WeatherSkyTheme(
-        gradientColors: [Color(0xFF1E3A5F), Color(0xFF2980B9), Color(0xFF3D7FC5)],
-        primaryColor: Color(0xFF2980B9),
-        particleType: 'rain',
-      );
 
     case WeatherCondition.snowShowers:
       return const WeatherSkyTheme(
-        gradientColors: [Color(0xFF7B97B5), Color(0xFFC9D8E8), Color(0xFFE8F0F7)],
-        primaryColor: Color(0xFF8FA8C8),
+        gradientColors: [Color(0xFF6878A0), Color(0xFF9CB0CC), Color(0xFFC8D8E8), Color(0xFFE0ECF4)],
+        primaryColor: Color(0xFF80A0C0),
         particleType: 'snow',
       );
 
     case WeatherCondition.thunderstorm:
       return const WeatherSkyTheme(
-        gradientColors: [Color(0xFF0D0D1A), Color(0xFF1A1A2E), Color(0xFF16213E)],
-        primaryColor: Color(0xFF4A4AFF),
+        gradientColors: [Color(0xFF080810), Color(0xFF100C20), Color(0xFF0C1020)],
+        primaryColor: Color(0xFF3030A0),
         particleType: 'rain',
       );
   }
@@ -258,11 +311,14 @@ class SkyParticlePainter extends CustomPainter {
   final String particleType;
   final double t;
   final Color primaryColor;
+  /// Current time — used to position sun and moon accurately.
+  final DateTime? now;
 
   const SkyParticlePainter({
     required this.particleType,
     required this.t,
     required this.primaryColor,
+    this.now,
   });
 
   @override
@@ -270,8 +326,10 @@ class SkyParticlePainter extends CustomPainter {
     switch (particleType) {
       case 'stars':
         _paintStars(canvas, size);
+        _paintMoon(canvas, size);
       case 'clouds':
         _paintClouds(canvas, size);
+        _paintSun(canvas, size);
       case 'rain':
         _paintRain(canvas, size);
       case 'snow':
@@ -280,7 +338,112 @@ class SkyParticlePainter extends CustomPainter {
         _paintFog(canvas, size);
       case 'aurora':
         _paintAurora(canvas, size);
+      case 'none':
+        // dawn / dusk — paint celestial body only
+        _paintSunOrMoon(canvas, size);
     }
+  }
+
+  void _paintSunOrMoon(Canvas canvas, Size size) {
+    final hour = _fractionalHour();
+    if (hour >= 5.0 && hour <= 20.5) {
+      _paintSun(canvas, size);
+    } else {
+      _paintMoon(canvas, size);
+    }
+  }
+
+  double _fractionalHour() {
+    if (now == null) return 12.0;
+    return now!.hour + now!.minute / 60.0;
+  }
+
+  void _paintSun(Canvas canvas, Size size) {
+    final hour = _fractionalHour();
+    if (hour < 5.0 || hour > 20.5) return;
+
+    // Arc: rises east side (x=0.82) at 6am, zenith at noon (x=0.50, y=0.10),
+    // sets west side (x=0.18) at 18:30.
+    final progress = ((hour - 5.5) / 15.0).clamp(0.0, 1.0);
+    final altitude = math.sin(progress * math.pi); // 0..1
+    final sunX = 0.82 - 0.64 * progress;
+    final sunY = 0.90 - 0.80 * altitude;
+
+    final cx = sunX * size.width;
+    final cy = sunY * size.height;
+
+    // Atmospheric scatter — large diffuse halo
+    final scatterColor = altitude > 0.35
+        ? const Color(0xFFFFEA90)
+        : const Color(0xFFFF9040);
+    final scatterOpacity = (0.10 + 0.18 * altitude).clamp(0.0, 0.28);
+    canvas.drawCircle(
+      Offset(cx, cy),
+      size.width * 0.28,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [scatterColor.withOpacity(scatterOpacity), Colors.transparent],
+          stops: const [0.0, 1.0],
+        ).createShader(Rect.fromCircle(
+            center: Offset(cx, cy), radius: size.width * 0.28)),
+    );
+
+    // Corona glow
+    final diskR = 10.0 + 10.0 * altitude;
+    canvas.drawCircle(
+      Offset(cx, cy),
+      diskR + 20,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [Colors.white.withOpacity(0.40), Colors.transparent],
+        ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: diskR + 20)),
+    );
+
+    // Sun disk
+    canvas.drawCircle(
+      Offset(cx, cy),
+      diskR,
+      Paint()..color = Colors.white.withOpacity(0.95),
+    );
+
+    // Bright core
+    canvas.drawCircle(
+      Offset(cx, cy),
+      diskR * 0.5,
+      Paint()..color = Colors.white,
+    );
+  }
+
+  void _paintMoon(Canvas canvas, Size size) {
+    final hour = _fractionalHour();
+    // Moon visible when sun is below horizon
+    if (hour >= 5.5 && hour <= 20.0) return;
+
+    final cx = size.width * 0.70;
+    final cy = size.height * 0.15;
+
+    // Soft glow
+    canvas.drawCircle(
+      Offset(cx, cy),
+      55,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [Colors.white.withOpacity(0.09), Colors.transparent],
+        ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: 55)),
+    );
+
+    // Moon disk with crescent via saveLayer + clear blend
+    final moonRect = Rect.fromCenter(center: Offset(cx, cy), width: 72, height: 72);
+    canvas.saveLayer(moonRect, Paint());
+    canvas.drawCircle(Offset(cx, cy), 16, Paint()..color = const Color(0xFFD8E4EE));
+    canvas.drawCircle(
+      Offset(cx + 10, cy - 5),
+      13,
+      Paint()
+        ..color = Colors.white
+        ..blendMode = BlendMode.clear,
+    );
+    canvas.restore();
   }
 
   void _paintStars(Canvas canvas, Size size) {
@@ -288,37 +451,57 @@ class SkyParticlePainter extends CustomPainter {
     final seeds = _ParticleSeeds.stars;
     for (int i = 0; i < seeds.length; i++) {
       final twinkle = math.sin(t * math.pi * 2 + _ParticleSeeds.starTwinklePhase[i]);
-      final alpha = 0.3 + 0.55 * (twinkle * 0.5 + 0.5);
+      final alpha = 0.25 + 0.65 * (twinkle * 0.5 + 0.5);
+      final sz = _ParticleSeeds.starSizes[i];
+      // Larger stars get a subtle glow
+      if (sz > 1.4) {
+        paint.color = Colors.white.withOpacity(alpha * 0.25);
+        canvas.drawCircle(
+          Offset(seeds[i].dx * size.width, seeds[i].dy * size.height),
+          sz * 2.8,
+          paint,
+        );
+      }
       paint.color = Colors.white.withOpacity(alpha);
       canvas.drawCircle(
         Offset(seeds[i].dx * size.width, seeds[i].dy * size.height),
-        _ParticleSeeds.starSizes[i],
+        sz,
         paint,
       );
     }
   }
 
   void _paintClouds(Canvas canvas, Size size) {
-    final paint = Paint()..style = PaintingStyle.fill;
-    final clouds = _ParticleSeeds.clouds;
-    for (int i = 0; i < clouds.length; i++) {
-      final x = ((clouds[i].dx + t * _ParticleSeeds.cloudSpeeds[i]) % 1.2 - 0.1);
-      final y = clouds[i].dy;
+    final seeds = _ParticleSeeds.clouds;
+    for (int i = 0; i < seeds.length; i++) {
+      final xFrac = (seeds[i].dx + t * _ParticleSeeds.cloudSpeeds[i]) % 1.25 - 0.12;
+      final yFrac = seeds[i].dy;
       final r = _ParticleSeeds.cloudSizes[i] * size.width;
-      paint.color = Colors.white.withOpacity(0.04 + i * 0.015);
-      // Fluffy cloud using three overlapping ovals
-      canvas.drawOval(Rect.fromCenter(
-          center: Offset(x * size.width, y * size.height),
-          width: r * 2.4,
-          height: r * 0.9), paint);
-      canvas.drawOval(Rect.fromCenter(
-          center: Offset(x * size.width - r * 0.5, y * size.height - r * 0.2),
-          width: r * 1.5,
-          height: r * 0.9), paint);
-      canvas.drawOval(Rect.fromCenter(
-          center: Offset(x * size.width + r * 0.5, y * size.height - r * 0.15),
-          width: r * 1.3,
-          height: r * 0.75), paint);
+      final cx = xFrac * size.width;
+      final cy = yFrac * size.height;
+      final alpha = 0.09 + i * 0.025;
+
+      void puff(double dx, double dy, double pr, double opMul) {
+        canvas.drawCircle(
+          Offset(cx + dx, cy + dy),
+          pr,
+          Paint()
+            ..shader = RadialGradient(
+              colors: [
+                Colors.white.withOpacity(alpha * opMul),
+                Colors.white.withOpacity(0),
+              ],
+              stops: const [0.25, 1.0],
+            ).createShader(
+                Rect.fromCircle(center: Offset(cx + dx, cy + dy), radius: pr)),
+        );
+      }
+
+      puff(0, 0, r, 1.4);
+      puff(-r * 0.65, r * 0.12, r * 0.72, 1.0);
+      puff(r * 0.58, r * 0.08, r * 0.65, 1.0);
+      puff(-r * 0.18, -r * 0.30, r * 0.58, 0.85);
+      puff(r * 0.28, -r * 0.26, r * 0.52, 0.80);
     }
   }
 
@@ -394,7 +577,7 @@ class SkyParticlePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(SkyParticlePainter old) =>
-      old.t != t || old.particleType != particleType;
+      old.t != t || old.particleType != particleType || old.now?.minute != now?.minute;
 }
 
 // ---------------------------------------------------------------------------

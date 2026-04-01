@@ -35,14 +35,19 @@ class GlassCard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: radius,
         border: Border.all(
-          color: Colors.white.withOpacity(0.18),
+          color: Colors.white.withOpacity(0.22),
           width: 0.8,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.18),
-            blurRadius: 28,
-            offset: const Offset(0, 8),
+            color: Colors.black.withOpacity(0.25),
+            blurRadius: 32,
+            offset: const Offset(0, 10),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.10),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -50,19 +55,65 @@ class GlassCard extends StatelessWidget {
         borderRadius: radius,
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-          child: Container(
-            padding: padding,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  color.withOpacity(opacity + 0.04),
-                  color.withOpacity(opacity * 0.4),
-                ],
+          child: Stack(
+            children: [
+              // Frosted base
+              Container(
+                padding: padding,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      color.withOpacity(opacity + 0.05),
+                      color.withOpacity(opacity * 0.35),
+                    ],
+                  ),
+                ),
+                child: child,
               ),
-            ),
-            child: child,
+              // Specular highlight — bright edge across the top
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 1.2,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.vertical(top: radius.topLeft),
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.white.withOpacity(0.55),
+                        Colors.white.withOpacity(0.10),
+                        Colors.white.withOpacity(0.0),
+                      ],
+                      stops: const [0.0, 0.6, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+              // Top-left corner inner glow (lens effect)
+              Positioned(
+                top: 0,
+                left: 0,
+                width: 100,
+                height: 50,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(
+                        center: Alignment.topLeft,
+                        radius: 1.0,
+                        colors: [
+                          Colors.white.withOpacity(0.10),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
