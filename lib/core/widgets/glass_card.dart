@@ -22,8 +22,8 @@ class GlassCard extends StatelessWidget {
     this.borderRadius,
     this.padding,
     this.tint,
-    this.blur = 12,
-    this.opacity = 0.18,
+    this.blur = 1,
+    this.opacity = 0.20,
     this.onTap,
   });
 
@@ -60,12 +60,13 @@ class GlassCard extends StatelessWidget {
           child: Container(
             padding: padding,
             decoration: BoxDecoration(
+              // White-silver fill: visible on dark background, clear on light.
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  color.withOpacity(opacity),
-                  color.withOpacity(opacity * 0.5),
+                  Colors.white.withOpacity(opacity),
+                  Colors.white.withOpacity(opacity * 0.55),
                 ],
               ),
             ),

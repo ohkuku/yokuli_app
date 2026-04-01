@@ -74,6 +74,9 @@ class LanSyncService {
   Timer? _stateTimer;
   Timer? _skPushTimer;
   Timer? _joinGuardTimer;
+  Timer? _joinMinTimer;
+  DateTime? _joinShownAt;
+  static const _joinMinDisplay = Duration(seconds: 3);
   String? _localIp;
 
   /// peerKey(deviceId or ws) → unix-ms of last connect attempt.
@@ -538,12 +541,32 @@ class LanSyncService {
   }
 
   void _setJoinInProgress(bool value) {
-    _joinGuardTimer?.cancel();
-    _ref.read(networkJoinInProgressProvider.notifier).state = value;
     if (value) {
+      _joinGuardTimer?.cancel();
+      _joinMinTimer?.cancel();
+      _joinShownAt = DateTime.now();
+      _ref.read(networkJoinInProgressProvider.notifier).state = true;
+      // Hard timeout — clears banner even if sync never completes.
       _joinGuardTimer = Timer(const Duration(seconds: 12), () {
         _ref.read(networkJoinInProgressProvider.notifier).state = false;
+        _joinShownAt = null;
       });
+    } else {
+      // Enforce minimum visible time so the crew can read the banner.
+      _joinGuardTimer?.cancel();
+      final shown = _joinShownAt;
+      final elapsed = shown != null ? DateTime.now().difference(shown) : _joinMinDisplay;
+      final remaining = _joinMinDisplay - elapsed;
+      if (remaining > Duration.zero) {
+        _joinMinTimer = Timer(remaining, () {
+          _ref.read(networkJoinInProgressProvider.notifier).state = false;
+          _joinShownAt = null;
+        });
+      } else {
+        _joinMinTimer?.cancel();
+        _ref.read(networkJoinInProgressProvider.notifier).state = false;
+        _joinShownAt = null;
+      }
     }
   }
 
@@ -874,6 +897,9 @@ class LanSyncService {
     _skPushTimer = null;
     _joinGuardTimer?.cancel();
     _joinGuardTimer = null;
+    _joinMinTimer?.cancel();
+    _joinMinTimer = null;
+    _joinShownAt = null;
     _ref.read(lanBroadcastProvider.notifier).state = null;
     _peerSyncedVersions.clear();
     _platform.stopDiscovery();

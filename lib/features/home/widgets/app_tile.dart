@@ -226,21 +226,23 @@ class _GlassTile extends StatelessWidget {
       child: ClipRRect(
         borderRadius: radius,
         child: BackdropFilter(
-          // Moderate blur — separates tile from background without heavy frosting
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          // 1σ — almost no blur, just enough to separate from background
+          filter: ImageFilter.blur(sigmaX: 1, sigmaY: 1),
           child: Container(
             padding: const EdgeInsets.all(16),
+            // White-silver fill makes the tile visible on dark backgrounds
+            // without frosting. Top brighter (incident light), bottom dimmer.
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: isStub
                     ? [
-                        Colors.white.withOpacity(0.08),
-                        Colors.white.withOpacity(0.04),
+                        Colors.white.withOpacity(0.10),
+                        Colors.white.withOpacity(0.05),
                       ]
                     : [
-                        accent.withOpacity(0.20),
+                        Colors.white.withOpacity(0.22),
                         Colors.white.withOpacity(0.10),
                       ],
               ),
@@ -251,11 +253,11 @@ class _GlassTile extends StatelessWidget {
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      stops: const [0.0, 0.04, 0.35, 1.0],
+                      stops: const [0.0, 0.03, 0.30, 1.0],
                       colors: [
-                        Colors.white.withOpacity(0.50),
-                        Colors.white.withOpacity(0.18),
-                        Colors.white.withOpacity(0.03),
+                        Colors.white.withOpacity(0.55),
+                        Colors.white.withOpacity(0.20),
+                        Colors.white.withOpacity(0.04),
                         Colors.transparent,
                       ],
                     ),
