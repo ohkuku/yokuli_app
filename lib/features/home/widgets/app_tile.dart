@@ -228,23 +228,22 @@ class _GlassTile extends StatelessWidget {
       child: ClipRRect(
         borderRadius: radius,
         child: BackdropFilter(
-          // Minimal haze — glass is clear, not frosted
-          filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+          // Moderate blur — separates tile from background without heavy frosting
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              // Near-transparent fill with very subtle accent tint
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: isStub
                     ? [
-                        Colors.white.withOpacity(0.05),
-                        Colors.white.withOpacity(0.02),
+                        Colors.white.withOpacity(0.08),
+                        Colors.white.withOpacity(0.04),
                       ]
                     : [
-                        accent.withOpacity(0.10),
-                        Colors.white.withOpacity(0.03),
+                        accent.withOpacity(0.20),
+                        Colors.white.withOpacity(0.10),
                       ],
               ),
             ),
@@ -256,7 +255,7 @@ class _GlassTile extends StatelessWidget {
                       begin: Alignment.topCenter,
                       end: Alignment.center,
                       colors: [
-                        Color(0x28FFFFFF), // ~16% white
+                        Color(0x30FFFFFF), // ~19% white
                         Color(0x00FFFFFF),
                       ],
                     ),

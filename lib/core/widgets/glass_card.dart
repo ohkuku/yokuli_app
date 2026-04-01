@@ -22,8 +22,8 @@ class GlassCard extends StatelessWidget {
     this.borderRadius,
     this.padding,
     this.tint,
-    this.blur = 3,
-    this.opacity = 0.07,
+    this.blur = 12,
+    this.opacity = 0.18,
     this.onTap,
   });
 
@@ -59,28 +59,26 @@ class GlassCard extends StatelessWidget {
       child: ClipRRect(
         borderRadius: radius,
         child: BackdropFilter(
-          // Very light haze — just enough to pop on busy backgrounds
           filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
           child: Container(
             padding: padding,
             decoration: BoxDecoration(
-              // Near-transparent fill: top-left slightly lighter (incident light)
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  color.withOpacity(opacity + 0.05),
-                  color.withOpacity(opacity * 0.4),
+                  color.withOpacity(opacity),
+                  color.withOpacity(opacity * 0.5),
                 ],
               ),
             ),
             foregroundDecoration: BoxDecoration(
-              // Inner caustic: soft bright wash from the top (light through glass)
+              // Inner caustic: soft bright wash from the top
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.center,
                 colors: [
-                  Colors.white.withOpacity(0.18),
+                  Colors.white.withOpacity(0.22),
                   Colors.transparent,
                 ],
               ),
