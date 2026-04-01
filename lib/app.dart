@@ -85,19 +85,6 @@ class _YokulAppState extends ConsumerState<YokulApp> {
       }
     });
 
-    // ── Join sync: navigate ALL devices to /setup when a peer joins ─────────
-    ref.listenManual(
-      networkJoinInProgressProvider,
-      (prev, next) {
-        if (next != true || prev == true) return;
-        SchedulerBinding.instance.scheduleFrame();
-        SchedulerBinding.instance.addPostFrameCallback((_) {
-          if (mounted) ref.read(appRouterProvider).go('/setup');
-        });
-      },
-      fireImmediately: false,
-    );
-
     // ── In-app alarm banner ──────────────────────────────────────────────────
     ref.listenManual(
       activeAlarmInstancesProvider,

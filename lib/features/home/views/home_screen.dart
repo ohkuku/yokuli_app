@@ -590,7 +590,10 @@ class _DraggableMobFabState extends ConsumerState<_DraggableMobFab> {
       pos.dy.clamp(0, size.height - 80),
     );
 
-    if (isMobActive) return const SizedBox.shrink(); // hide when MOB active
+    // Don't hide the button while MOB is active — doing so removes the widget
+    // mid-gesture, which cancels any in-progress hold on THIS device.
+    // Navigation to /mob is handled globally by app.dart for all devices.
+    // trigger() is a no-op when isMobActive, so there's no double-trigger risk.
 
     return Positioned(
       left: clamped.dx,
