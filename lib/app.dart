@@ -41,6 +41,10 @@ class _YokulAppState extends ConsumerState<YokulApp> {
       mobProvider.select((s) => s.activeMob?.id),
       (prev, mobId) {
         if (mobId == null || mobId == prev) return;
+        // Use scheduleFrame() + addPostFrameCallback so this fires even when
+        // the app is idle (no pending frames) — e.g. when a remote device
+        // broadcasts MOB and there is no current user interaction on this device.
+        SchedulerBinding.instance.scheduleFrame();
         SchedulerBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           ref.read(appRouterProvider).push('/mob');
@@ -60,6 +64,10 @@ class _YokulAppState extends ConsumerState<YokulApp> {
         // 2-second pause so the crew sees "resolved" before leaving the screen.
         Future.delayed(const Duration(seconds: 2), () {
           if (!mounted) return;
+          // Guard: don't pop if a new MOB was re-triggered during the delay.
+          if (ref.read(mobProvider).isMobActive) return;
+          // Guard: only pop if we're actually on the MOB screen.
+          if (!ref.read(isOnMobScreenProvider)) return;
           final router = ref.read(appRouterProvider);
           if (router.canPop()) router.pop();
         });

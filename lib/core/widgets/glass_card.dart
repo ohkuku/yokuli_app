@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 
 /// Apple Liquid Glass card — manual implementation.
 ///
-/// Correct parameter values from Apple's documented spec:
-///   blur sigma:  18σ
-///   tint:        0x22FFFFFF = 13% white
-///   specular:    35% white, -35° diagonal
-///   fresnel rim: 55% intensity, power-3.5 falloff at edges
+/// The primary visible effect is refraction / specular glare (like clear glass),
+/// not blur. Heavy blur (18σ) produces frosted glass; we use 2σ here so
+/// the background shows through (transparent/clear glass look).
+///   blur sigma:  2σ  — barely blurs, preserves background readability
+///   tint:        0x26FFFFFF = 15% white fill for subtle separation
+///   specular:    42% white, -35° diagonal upper-left glare
+///   fresnel rim: 55% at edges fading to 0 toward center
 class GlassCard extends StatelessWidget {
   final Widget child;
   final BorderRadius? borderRadius;
@@ -27,12 +29,13 @@ class GlassCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = borderRadius ?? BorderRadius.circular(22);
-    final tintColor = tint?.withOpacity(0.08) ?? const Color(0x22FFFFFF);
+    // 15% white tint — enough for contrast without hiding the background
+    final tintColor = tint ?? const Color(0x26FFFFFF);
 
     Widget card = Container(
       decoration: BoxDecoration(
         borderRadius: radius,
-        border: Border.all(color: Colors.white.withOpacity(0.20), width: 0.8),
+        border: Border.all(color: Colors.white.withOpacity(0.25), width: 0.8),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.28),
@@ -45,7 +48,9 @@ class GlassCard extends StatelessWidget {
       child: ClipRRect(
         borderRadius: radius,
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          // 2σ — barely blurs the background so it reads as clear glass,
+          // not frosted glass.  The specular + Fresnel provide the glassy look.
+          filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
           child: CustomPaint(
             painter: _LiquidGlassPainter(
               borderRadius: radius,
@@ -104,18 +109,18 @@ class _LiquidGlassPainter extends CustomPainter {
     canvas.drawRRect(rrect, fresnelPaint);
 
     // 3. Specular highlight — diagonal white glare at -35°
-    // Upper-left to lower-right, 35% opacity, covers ~60% of surface
+    // 42% peak opacity (stronger than before so glass reads clearly with low blur)
     final specularPaint = Paint()
       ..shader = LinearGradient(
         begin: const Alignment(-1.2, -1.2),
         end: const Alignment(0.8, 0.8),
         colors: [
-          Colors.white.withOpacity(0.35),
-          Colors.white.withOpacity(0.20),
-          Colors.white.withOpacity(0.05),
+          Colors.white.withOpacity(0.42),
+          Colors.white.withOpacity(0.22),
+          Colors.white.withOpacity(0.06),
           Colors.transparent,
         ],
-        stops: const [0.0, 0.25, 0.50, 1.0],
+        stops: const [0.0, 0.22, 0.48, 1.0],
       ).createShader(rect);
     canvas.drawRRect(rrect, specularPaint);
 

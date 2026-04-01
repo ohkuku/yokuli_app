@@ -198,8 +198,8 @@ class _GlassTile extends StatelessWidget {
   Widget build(BuildContext context) {
     const radius = BorderRadius.all(Radius.circular(22));
     final tint = isStub
-        ? const Color(0x14FFFFFF)
-        : accent.withOpacity(0.08);
+        ? const Color(0x1AFFFFFF)   // 10% white for stubs
+        : accent.withOpacity(0.12); // 12% accent tint for active tiles
 
     return Container(
       decoration: BoxDecoration(
@@ -207,7 +207,7 @@ class _GlassTile extends StatelessWidget {
         border: Border.all(
           color: isStub
               ? Colors.white.withOpacity(0.10)
-              : Colors.white.withOpacity(0.22),
+              : Colors.white.withOpacity(0.25),
           width: 0.8,
         ),
         boxShadow: isStub
@@ -229,7 +229,8 @@ class _GlassTile extends StatelessWidget {
       child: ClipRRect(
         borderRadius: radius,
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          // 2σ — clear glass, not frosted glass
+          filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
           child: CustomPaint(
             painter: _LiquidGlassTilePainter(tint: tint, isStub: isStub, accent: accent),
             child: Padding(
@@ -287,12 +288,12 @@ class _LiquidGlassTilePainter extends CustomPainter {
           begin: const Alignment(-1.2, -1.2),
           end: const Alignment(0.6, 0.6),
           colors: [
-            Colors.white.withOpacity(0.35),
-            Colors.white.withOpacity(0.15),
+            Colors.white.withOpacity(0.45),
+            Colors.white.withOpacity(0.18),
             Colors.white.withOpacity(0.04),
             Colors.transparent,
           ],
-          stops: const [0.0, 0.20, 0.45, 1.0],
+          stops: const [0.0, 0.18, 0.42, 1.0],
         ).createShader(rect),
     );
   }
