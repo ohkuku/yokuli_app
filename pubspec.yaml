@@ -43,6 +43,9 @@ dependencies:
   intl: ^0.20.2
   cupertino_icons: ^1.0.8
 
+  # Apple Liquid Glass (iOS 26)
+  liquid_glass_widgets: ^0.5.0
+
 
   # App info & update check
   package_info_plus: ^8.0.0

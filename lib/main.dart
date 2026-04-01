@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'app.dart';
 import 'core/theme/app_theme.dart';
@@ -9,6 +10,9 @@ import 'features/startup/startup_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Liquid Glass shader pipeline (avoids white flash on first render)
+  await LiquidGlassWidgets.initialize();
 
   // Hive for logbook & maintenance (no code gen — stores raw Maps)
   await Hive.initFlutter();
