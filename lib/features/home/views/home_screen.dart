@@ -612,7 +612,10 @@ class _DraggableMobFabState extends ConsumerState<_DraggableMobFab> {
 
   void _triggerMob(BuildContext context) {
     ref.read(mobProvider.notifier).trigger();
-    context.push('/mob');
+    // Navigation to /mob is handled by the global listener in app.dart
+    // (fires for ALL devices — local trigger and remote receive).
+    // Do NOT push('/mob') here — that causes a double-push, which
+    // accumulates stale /mob entries on the stack and causes the flash bug.
   }
 }
 
