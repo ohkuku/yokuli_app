@@ -118,6 +118,13 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
         if (mounted) setState(() => _peersFound = found);
       }
       _markStep(2);
+
+      // Brief grace period: settings_sync applyRemote() is async/fire-and-forget.
+      // Waiting here lets any in-flight applyRemote() calls complete so Step 3
+      // sees the fully-synced settings (SK host/URL) from peers.
+      if (_peersFound > 0) {
+        await Future.delayed(const Duration(milliseconds: 800));
+      }
     } else {
       _markStep(1);
       _markStep(2);

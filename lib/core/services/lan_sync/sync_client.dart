@@ -245,7 +245,9 @@ class SyncClient {
   }
 
   void sendJson(Map<String, dynamic> message) {
-    _channel?.sink.add(jsonEncode(message));
+    try {
+      _channel?.sink.add(jsonEncode(message));
+    } catch (_) {}
   }
 
   void _scheduleReconnect() {

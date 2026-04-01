@@ -144,7 +144,7 @@ class MobNotifier extends Notifier<MobState> {
     // Broadcast to LAN peers (broadcast + upstream relay through lanBroadcast).
     final lanBroadcast = ref.read(lanBroadcastProvider);
     if (lanBroadcast != null) {
-      lanBroadcast({'type': 'mob', 'data': alert.toJson()});
+      try { lanBroadcast({'type': 'mob', 'data': alert.toJson()}); } catch (_) {}
     } else {
       // Fallback path when LAN sync service has not yet attached broadcaster.
       ref.read(lanSyncServiceProvider).triggerMob(alert);

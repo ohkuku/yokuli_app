@@ -871,13 +871,15 @@ class LanSyncService {
     // Broadcast function: push to our WS clients AND upstream if we're also
     // connected as a client to a peer (so they relay it further).
     // Always embed _sv + _id so all recipients stay in sv-sync automatically.
+    // sendJson is always attempted (no-op if not connected); try-catch guards
+    // against stale-channel exceptions that would otherwise swallow the broadcast.
     _ref.read(lanBroadcastProvider.notifier).state = (msg) {
       final device = _ref.read(deviceProvider);
       final withMeta = Map<String, dynamic>.from(msg)
         ..['_sv'] = device.stateVersion.millisecondsSinceEpoch
         ..['_id'] = device.deviceId;
-      _platform.broadcastJson(withMeta);
-      if (_platform.isClientConnected) _platform.sendJson(withMeta);
+      try { _platform.broadcastJson(withMeta); } catch (_) {}
+      try { _platform.sendJson(withMeta); } catch (_) {}
     };
 
     _conn.setLanSyncStatus(ConnectionStatus.connecting);
