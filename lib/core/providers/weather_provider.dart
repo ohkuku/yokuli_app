@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import '../models/weather_state.dart';
 import '../providers/vessel_provider.dart';
 import '../providers/settings_provider.dart';
+import '../providers/lan_broadcast.dart';
 
 // ignore_for_file: avoid_catches_without_on_clauses
 
@@ -54,6 +55,45 @@ class WeatherNotifier extends Notifier<WeatherState> {
   }
 
   Future<void> refresh() => _fetch();
+
+  /// Apply weather data received from a LAN peer (no API call needed).
+  /// Only applied if the peer's data is fresher than the local data, or if we
+  /// have no data yet, to prevent overwriting a recent local fetch.
+  void applyRemoteSync(Map<String, dynamic> data) {
+    try {
+      final fetchedAtStr = data['fetchedAt'] as String?;
+      final remoteFetchedAt = fetchedAtStr != null ? DateTime.tryParse(fetchedAtStr) : null;
+      // Guard: don't overwrite local data if ours is newer
+      if (remoteFetchedAt != null &&
+          state.fetchedAt != null &&
+          state.fetchedAt!.isAfter(remoteFetchedAt)) {
+        return;
+      }
+      // Also don't apply if we are currently loading fresh data
+      if (state.isLoading) return;
+
+      final conditionName = data['condition'] as String?;
+      WeatherCondition? condition;
+      if (conditionName != null) {
+        condition = WeatherCondition.values.where((c) => c.name == conditionName).firstOrNull;
+      }
+      final weatherCode = data['weatherCode'] as int?;
+
+      state = state.copyWith(
+        temperature: (data['temperature'] as num?)?.toDouble() ?? state.temperature,
+        windSpeed: (data['windSpeed'] as num?)?.toDouble() ?? state.windSpeed,
+        windDirection: (data['windDirection'] as num?)?.toInt() ?? state.windDirection,
+        windGust: (data['windGust'] as num?)?.toDouble() ?? state.windGust,
+        waveHeight: (data['waveHeight'] as num?)?.toDouble() ?? state.waveHeight,
+        fetchedAt: remoteFetchedAt ?? state.fetchedAt,
+        description: data['description'] as String? ?? state.description,
+        weatherCode: weatherCode ?? state.weatherCode,
+        condition: condition ?? (weatherCode != null ? conditionFromCode(weatherCode) : state.condition),
+        locationLabel: data['locationLabel'] as String? ?? state.locationLabel,
+        isLoading: false,
+      );
+    } catch (_) {}
+  }
 
   Future<void> _fetch() async {
     state = state.copyWith(isLoading: true, error: null);
@@ -105,6 +145,26 @@ class WeatherNotifier extends Notifier<WeatherState> {
       }
 
       state = result.copyWith(isLoading: false, error: null, tides: tides);
+
+      // Broadcast fresh weather to all LAN peers — saves API quota on other
+      // devices and ensures fleet-wide weather consistency.
+      try {
+        ref.read(lanBroadcastProvider)?.call({
+          'type': 'weather_sync',
+          'data': {
+            'temperature': state.temperature,
+            'windSpeed': state.windSpeed,
+            'windDirection': state.windDirection,
+            'windGust': state.windGust,
+            'waveHeight': state.waveHeight,
+            'fetchedAt': state.fetchedAt?.toIso8601String(),
+            'description': state.description,
+            'weatherCode': state.weatherCode,
+            'condition': state.condition?.name,
+            'locationLabel': state.locationLabel,
+          },
+        });
+      } catch (_) {}
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -155,6 +215,69 @@ class WeatherNotifier extends Notifier<WeatherState> {
   // MetService NZ (commercial API — requires API key from data.metservice.com)
   // Register at https://data.metservice.com/ to get a key.
   // --------------------------------------------------------------------------
+
+  // --------------------------------------------------------------------------
+  // WorldTides API
+  // --------------------------------------------------------------------------
+
+  Future<List<TideEntry>> _fetchTides({
+    required double lat, required double lon, required String apiKey,
+  }) async {
+    try {
+      final uri = Uri.https('www.worldtides.info', '/api/v3', {
+        'heights': '',
+        'extremes': '',
+        'lat': lat.toStringAsFixed(4),
+        'lon': lon.toStringAsFixed(4),
+        'key': apiKey,
+        'days': '3',
+        'stationDistance': '100',
+      });
+      final resp = await http.get(uri).timeout(const Duration(seconds: 15));
+      if (resp.statusCode != 200) return [];
+      final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      // Parse extremes (high/low tide markers)
+      final extremes = body['extremes'] as List<dynamic>? ?? [];
+      final tides = <TideEntry>[];
+      for (final e in extremes) {
+        if (e is! Map<String, dynamic>) continue;
+        final dt = DateTime.tryParse(e['date'] as String? ?? '');
+        if (dt == null) continue;
+        final h = (e['height'] as num?)?.toDouble() ?? 0.0;
+        final type = (e['type'] as String? ?? '').toLowerCase();
+        tides.add(TideEntry(
+          time: dt,
+          height: h,
+          isHighTide: type == 'high',
+        ));
+      }
+      return tides;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Validates WorldTides API key using Auckland position.
+  /// Returns null on success (or if key is empty — key is optional).
+  static Future<String?> validateWorldTidesKey(String apiKey) async {
+    if (apiKey.isEmpty) return null; // optional key, empty = skip
+    try {
+      final uri = Uri.https('www.worldtides.info', '/api/v3', {
+        'heights': '',
+        'lat': '-36.8509',
+        'lon': '174.7645',
+        'key': apiKey,
+        'days': '1',
+      });
+      final resp = await http.get(uri).timeout(const Duration(seconds: 12));
+      if (resp.statusCode == 200) return null;
+      if (resp.statusCode == 400 || resp.statusCode == 401 || resp.statusCode == 403) {
+        return 'WorldTides API Key 无效 (HTTP ${resp.statusCode})';
+      }
+      return null; // other errors: don't block
+    } on TimeoutException { return null; }
+    catch (_) { return null; }
+  }
 
   /// Tests MetService API key with a known NZ position (Wellington).
   /// Returns null on success, or an error string on failure.

@@ -49,6 +49,8 @@ abstract class LanSyncPlatform {
   void Function(Map<String, dynamic> data)? onNotifyChannelSyncReceived;
   /// Called when a peer requests all devices enter join-sync mode.
   void Function()? onNetworkJoinSync;
+  /// Called when a peer broadcasts fresh weather data.
+  void Function(Map<String, dynamic> data)? onWeatherSyncReceived;
   /// Called when a client pushes its SK vessel-state to the host for relay.
   void Function(VesselState state)? onVesselStatePush;
   /// Host only: called when a new client connects; receives a send-to-one function

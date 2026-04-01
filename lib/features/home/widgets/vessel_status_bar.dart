@@ -7,6 +7,16 @@ import '../../../core/providers/connection_provider.dart';
 import '../../../core/providers/locale_provider.dart';
 import '../../../core/theme/app_colors.dart';
 
+/// How fresh the Signal K data stream is.
+enum _SkQuality {
+  /// Receiving data within the last 5 seconds.
+  good,
+  /// Connected but no data for 5–30 seconds (stale).
+  stale,
+  /// Disconnected, error, or no data for > 30 seconds.
+  dead,
+}
+
 class VesselStatusBar extends ConsumerWidget {
   const VesselStatusBar({super.key});
 
@@ -28,6 +38,9 @@ class VesselStatusBar extends ConsumerWidget {
     final twsStr = vessel.trueWindSpeed != null
         ? '${vessel.trueWindSpeed!.toStringAsFixed(0)} kn'
         : '—';
+
+    // Derive Signal K quality from connection status + data staleness.
+    final skQuality = _skQualityFor(conn, vessel);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -66,8 +79,7 @@ class VesselStatusBar extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   child: Row(
                     children: [
-                      _Dot(active: conn.isSignalKConnected,
-                           label: 'SK', color: AppColors.cyan),
+                      _SkQualityDot(quality: skQuality),
                       const SizedBox(width: 10),
                       _Dot(active: conn.isLanSyncActive,
                            label: 'LAN', color: AppColors.teal),
@@ -87,6 +99,21 @@ class VesselStatusBar extends ConsumerWidget {
         height: 26,
         color: Colors.white.withOpacity(0.12),
       );
+
+  static _SkQuality _skQualityFor(
+    AppConnectionState conn,
+    dynamic vessel, // VesselState
+  ) {
+    if (!conn.isSignalKConnected) return _SkQuality.dead;
+
+    final lastUpdated = vessel.lastUpdated as DateTime?;
+    if (lastUpdated == null) return _SkQuality.dead;
+
+    final age = DateTime.now().difference(lastUpdated);
+    if (age.inSeconds <= 5) return _SkQuality.good;
+    if (age.inSeconds <= 30) return _SkQuality.stale;
+    return _SkQuality.dead;
+  }
 }
 
 class _Cell extends StatelessWidget {
@@ -150,6 +177,58 @@ class _Dot extends StatelessWidget {
         const SizedBox(height: 2),
         Text(
           label,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.35),
+            fontSize: 8,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.4,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Three-state Signal K connection quality indicator:
+///   - Green  = connected, receiving data < 5 s ago
+///   - Yellow = connected but no data for 5–30 s (stale)
+///   - Red    = disconnected / error / no data > 30 s
+class _SkQualityDot extends StatelessWidget {
+  final _SkQuality quality;
+  const _SkQualityDot({required this.quality});
+
+  @override
+  Widget build(BuildContext context) {
+    final Color dotColor;
+    switch (quality) {
+      case _SkQuality.good:
+        dotColor = AppColors.cyan;
+        break;
+      case _SkQuality.stale:
+        dotColor = const Color(0xFFFFBF00); // amber/yellow
+        break;
+      case _SkQuality.dead:
+        dotColor = const Color(0xFFE53935); // red
+        break;
+    }
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: dotColor,
+            boxShadow: [
+              BoxShadow(color: dotColor.withOpacity(0.65), blurRadius: 6),
+            ],
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          'SK',
           style: TextStyle(
             color: Colors.white.withOpacity(0.35),
             fontSize: 8,

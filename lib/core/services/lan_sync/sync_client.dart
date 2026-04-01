@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' show min, Random;
 
+import 'package:multicast_dns/multicast_dns.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as ws_status;
 
@@ -64,6 +65,7 @@ class SyncClient {
   void Function(Map<String, dynamic> data)? onMobRuleSync;
   void Function(Map<String, dynamic> data)? onNotifyChannelSyncReceived;
   void Function()? onNetworkJoinSync;
+  void Function(Map<String, dynamic> data)? onWeatherSyncReceived;
   /// Called when server sends sync_meta (stateVersionMs + deviceId of the server).
   void Function(int svMs, String peerId)? onSyncMetaReceived;
   /// Called when client receives sync_hello from the server.
@@ -229,6 +231,9 @@ class SyncClient {
         case 'network_join_sync':
           onNetworkJoinSync?.call();
           break;
+        case 'weather_sync':
+          if (data != null) onWeatherSyncReceived?.call(data);
+          break;
         case 'sync_hello':
           onSyncHelloReceived?.call(json);
           break;
@@ -286,12 +291,33 @@ class SyncClient {
   bool get isConnected => _channel != null;
 }
 
-/// Listens on UDP for host announcements broadcast by SyncHost.
-/// Re-emits a peer whenever its stateVersionMs increases.
+/// Discovers Yokuli hosts on the LAN using three parallel mechanisms:
+///
+///   1. **mDNS/Bonjour** (`_yokuli._tcp`) — primary; works on iOS/macOS/Android.
+///   2. **UDP broadcast** — fallback; reliable on Android when mDNS is flaky.
+///   3. **TCP subnet scan** — last resort; finds any device with port 8765 open.
+///      Triggered automatically (via [_runSubnetScanAndEmit]) when mDNS + UDP
+///      together find 0 peers after 3 s.
+///
+/// All three channels merge into a single [stream]. Results are deduplicated by
+/// IP:port so callers never see the same host twice regardless of which channel
+/// found it first.
 class HostDiscovery {
   RawDatagramSocket? _socket;
-  /// deviceId → latest stateVersionMs we've seen from this peer.
+  MDnsClient? _mdnsClient;
+  Timer? _mdnsRetryTimer;
+  Timer? _subnetScanTimer;
+  bool _subnetScanDone = false;
+  int _mdnsFailures = 0;
+  static const int _mdnsMaxRetries = 3;
+
+  /// deviceId (or ws URL for old peers) → latest stateVersionMs seen.
   final Map<String, int> _seenVersions = {};
+
+  /// ip:port — cross-channel deduplication guard.
+  /// Populated by all three discovery channels; prevents duplicate emissions.
+  final Set<String> _emittedAddresses = {};
+
   StreamController<DiscoveredHost>? _controller;
 
   Stream<DiscoveredHost> get stream {
@@ -300,6 +326,103 @@ class HostDiscovery {
   }
 
   Future<void> start() async {
+    _subnetScanDone = false;
+
+    // Primary: mDNS discovery
+    await _startMdnsDiscovery();
+
+    // Fallback: UDP broadcast (always running for backwards compatibility)
+    await _startUdpDiscovery();
+
+    // Last resort: TCP subnet scan — fires only if mDNS + UDP together find
+    // zero peers within 3 seconds.
+    _subnetScanTimer = Timer(const Duration(seconds: 3), () async {
+      if (_emittedAddresses.isEmpty && !_subnetScanDone) {
+        _subnetScanDone = true;
+        await _runSubnetScanAndEmit();
+      }
+    });
+  }
+
+  /// Discover hosts via mDNS `_yokuli._tcp` service queries.
+  /// Retries up to [_mdnsMaxRetries] times on failure before giving up.
+  Future<void> _startMdnsDiscovery() async {
+    try {
+      _mdnsClient?.stop();
+      _mdnsClient = MDnsClient();
+      await _mdnsClient!.start();
+      _mdnsFailures = 0;
+      _pollMdns();
+    } catch (_) {
+      _mdnsClient = null;
+      _mdnsFailures++;
+      if (_mdnsFailures < _mdnsMaxRetries) {
+        _mdnsRetryTimer = Timer(const Duration(seconds: 5), _startMdnsDiscovery);
+      }
+      // After _mdnsMaxRetries, give up — UDP fallback still active
+    }
+  }
+
+  /// Run one mDNS poll cycle and schedule the next one.
+  void _pollMdns() {
+    _doMdnsLookup().then((_) {
+      // Repeat every 30 s so newly appeared hosts are found
+      if (_mdnsClient != null) {
+        Timer(const Duration(seconds: 30), () {
+          if (_mdnsClient != null) _pollMdns();
+        });
+      }
+    }).catchError((_) {
+      _mdnsFailures++;
+      if (_mdnsFailures < _mdnsMaxRetries) {
+        Timer(const Duration(seconds: 5), _startMdnsDiscovery);
+      }
+    });
+  }
+
+  /// Perform one complete PTR → SRV → A lookup cycle for `_yokuli._tcp`.
+  Future<void> _doMdnsLookup() async {
+    final client = _mdnsClient;
+    if (client == null) return;
+
+    await for (final ptr in client.lookup<PtrResourceRecord>(
+        ResourceRecordQuery.serverPointer('_yokuli._tcp'))) {
+      try {
+        await for (final srv in client.lookup<SrvResourceRecord>(
+            ResourceRecordQuery.service(ptr.domainName))) {
+          try {
+            await for (final ip in client.lookup<IPAddressResourceRecord>(
+                ResourceRecordQuery.addressIPv4(srv.target))) {
+              final address = ip.address.address;
+              final port = srv.port;
+              final ws = 'ws://$address:$port';
+              // Use domainName as deviceId proxy; no sv info from mDNS
+              final deviceId = ptr.domainName;
+              final lastSv = _seenVersions[deviceId] ?? -1;
+              final addrKey = '$address:$port';
+              // Emit with sv=0 so the connect guard lets it through on first
+              // discovery; subsequent UDP beacons will update the sv.
+              if (lastSv < 0 && !_emittedAddresses.contains(addrKey)) {
+                _seenVersions[deviceId] = 0;
+                _emittedAddresses.add(addrKey);
+                _controller?.add((
+                  name: srv.target.replaceAll(RegExp(r'\.$'), ''),
+                  host: address,
+                  port: port,
+                  ws: ws,
+                  deviceId: deviceId,
+                  stateVersionMs: 0,
+                ));
+              }
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+  }
+
+  /// Start UDP broadcast listener (fallback / compatibility).
+  Future<void> _startUdpDiscovery() async {
     try {
       _socket = await RawDatagramSocket.bind(
         InternetAddress.anyIPv4,
@@ -339,6 +462,10 @@ class HostDiscovery {
   }
 
   void stop() {
+    _mdnsRetryTimer?.cancel();
+    _mdnsRetryTimer = null;
+    try { _mdnsClient?.stop(); } catch (_) {}
+    _mdnsClient = null;
     _socket?.close();
     _socket = null;
     _seenVersions.clear();

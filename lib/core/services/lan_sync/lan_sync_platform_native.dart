@@ -61,6 +61,7 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _host.onSkCredentialsReceived = (data) => onSkCredentialsReceived?.call(data);
     _host.onNetworkJoinSync = () => onNetworkJoinSync?.call();
     _host.onVesselStatePush = (state) => onVesselStatePush?.call(state);
+    _host.onWeatherSyncReceived = (data) => onWeatherSyncReceived?.call(data);
     await _host.start(
       port: port,
       deviceName: deviceName,
@@ -115,6 +116,7 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
     _client.onAlarmActionSync = (data) => onAlarmActionSync?.call(data);
     _client.onNotifyChannelSyncReceived = (data) => onNotifyChannelSyncReceived?.call(data);
     _client.onNetworkJoinSync = () => onNetworkJoinSync?.call();
+    _client.onWeatherSyncReceived = (data) => onWeatherSyncReceived?.call(data);
     await _client.connect(wsUrl);
   }
 

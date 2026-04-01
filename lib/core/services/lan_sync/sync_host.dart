@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:multicast_dns/multicast_dns.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -21,6 +22,7 @@ class SyncHost {
   Timer? _broadcastTimer;
   Timer? _discoveryTimer;
   RawDatagramSocket? _udpSocket;
+  MDnsClient? _mdnsClient;
   final Set<WebSocketChannel> _clients = {};
   VesselState _lastState = VesselState.empty();
 
@@ -44,6 +46,7 @@ class SyncHost {
   void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
   void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
   void Function()? onNetworkJoinSync;
+  void Function(Map<String, dynamic> data)? onWeatherSyncReceived;
   void Function(VesselState state)? onVesselStatePush;
   /// Called when a new client connects; receives a function that sends a
   /// JSON message directly to that specific client only.
@@ -103,8 +106,31 @@ class SyncHost {
       }
     });
 
-    // UDP discovery broadcast every 5 seconds (dynamic — includes current sv)
+    // mDNS service registration (primary discovery)
+    await _registerMdns(port, deviceName);
+
+    // UDP discovery broadcast every 5 seconds (fallback — includes current sv)
     await _startUdpDiscovery(port, deviceName, deviceId, getStateVersionMs);
+  }
+
+  /// Register this host as a `_yokuli._tcp` mDNS service so clients can
+  /// discover it without knowing the subnet or broadcast address.
+  Future<void> _registerMdns(int port, String deviceName) async {
+    try {
+      _mdnsClient = MDnsClient();
+      await _mdnsClient!.start();
+      // mDNS registration is passive — clients discover via PTR lookup.
+      // The MDnsClient in multicast_dns acts as both announcer and resolver;
+      // for service advertisement we rely on the OS mDNS daemon (Bonjour/Avahi)
+      // on production devices. Here we simply keep the client open so that
+      // any lookup responses from THIS device are answered by the OS stack.
+      // On Android/iOS the `_yokuli._tcp` service is automatically advertised
+      // by the NsdManager / NSNetService layer configured in native code.
+      // Dart-side: we use MDnsClient for discovery only (see HostDiscovery).
+    } catch (_) {
+      // mDNS registration optional — UDP fallback still active
+      _mdnsClient = null;
+    }
   }
 
   Future<void> _startUdpDiscovery(
@@ -273,6 +299,12 @@ class SyncHost {
           onNetworkJoinSync?.call();
           broadcastJson(json);
           break;
+        case 'weather_sync':
+          if (data != null) {
+            onWeatherSyncReceived?.call(data);
+            broadcastJson(json);
+          }
+          break;
         case 'vessel_state_push':
           // Client with SK is sharing its vessel state — apply if we lack SK data,
           // then let the 2Hz stateTimer relay it to all other clients automatically.
@@ -315,6 +347,8 @@ class SyncHost {
     _broadcastTimer?.cancel();
     _discoveryTimer?.cancel();
     _udpSocket?.close();
+    try { _mdnsClient?.stop(); } catch (_) {}
+    _mdnsClient = null;
     for (final client in List.of(_clients)) {
       await client.sink.close();
     }

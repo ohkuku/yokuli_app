@@ -27,6 +27,7 @@ import '../../providers/issue_provider.dart';
 import '../../providers/voyage_provider.dart';
 import '../../providers/kanban_provider.dart';
 import '../../providers/lan_broadcast.dart';
+import '../../providers/weather_provider.dart';
 import '../../../features/mob/providers/mob_provider.dart';
 import '../../../features/safety/providers/safety_provider.dart';
 import '../../utils/id_gen.dart';
@@ -216,6 +217,9 @@ class LanSyncService {
     };
     _platform.onNetworkJoinSync = () {
       _setJoinInProgress(true);
+    };
+    _platform.onWeatherSyncReceived = (data) {
+      _ref.read(weatherProvider.notifier).applyRemoteSync(data);
     };
     // Server: when a new client connects, send sync_hello to them
     _platform.onNewClientConnected = _sendSyncHello;
