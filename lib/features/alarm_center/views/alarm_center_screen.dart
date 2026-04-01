@@ -1,12 +1,16 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
 import '../../../core/models/alarm_action.dart';
 import '../../../core/models/alarm_instance.dart';
 import '../../../core/models/alarm_rule.dart';
 import '../../../core/providers/alarm_action_provider.dart';
 import '../../../core/providers/alarm_instance_provider.dart';
-import '../../../core/providers/alarm_rule_provider.dart';
+import '../../../core/providers/alarm_rule_provider.dart'
+    show alarmRuleProvider, notifyChannelProvider;
 import '../../../core/providers/device_provider.dart';
 import '../../../core/providers/locale_provider.dart';
 import '../../../core/providers/settings_provider.dart';
@@ -1193,12 +1197,26 @@ class _NotifyChannelCard extends ConsumerStatefulWidget {
 
 class _NotifyChannelCardState extends ConsumerState<_NotifyChannelCard> {
   late final TextEditingController _webhookCtrl;
+  bool _testing = false;
+  _WebhookTestState _testState = _WebhookTestState.idle;
+  String? _testError;
 
   @override
   void initState() {
     super.initState();
     _webhookCtrl =
         TextEditingController(text: widget.config.discordWebhookUrl);
+    // Keep controller in sync when LAN sync updates the provider
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.listenManual(
+        notifyChannelProvider.select((c) => c.discordWebhookUrl),
+        (_, url) {
+          if (mounted && _webhookCtrl.text != url) {
+            _webhookCtrl.text = url;
+          }
+        },
+      );
+    });
   }
 
   @override
@@ -1274,13 +1292,88 @@ class _NotifyChannelCardState extends ConsumerState<_NotifyChannelCard> {
                     borderSide:
                         const BorderSide(color: AppColors.cyan),
                   ),
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.check_rounded,
-                        color: AppColors.teal),
-                    onPressed: _saveWebhookUrl,
+                  suffixIcon: _testing
+                      ? const Padding(
+                          padding: EdgeInsets.all(10),
+                          child: SizedBox(
+                            width: 18, height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2, color: AppColors.cyan),
+                          ),
+                        )
+                      : Icon(
+                          _testState == _WebhookTestState.success
+                              ? Icons.check_circle_rounded
+                              : _testState == _WebhookTestState.failed
+                                  ? Icons.error_rounded
+                                  : Icons.check_rounded,
+                          color: _testState == _WebhookTestState.success
+                              ? AppColors.success
+                              : _testState == _WebhookTestState.failed
+                                  ? AppColors.danger
+                                  : AppColors.teal,
+                        ),
+                ),
+                onSubmitted: (_) => _testAndSaveWebhook(),
+                onChanged: (_) {
+                  if (_testState != _WebhookTestState.idle) {
+                    setState(() {
+                      _testState = _WebhookTestState.idle;
+                      _testError = null;
+                    });
+                  }
+                },
+              ),
+            ),
+            // Test status message
+            if (_testState == _WebhookTestState.success)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle_rounded,
+                        color: AppColors.success, size: 14),
+                    SizedBox(width: 6),
+                    Text('Webhook 测试成功，已保存',
+                        style: TextStyle(
+                            color: AppColors.success, fontSize: 12)),
+                  ],
+                ),
+              ),
+            if (_testState == _WebhookTestState.failed && _testError != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.error_rounded,
+                        color: AppColors.danger, size: 14),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(_testError!,
+                          style: const TextStyle(
+                              color: AppColors.danger, fontSize: 12)),
+                    ),
+                  ],
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _testing ? null : _testAndSaveWebhook,
+                  icon: const Icon(Icons.send_rounded, size: 16),
+                  label: const Text('发送测试消息并保存'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.cyan,
+                    foregroundColor: AppColors.background,
+                    disabledBackgroundColor:
+                        AppColors.cyan.withOpacity(0.3),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
-                onSubmitted: (_) => _saveWebhookUrl(),
               ),
             ),
             const Divider(
@@ -1327,17 +1420,68 @@ class _NotifyChannelCardState extends ConsumerState<_NotifyChannelCard> {
     );
   }
 
-  void _saveWebhookUrl() {
-    final config = ref.read(notifyChannelProvider);
-    ref.read(notifyChannelProvider.notifier).update(
-          config.copyWith(
-              discordWebhookUrl: _webhookCtrl.text.trim()),
+  Future<void> _testAndSaveWebhook() async {
+    final url = _webhookCtrl.text.trim();
+    if (url.isEmpty) return;
+
+    // Basic format check — Discord webhooks have a specific URL pattern
+    if (!url.startsWith('https://discord.com/api/webhooks/') &&
+        !url.startsWith('https://discordapp.com/api/webhooks/') &&
+        !url.startsWith('https://ptb.discord.com/api/webhooks/') &&
+        !url.startsWith('https://canary.discord.com/api/webhooks/')) {
+      setState(() {
+        _testState = _WebhookTestState.failed;
+        _testError = 'URL 格式不正确。Discord Webhook 应以 https://discord.com/api/webhooks/ 开头';
+      });
+      return;
+    }
+
+    setState(() { _testing = true; _testState = _WebhookTestState.idle; _testError = null; });
+
+    try {
+      // Send a test message — Discord returns 204 No Content on success
+      final resp = await http.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'embeds': [{
+            'title': '✅ Yokuli 告警系统测试',
+            'description': 'Discord Webhook 连接成功！\n此消息由 Yokuli 船舶管理系统发送以验证 Webhook 可用性。',
+            'color': 0x00BFFF, // cyan
+            'footer': {'text': 'Yokuli · ${DateTime.now().toLocal().toString().substring(0, 16)}'},
+          }],
+          'username': 'Yokuli',
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+
+      if (resp.statusCode == 204 || resp.statusCode == 200) {
+        // Success — save the URL
+        final config = ref.read(notifyChannelProvider);
+        await ref.read(notifyChannelProvider.notifier).update(
+          config.copyWith(discordWebhookUrl: url),
         );
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Webhook URL 已保存')),
-    );
+        setState(() { _testing = false; _testState = _WebhookTestState.success; });
+      } else {
+        final msg = resp.statusCode == 401
+            ? 'Webhook 无效或已失效 (401 Unauthorized)'
+            : resp.statusCode == 404
+                ? 'Webhook URL 不存在 (404)，请检查 URL 是否正确'
+                : 'Discord 返回错误 (HTTP ${resp.statusCode})，URL 未保存';
+        setState(() { _testing = false; _testState = _WebhookTestState.failed; _testError = msg; });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString().contains('TimeoutException')
+          ? '请求超时，请检查网络连接'
+          : '连接失败: ${e.toString().split('\n').first}';
+      setState(() { _testing = false; _testState = _WebhookTestState.failed; _testError = msg; });
+    }
   }
 }
+
+enum _WebhookTestState { idle, success, failed }
 
 // ---------------------------------------------------------------------------
 // Section Header
