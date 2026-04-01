@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -8,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/models/alarm_instance.dart';
 import 'core/models/alarm_rule.dart';
-import 'core/models/mob_alert.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/locale_provider.dart';
@@ -21,7 +18,6 @@ import 'router/app_router.dart';
 final inAppAlarmBannerProvider = StateProvider<AlarmInstance?>((ref) => null);
 
 /// True while the user is actively viewing the MOB screen.
-/// Used to suppress the persistent MOB bottom banner on that screen.
 final isOnMobScreenProvider = StateProvider<bool>((ref) => false);
 
 // ---------------------------------------------------------------------------
@@ -114,7 +110,7 @@ class _YokulAppState extends ConsumerState<YokulApp> {
 }
 
 // ---------------------------------------------------------------------------
-// Global overlay layer: alarm banner + MOB persistent strip + join sync dim
+// Global overlay layer: alarm banner + join sync dim
 // ---------------------------------------------------------------------------
 
 class _OverlayLayer extends ConsumerWidget {
@@ -123,10 +119,8 @@ class _OverlayLayer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final alarm       = ref.watch(inAppAlarmBannerProvider);
-    final joining     = ref.watch(networkJoinInProgressProvider);
-    final mob         = ref.watch(mobProvider);
-    final onMobScreen = ref.watch(isOnMobScreenProvider);
+    final alarm   = ref.watch(inAppAlarmBannerProvider);
+    final joining = ref.watch(networkJoinInProgressProvider);
 
     return Stack(
       children: [
@@ -165,16 +159,6 @@ class _OverlayLayer extends ConsumerWidget {
             ),
           ),
 
-        // ── Persistent MOB strip — hidden while already on /mob ─────────────
-        if (mob.isMobActive && !onMobScreen)
-          Positioned(
-            bottom: 0, left: 0, right: 0,
-            child: _MobPersistentBanner(
-              mob: mob.activeMob!,
-              onTap: () => ref.read(appRouterProvider).push('/mob'),
-            ),
-          ),
-
         // ── Alarm banner (top) ───────────────────────────────────────────────
         if (alarm != null)
           Positioned(
@@ -192,103 +176,6 @@ class _OverlayLayer extends ConsumerWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Persistent MOB strip
-// ---------------------------------------------------------------------------
-
-class _MobPersistentBanner extends StatefulWidget {
-  final MobAlert mob;
-  final VoidCallback onTap;
-  const _MobPersistentBanner({required this.mob, required this.onTap});
-
-  @override
-  State<_MobPersistentBanner> createState() => _MobPersistentBannerState();
-}
-
-class _MobPersistentBannerState extends State<_MobPersistentBanner>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse;
-  late final Animation<double> _opacity;
-  Timer? _clockTimer;
-  int _elapsedSeconds = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _elapsedSeconds = widget.mob.elapsed.inSeconds;
-    _clockTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) { if (mounted) setState(() => _elapsedSeconds++); },
-    );
-    _pulse = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    )..repeat(reverse: true);
-    _opacity = Tween<double>(begin: 0.7, end: 1.0).animate(
-      CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _clockTimer?.cancel();
-    _pulse.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final mins = _elapsedSeconds ~/ 60;
-    final secs = _elapsedSeconds % 60;
-    final elapsed =
-        '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
-
-    return FadeTransition(
-      opacity: _opacity,
-      child: SafeArea(
-        top: false,
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: Container(
-            color: AppColors.danger,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              children: [
-                const Icon(Icons.warning_rounded, color: Colors.white, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        'MAN OVERBOARD',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      Text(
-                        '${widget.mob.triggeredByDevice} · $elapsed',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.85),
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Tap anywhere on the bar to go to MOB screen — no button needed
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Alarm banner (slides in from top)
