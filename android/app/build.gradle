@@ -18,6 +18,15 @@ android {
         jvmTarget = '17'
     }
 
+    signingConfigs {
+        release {
+            storeFile file("yokuli-release.jks")
+            storePassword "yokuli2024"
+            keyAlias "yokuli"
+            keyPassword "yokuli2024"
+        }
+    }
+
     defaultConfig {
         applicationId "com.yokuli.app"
         minSdkVersion 21
@@ -27,8 +36,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig signingConfigs.release
+        }
         release {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            shrinkResources false
         }
     }
 }

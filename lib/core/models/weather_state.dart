@@ -551,26 +551,62 @@ class SkyParticlePainter extends CustomPainter {
   }
 
   void _paintAurora(Canvas canvas, Size size) {
-    // Subtle aurora blobs — fallback when no weather data
-    final blobs = [
-      (color: const Color(0xFF00D9FF), opacity: 0.07, cx: 0.15, cy: 0.0, r: 0.55),
-      (color: const Color(0xFF0A84FF), opacity: 0.06, cx: 0.85, cy: 0.1, r: 0.38),
-      (color: const Color(0xFF00B4A0), opacity: 0.05, cx: 0.9, cy: 0.75, r: 0.45),
-      (color: const Color(0xFF5E5CE6), opacity: 0.04, cx: 0.1, cy: 0.8, r: 0.32),
+    // Real aurora borealis: wavy horizontal light bands over a starry sky
+
+    // Stars first
+    _paintStars(canvas, size);
+
+    // Aurora bands — each a wavy path with vertical gradient fade
+    final bands = [
+      (yFrac: 0.18, color: const Color(0xFF00E5CC), amp: 0.055, phase: 0.0,   width: 0.22, opacity: 0.18),
+      (yFrac: 0.28, color: const Color(0xFF00AAFF), amp: 0.045, phase: 2.1,   width: 0.18, opacity: 0.14),
+      (yFrac: 0.42, color: const Color(0xFF7B4FE0), amp: 0.035, phase: 1.1,   width: 0.14, opacity: 0.11),
+      (yFrac: 0.12, color: const Color(0xFF00FFB0), amp: 0.030, phase: 3.5,   width: 0.10, opacity: 0.09),
     ];
-    final drift = math.sin(t * math.pi * 2) * 0.02;
-    for (final b in blobs) {
-      final paint = Paint()
-        ..shader = RadialGradient(
-          colors: [b.color.withOpacity(b.opacity + drift.abs()), Colors.transparent],
-        ).createShader(Rect.fromCircle(
-          center: Offset((b.cx + drift) * size.width, b.cy * size.height),
-          radius: b.r * size.width,
-        ));
-      canvas.drawCircle(
-        Offset((b.cx + drift) * size.width, b.cy * size.height),
-        b.r * size.width,
-        paint,
+
+    for (final b in bands) {
+      final yBase = b.yFrac * size.height;
+      final amplitude = b.amp * size.height;
+      final bandH = b.width * size.height;
+
+      final path = Path();
+      const steps = 80;
+      // Top wavy edge
+      for (int i = 0; i <= steps; i++) {
+        final xFrac = i / steps;
+        final wave = amplitude *
+            math.sin(xFrac * math.pi * 5 + t * math.pi * 2 + b.phase);
+        final x = xFrac * size.width;
+        final y = yBase + wave;
+        if (i == 0) {
+          path.moveTo(x, y);
+        } else {
+          path.lineTo(x, y);
+        }
+      }
+      // Bottom edge (offset down by bandH with slight inverse wave)
+      for (int i = steps; i >= 0; i--) {
+        final xFrac = i / steps;
+        final wave = amplitude * 0.5 *
+            math.sin(xFrac * math.pi * 5 + t * math.pi * 2 + b.phase + math.pi);
+        path.lineTo(xFrac * size.width, yBase + bandH + wave);
+      }
+      path.close();
+
+      // Vertical gradient: bright at top edge, transparent at bottom
+      canvas.drawPath(
+        path,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              b.color.withOpacity(b.opacity),
+              b.color.withOpacity(b.opacity * 0.3),
+              b.color.withOpacity(0),
+            ],
+            stops: const [0.0, 0.55, 1.0],
+          ).createShader(Rect.fromLTWH(0, yBase - amplitude, size.width, bandH + amplitude * 2)),
       );
     }
   }
@@ -620,9 +656,10 @@ class WeatherState {
   /// Returns the sky theme for this weather + current time of day.
   WeatherSkyTheme skyTheme(DateTime now) {
     if (condition == null) {
+      // No weather data yet: beautiful deep aurora night sky
       return const WeatherSkyTheme(
-        gradientColors: [Color(0xFF020D1B), Color(0xFF071525), Color(0xFF010810)],
-        primaryColor: Color(0xFF00D9FF),
+        gradientColors: [Color(0xFF020810), Color(0xFF050D1E), Color(0xFF030A18), Color(0xFF020710)],
+        primaryColor: Color(0xFF00E5CC),
         particleType: 'aurora',
       );
     }
