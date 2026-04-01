@@ -26,7 +26,10 @@ abstract class LanSyncPlatform {
   // --- Callbacks ---
   void Function(VesselState state)? onStateReceived;
   void Function(MobAlert alert)? onMobReceived;
-  void Function()? onMobCancelReceived;
+  /// data contains the full cleared MobAlert JSON so history stays identical across devices.
+  void Function(Map<String, dynamic>? data)? onMobCancelReceived;
+  /// Called when a peer sends a mob_history_sync entry (cleared alert for history).
+  void Function(Map<String, dynamic> data)? onMobHistorySync;
   void Function(bool connected)? onClientConnectionChanged;
   void Function(int count)? onPeerCountChanged;
   void Function(Map<String, dynamic> data)? onLogAppend;

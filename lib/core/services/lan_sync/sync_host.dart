@@ -27,7 +27,8 @@ class SyncHost {
   // Callbacks
   void Function(int clientCount)? onClientCountChanged;
   void Function(MobAlert alert)? onMobReceived;
-  void Function()? onMobCancelReceived;
+  void Function(Map<String, dynamic>? data)? onMobCancelReceived;
+  void Function(Map<String, dynamic> data)? onMobHistorySync;
   // Event callbacks (host receives from clients, applies + re-broadcasts)
   void Function(Map<String, dynamic> data)? onLogAppend;
   void Function(Map<String, dynamic> data)? onAlarmSync;
@@ -173,8 +174,14 @@ class SyncHost {
           broadcastMob(alert);
           break;
         case 'mob_cancel':
-          onMobCancelReceived?.call();
+          onMobCancelReceived?.call(data);
           broadcastJson(json);
+          break;
+        case 'mob_history_sync':
+          if (data != null) {
+            onMobHistorySync?.call(data);
+            broadcastJson(json);
+          }
           break;
         case 'log_append':
           if (data != null) {

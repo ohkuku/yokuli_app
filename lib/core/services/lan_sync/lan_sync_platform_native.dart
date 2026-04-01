@@ -36,12 +36,13 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
         _client.sendMob(alert);
       }
     };
-    _host.onMobCancelReceived = () {
-      onMobCancelReceived?.call();
+    _host.onMobCancelReceived = (data) {
+      onMobCancelReceived?.call(data);
       if (_client.isConnected) {
-        _client.sendJson({'type': 'mob_cancel'});
+        _client.sendJson({'type': 'mob_cancel', if (data != null) 'data': data});
       }
     };
+    _host.onMobHistorySync = (data) => onMobHistorySync?.call(data);
     _host.onLogAppend = (data) => onLogAppend?.call(data);
     _host.onAlarmSync = (data) => onAlarmSync?.call(data);
     _host.onTaskUpsert = (data) => onTaskUpsert?.call(data);
@@ -93,7 +94,8 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
   Future<void> connectAsClient(String wsUrl) async {
     _client.onStateReceived = (state) => onStateReceived?.call(state);
     _client.onMobReceived = (alert) => onMobReceived?.call(alert);
-    _client.onMobCancelReceived = () => onMobCancelReceived?.call();
+    _client.onMobCancelReceived = (data) => onMobCancelReceived?.call(data);
+    _client.onMobHistorySync = (data) => onMobHistorySync?.call(data);
     _client.onConnectionChanged = (c) => onClientConnectionChanged?.call(c);
     _client.onLogAppend = (data) => onLogAppend?.call(data);
     _client.onAlarmSync = (data) => onAlarmSync?.call(data);

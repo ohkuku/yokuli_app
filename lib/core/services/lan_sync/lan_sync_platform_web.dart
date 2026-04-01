@@ -106,7 +106,10 @@ class LanSyncPlatformImpl extends LanSyncPlatform {
           if (data != null) onMobReceived?.call(MobAlert.fromJson(data));
           break;
         case 'mob_cancel':
-          onMobCancelReceived?.call();
+          onMobCancelReceived?.call(data);
+          break;
+        case 'mob_history_sync':
+          if (data != null) onMobHistorySync?.call(data);
           break;
         case 'log_append':
           if (data != null) onLogAppend?.call(data);

@@ -144,9 +144,12 @@ class LanSyncService {
       onMobAlert?.call(alert);
       _ref.read(mobProvider.notifier).receiveMob(alert);
     };
-    _platform.onMobCancelReceived = () {
+    _platform.onMobCancelReceived = (data) {
       onMobCancelReceived?.call();
-      _ref.read(mobProvider.notifier).receiveMobCancel();
+      _ref.read(mobProvider.notifier).receiveMobCancel(data);
+    };
+    _platform.onMobHistorySync = (data) {
+      _ref.read(mobProvider.notifier).receiveMobHistory(data);
     };
     _platform.onKanbanSync = (data) {
       _ref.read(kanbanProvider.notifier).applySync(data);
@@ -318,6 +321,10 @@ class LanSyncService {
         _ref.read(mobProvider).rules.map((r) => r.toJson()).toList();
     for (final rule in mobRulesList) {
       sendTo({'type': 'mob_rule_sync', 'data': rule});
+    }
+    // Push MOB history so new device has the full cleared-alert log.
+    for (final entry in _ref.read(mobProvider).history) {
+      sendTo({'type': 'mob_history_sync', 'data': entry.toJson()});
     }
   }
 

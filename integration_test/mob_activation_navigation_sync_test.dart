@@ -34,7 +34,7 @@ void main() {
     expect(find.byType(MobScreen), findsOneWidget);
 
     // Simulate A publishing MOB cancel event to B over LAN.
-    b.read(mobProvider.notifier).receiveMobCancel();
+    b.read(mobProvider.notifier).receiveMobCancel(null);
     await tester.pumpAndSettle();
 
     expect(b.read(mobProvider).isMobActive, isFalse);

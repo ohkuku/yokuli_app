@@ -179,14 +179,15 @@ class MobNotifier extends Notifier<MobState> {
       message: 'MOB 已解除 — 历时 ${mins}分${secs}秒',
     );
 
+    final cancelMsg = {'type': 'mob_cancel', 'data': cleared.toJson()};
     final lanBroadcast = ref.read(lanBroadcastProvider);
     if (lanBroadcast != null) {
-      lanBroadcast({'type': 'mob_cancel'});
+      lanBroadcast(cancelMsg);
     } else {
       // Fallback when LAN sync hasn't attached broadcaster yet
       final lanSync = ref.read(lanSyncServiceProvider);
-      lanSync.broadcastJson({'type': 'mob_cancel'});
-      lanSync.sendJson({'type': 'mob_cancel'});
+      lanSync.broadcastJson(cancelMsg);
+      lanSync.sendJson(cancelMsg);
     }
     ref.read(deviceProvider.notifier).bump();
   }
@@ -218,14 +219,22 @@ class MobNotifier extends Notifier<MobState> {
   }
 
   /// Receive a MOB cancel from a LAN peer.
-  void receiveMobCancel() {
-    final mob = state.activeMob;
-    if (mob == null) return;
+  /// [data] is the full cleared MobAlert JSON from the broadcasting device.
+  /// Using it ensures all devices share the identical history entry (same clearedAt).
+  void receiveMobCancel(Map<String, dynamic>? data) {
+    if (state.activeMob == null) return;
 
-    final cleared = mob.copyWith(
-      isActive: false,
-      clearedAt: DateTime.now(),
-    );
+    MobAlert cleared;
+    if (data != null) {
+      try {
+        cleared = MobAlert.fromJson(data);
+      } catch (_) {
+        cleared = state.activeMob!.copyWith(isActive: false, clearedAt: DateTime.now());
+      }
+    } else {
+      cleared = state.activeMob!.copyWith(isActive: false, clearedAt: DateTime.now());
+    }
+
     final newHistory = [cleared, ...state.history].take(_historyLimit).toList();
     state = state.copyWith(clearActiveMob: true, history: newHistory);
     _saveHistory();
@@ -235,6 +244,21 @@ class MobNotifier extends Notifier<MobState> {
       subtype: 'mob_end',
       message: 'MOB 已解除 — 接收自远程设备',
     );
+  }
+
+  /// Receive a single cleared MOB alert from a peer (history sync, LWW merge).
+  /// Used when a new device joins and the host pushes its full MOB history.
+  void receiveMobHistory(Map<String, dynamic> data) {
+    try {
+      final incoming = MobAlert.fromJson(data);
+      // Skip if already present (same id).
+      if (state.history.any((h) => h.id == incoming.id)) return;
+      // Insert in descending order (newest first), cap at limit.
+      final merged = [...state.history, incoming]
+        ..sort((a, b) => b.triggeredAt.compareTo(a.triggeredAt));
+      state = state.copyWith(history: merged.take(_historyLimit).toList());
+      _saveHistory();
+    } catch (_) {}
   }
 
   // ── Rule management ────────────────────────────────────────────────────────

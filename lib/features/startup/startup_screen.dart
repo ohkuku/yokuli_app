@@ -202,7 +202,6 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     // Wire LAN sync callbacks
     final lanSync = ref.read(lanSyncServiceProvider);
     lanSync.onMobAlert = (alert) => ref.read(mobProvider.notifier).receiveMob(alert);
-    lanSync.onMobCancelReceived = () => ref.read(mobProvider.notifier).receiveMobCancel();
     lanSync.getActiveMob = () => ref.read(mobProvider).activeMob;
     lanSync.getMobRules = () =>
         ref.read(mobProvider).rules.map((r) => r.toJson()).toList();
