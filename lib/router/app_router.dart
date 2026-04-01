@@ -17,6 +17,7 @@ import '../features/mob/views/mob_screen.dart';
 import '../core/models/alarm_rule.dart';
 import '../features/voyage/views/voyage_detail_screen.dart';
 import '../features/weather/views/weather_screen.dart';
+import '../features/setup/views/setup_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -90,6 +91,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/settings',
         name: 'settings',
         pageBuilder: (context, state) => _slidePage(state, const SettingsScreen()),
+      ),
+      GoRoute(
+        path: '/setup',
+        name: 'setup',
+        pageBuilder: (context, state) => _slidePage(state, const SetupScreen()),
       ),
       GoRoute(
         path: '/voyage/:id',

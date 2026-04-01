@@ -10,6 +10,7 @@ import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/locale_provider.dart';
 import 'core/providers/alarm_instance_provider.dart';
+import 'core/providers/settings_provider.dart';
 import 'features/mob/providers/mob_provider.dart';
 import 'core/services/lan_sync/lan_sync_service.dart';
 import 'router/app_router.dart';
@@ -75,13 +76,23 @@ class _YokulAppState extends ConsumerState<YokulApp> {
       fireImmediately: false,
     );
 
-    // ── Join sync: take all devices back to home while a peer is syncing ────
+    // ── First launch: go to /setup if MetService key is missing ─────────────
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final settings = ref.read(settingsProvider);
+      if (settings.metServiceApiKey.isEmpty) {
+        ref.read(appRouterProvider).go('/setup');
+      }
+    });
+
+    // ── Join sync: navigate ALL devices to /setup when a peer joins ─────────
     ref.listenManual(
       networkJoinInProgressProvider,
       (prev, next) {
         if (next != true || prev == true) return;
+        SchedulerBinding.instance.scheduleFrame();
         SchedulerBinding.instance.addPostFrameCallback((_) {
-          if (mounted) ref.read(appRouterProvider).go('/');
+          if (mounted) ref.read(appRouterProvider).go('/setup');
         });
       },
       fireImmediately: false,
@@ -138,45 +149,11 @@ class _OverlayLayer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final alarm   = ref.watch(inAppAlarmBannerProvider);
-    final joining = ref.watch(networkJoinInProgressProvider);
+    final alarm = ref.watch(inAppAlarmBannerProvider);
 
     return Stack(
       children: [
         child,
-
-        // ── Join-sync dim overlay ────────────────────────────────────────────
-        if (joining)
-          Positioned.fill(
-            child: AbsorbPointer(
-              child: Container(
-                color: Colors.black.withOpacity(0.35),
-                alignment: Alignment.center,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: AppColors.cardBg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 16, height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      SizedBox(width: 10),
-                      Text(
-                        '新设备加入中，请等待其完成配置…',
-                        style: TextStyle(color: AppColors.textPrimary, fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
 
         // ── Alarm banner (top) ───────────────────────────────────────────────
         if (alarm != null)

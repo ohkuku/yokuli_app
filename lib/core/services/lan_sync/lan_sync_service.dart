@@ -306,6 +306,11 @@ class LanSyncService {
           'skUser': s.signalKUsername,
           'skPass': s.signalKPassword,
         },
+        if (s.metServiceApiKey.isNotEmpty) ...{
+          'metServiceApiKey': s.metServiceApiKey,
+          if (s.metServiceApiKeyUpdatedAt != null)
+            'metServiceApiKeyUpdatedAt': s.metServiceApiKeyUpdatedAt!.toIso8601String(),
+        },
         ...alarmData,
         'alarmRules': alarmRules,
         'notifyChannel': notifyChannelCfg,
@@ -671,6 +676,17 @@ class LanSyncService {
     final skPort = data['skPort'] as int?;
     final skUser = data['skUser'] as String?;
     final skPass = data['skPass'] as String?;
+    final incomingMetKey = data['metServiceApiKey'] as String?;
+    final incomingMetKeyTsStr = data['metServiceApiKeyUpdatedAt'] as String?;
+    final incomingMetKeyTs = incomingMetKeyTsStr != null
+        ? DateTime.tryParse(incomingMetKeyTsStr)
+        : null;
+    // LWW: only apply incoming MetService key if it's newer than local.
+    final applyMetKey = incomingMetKey != null &&
+        incomingMetKey.isNotEmpty &&
+        (current.metServiceApiKeyUpdatedAt == null ||
+            (incomingMetKeyTs != null &&
+                incomingMetKeyTs.isAfter(current.metServiceApiKeyUpdatedAt!)));
 
     await _ref.read(settingsProvider.notifier).applyRemote(
           current.copyWith(
@@ -688,6 +704,8 @@ class LanSyncService {
             signalKPort: skPort ?? current.signalKPort,
             signalKUsername: skUser ?? current.signalKUsername,
             signalKPassword: skPass ?? current.signalKPassword,
+            metServiceApiKey: applyMetKey ? incomingMetKey : current.metServiceApiKey,
+            metServiceApiKeyUpdatedAt: applyMetKey ? incomingMetKeyTs : current.metServiceApiKeyUpdatedAt,
           ),
         );
 

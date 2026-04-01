@@ -64,6 +64,7 @@ class _AppTileState extends State<AppTile>
         : widget.data.accentColor;
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTapDown: widget.data.isStub ? null : (_) => _ctrl.forward(),
       onTapUp: widget.data.isStub
           ? null

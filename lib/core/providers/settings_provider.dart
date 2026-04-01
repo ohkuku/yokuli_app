@@ -22,9 +22,11 @@ class AppSettings {
   final bool autoConnectLan;
   final bool keepScreenOn;
   final List<String> tileOrder; // home screen tile ordering
-  /// Optional MetService NZ API key (from data.metservice.com).
-  /// Leave empty to use Open-Meteo (default, free, no key required).
+  /// MetService NZ API key (from data.metservice.com).
+  /// Required — MetService is the default weather provider for NZ.
   final String metServiceApiKey;
+  /// LWW timestamp for metServiceApiKey — the newest value across all devices wins.
+  final DateTime? metServiceApiKeyUpdatedAt;
 
   const AppSettings({
     this.deviceName = '',
@@ -42,6 +44,7 @@ class AppSettings {
     this.keepScreenOn = true,
     this.tileOrder = const [],
     this.metServiceApiKey = '',
+    this.metServiceApiKeyUpdatedAt,
   });
 
   bool get hasCredentials =>
@@ -93,6 +96,7 @@ class AppSettings {
     bool? keepScreenOn,
     List<String>? tileOrder,
     String? metServiceApiKey,
+    DateTime? metServiceApiKeyUpdatedAt,
   }) =>
       AppSettings(
         deviceName: deviceName ?? this.deviceName,
@@ -110,6 +114,7 @@ class AppSettings {
         keepScreenOn: keepScreenOn ?? this.keepScreenOn,
         tileOrder: tileOrder ?? this.tileOrder,
         metServiceApiKey: metServiceApiKey ?? this.metServiceApiKey,
+        metServiceApiKeyUpdatedAt: metServiceApiKeyUpdatedAt ?? this.metServiceApiKeyUpdatedAt,
       );
 }
 
@@ -128,7 +133,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
   static const _keyAutoConnectLan   = 'auto_connect_lan';
   static const _keyKeepScreenOn     = 'keep_screen_on';
   static const _keyTileOrder        = 'tile_order';
-  static const _keyMetServiceApiKey = 'metservice_api_key';
+  static const _keyMetServiceApiKey      = 'metservice_api_key';
+  static const _keyMetServiceApiKeyTs    = 'metservice_api_key_ts';
 
   @override
   AppSettings build() {
@@ -163,6 +169,10 @@ class SettingsNotifier extends Notifier<AppSettings> {
           ? const []
           : tileOrderStr.split(',').where((s) => s.isNotEmpty).toList(),
       metServiceApiKey: prefs.getString(_keyMetServiceApiKey) ?? '',
+      metServiceApiKeyUpdatedAt: () {
+        final ts = prefs.getString(_keyMetServiceApiKeyTs);
+        return ts != null ? DateTime.tryParse(ts) : null;
+      }(),
     );
   }
 
@@ -208,6 +218,14 @@ class SettingsNotifier extends Notifier<AppSettings> {
       data['skUser'] = updated.signalKUsername;
       data['skPass'] = updated.signalKPassword;
     }
+    if (updated.metServiceApiKey != previous.metServiceApiKey) {
+      final now = DateTime.now().toUtc();
+      // Bump the timestamp so peers know this is the freshest value.
+      state = state.copyWith(metServiceApiKeyUpdatedAt: now);
+      await _saveToPrefs(state);
+      data['metServiceApiKey'] = updated.metServiceApiKey;
+      data['metServiceApiKeyUpdatedAt'] = now.toIso8601String();
+    }
     if (data.isEmpty) return;
     ref.read(lanBroadcastProvider)?.call({'type': 'settings_sync', 'data': data});
   }
@@ -236,6 +254,9 @@ class SettingsNotifier extends Notifier<AppSettings> {
     await prefs.setBool(_keyKeepScreenOn,    s.keepScreenOn);
     await prefs.setString(_keyTileOrder,        s.tileOrder.join(','));
     await prefs.setString(_keyMetServiceApiKey, s.metServiceApiKey);
+    if (s.metServiceApiKeyUpdatedAt != null) {
+      await prefs.setString(_keyMetServiceApiKeyTs, s.metServiceApiKeyUpdatedAt!.toIso8601String());
+    }
   }
 }
 
