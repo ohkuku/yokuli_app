@@ -40,6 +40,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _hostIpCtrl = TextEditingController(text: s.hostIp);
     _metServiceKeyCtrl = TextEditingController(text: s.metServiceApiKey);
     if (!kIsWeb) _loadLocalIp();
+
+    // Keep MetService key field in sync with LAN-synced settings
+    ref.listenManual(
+      settingsProvider.select((s) => s.metServiceApiKey),
+      (prev, next) {
+        if (mounted && next != prev && _metServiceKeyCtrl.text != next) {
+          setState(() {
+            _metServiceKeyCtrl.text = next;
+            // Reset validation status when key changes
+            _metKeyStatus = null;
+            _metKeyError = null;
+          });
+        }
+      },
+      fireImmediately: false,
+    );
   }
 
   @override

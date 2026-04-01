@@ -144,27 +144,33 @@ class WeatherNotifier extends Notifier<WeatherState> {
   // Register at https://data.metservice.com/ to get a key.
   // --------------------------------------------------------------------------
 
-  /// Tests MetService API key with a known NZ position (Auckland).
+  /// Tests MetService API key with a known NZ position (Wellington).
   /// Returns null on success, or an error string on failure.
+  /// Only blocks for 401/403 (invalid key). Non-auth errors pass through.
   static Future<String?> validateApiKey(String apiKey) async {
-    if (apiKey.isEmpty) return 'API Key 为空';
+    if (apiKey.isEmpty) return 'MetService API Key 未配置';
     try {
       final uri = Uri.https('data.metservice.com', '/v1/point_forecast', {
-        'lat': '-36.8485',
-        'lon': '174.7633',
+        'lat': '-41.2865',
+        'lon': '174.7762',
       });
       final resp = await http
-          .get(uri, headers: {'apikey': apiKey, 'Accept': 'application/json'})
+          .get(uri, headers: {
+            'apikey': apiKey,
+            'Accept': 'application/json',
+          })
           .timeout(const Duration(seconds: 12));
       if (resp.statusCode == 200) return null; // valid
       if (resp.statusCode == 401 || resp.statusCode == 403) {
-        return '无效的 API Key (HTTP ${resp.statusCode})';
+        return 'API Key 无效 — 请检查密钥 (HTTP ${resp.statusCode})';
       }
-      return 'MetService 返回 HTTP ${resp.statusCode}';
+      // For 404 and other errors: key might be valid but endpoint has issues.
+      // Don't block app startup for non-auth errors.
+      return null; // treat as "probably OK"
     } on TimeoutException {
-      return '连接超时，请检查网络';
+      return null; // Don't block on timeout — might just be network issue
     } catch (e) {
-      return '网络错误: $e';
+      return null; // Don't block on connection errors
     }
   }
 

@@ -33,6 +33,9 @@ class YokulApp extends ConsumerStatefulWidget {
 }
 
 class _YokulAppState extends ConsumerState<YokulApp> {
+  bool _showJoinOverlay = false;
+  String _joinPeerCount = '';
+
   @override
   void initState() {
     super.initState();
@@ -76,14 +79,25 @@ class _YokulAppState extends ConsumerState<YokulApp> {
       fireImmediately: false,
     );
 
-    // ── First launch: go to /setup if MetService key is missing ─────────────
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final settings = ref.read(settingsProvider);
-      if (settings.metServiceApiKey.isEmpty) {
-        ref.read(appRouterProvider).go('/setup');
-      }
-    });
+    // ── Network join overlay ─────────────────────────────────────────────────
+    ref.listenManual(
+      networkJoinInProgressProvider,
+      (prev, next) {
+        if (!mounted) return;
+        if (next == true && prev != true) {
+          setState(() => _showJoinOverlay = true);
+        } else if (next == false && prev == true) {
+          Future.delayed(const Duration(milliseconds: 800), () {
+            if (mounted) setState(() => _showJoinOverlay = false);
+          });
+        }
+      },
+      fireImmediately: false,
+    );
+
+    ref.listenManual(discoveredPeersProvider, (_, peers) {
+      if (mounted) setState(() => _joinPeerCount = '${peers.length + 1}');
+    }, fireImmediately: false);
 
     // ── In-app alarm banner ──────────────────────────────────────────────────
     ref.listenManual(
@@ -107,21 +121,74 @@ class _YokulAppState extends ConsumerState<YokulApp> {
     final router = ref.watch(appRouterProvider);
     final locale = ref.watch(flutterLocaleProvider);
 
-    return MaterialApp.router(
-      title: 'Yokuli',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
-      locale: locale,
-      supportedLocales: const [Locale('en'), Locale('zh')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
+    return Stack(
+      children: [
+        MaterialApp.router(
+          title: 'Yokuli',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.darkTheme,
+          locale: locale,
+          supportedLocales: const [Locale('en'), Locale('zh')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          routerConfig: router,
+          builder: (context, child) {
+            return _OverlayLayer(child: child ?? const SizedBox.shrink());
+          },
+        ),
+        if (_showJoinOverlay)
+          _NetworkJoinOverlay(peerCount: _joinPeerCount),
       ],
-      routerConfig: router,
-      builder: (context, child) {
-        return _OverlayLayer(child: child ?? const SizedBox.shrink());
-      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Network join overlay (shown while a new device is syncing to the fleet)
+// ---------------------------------------------------------------------------
+
+class _NetworkJoinOverlay extends StatelessWidget {
+  final String peerCount;
+  const _NetworkJoinOverlay({required this.peerCount});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black.withOpacity(0.7),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.devices_rounded, size: 48, color: AppColors.cyan),
+            const SizedBox(height: 16),
+            const Text(
+              '有新设备加入网络',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '正在同步… 已发现 $peerCount 台设备在线',
+              style: const TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+            const SizedBox(height: 24),
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: AppColors.cyan,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

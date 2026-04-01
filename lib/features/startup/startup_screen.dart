@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/providers/settings_provider.dart';
@@ -69,6 +68,9 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
   bool? _metKeyStatus; // null = not tested, true = valid, false = invalid
   String? _metKeyError;
 
+  // Inline MetService key editor (shown when blocked at step 3)
+  final _inlineMetKeyCtrl = TextEditingController();
+
   late final AnimationController _pulseCtrl;
 
   @override
@@ -93,6 +95,7 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     _skPortCtrl.dispose();
     _skUserCtrl.dispose();
     _skPassCtrl.dispose();
+    _inlineMetKeyCtrl.dispose();
     super.dispose();
   }
 
@@ -139,7 +142,18 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
       _markStep(2);
     }
 
-    await _runFromStep(3);
+    // Check first-time BEFORE running validation (step 3+).
+    // A first-time device (no device name) jumps straight to the wizard.
+    // An existing device runs the full validation sequence.
+    final isFirstTime = ref.read(settingsProvider).deviceName.isEmpty;
+    if (isFirstTime) {
+      if (mounted) setState(() {
+        _currentStep = '欢迎使用';
+        _phase = _Phase.wizard;
+      });
+    } else {
+      await _runFromStep(3);
+    }
   }
 
   Future<void> _runFromStep(int step) async {
@@ -180,22 +194,16 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
 
     if (!mounted) return;
 
-    // Decide: first-time wizard or go straight to app.
-    // Wizard is shown only when device has no name yet.
-    final latestSettings = ref.read(settingsProvider);
-    final isFirstTime = latestSettings.deviceName.isEmpty;
+    _finishAndEnterApp();
+  }
 
-    if (isFirstTime) {
-      setState(() {
-        _currentStep = '欢迎使用';
-        _phase = _Phase.wizard;
-      });
-    } else {
-      _setStep('准备就绪');
-      setState(() => _phase = _Phase.ready);
-      await Future.delayed(const Duration(milliseconds: 500));
+  void _finishAndEnterApp() {
+    if (!mounted) return;
+    _setStep('准备就绪');
+    setState(() => _phase = _Phase.ready);
+    Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) widget.onComplete();
-    }
+    });
   }
 
   Future<void> _retryFromStep(int step) async {
@@ -208,6 +216,15 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
       }
     });
     await _runFromStep(step);
+  }
+
+  Future<void> _saveInlineMetKey() async {
+    final key = _inlineMetKeyCtrl.text.trim();
+    if (key.isEmpty) return;
+    await ref.read(settingsProvider.notifier).update(
+      ref.read(settingsProvider).copyWith(metServiceApiKey: key),
+    );
+    await _retryFromStep(3);
   }
 
   void _setStep(String label) {
@@ -333,8 +350,20 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     if (!mounted) return;
 
     if (_peersFound > 0) {
-      // LAN already found — auto-join, no further config needed.
-      widget.onComplete();
+      // Switch back to loading to run validation with synced settings.
+      setState(() { _phase = _Phase.loading; _currentStep = '等待网络同步…'; });
+      // Wait up to 15s for MetService key to sync from peer.
+      const maxWait = Duration(seconds: 15);
+      const tick = Duration(milliseconds: 500);
+      var waited = Duration.zero;
+      while (waited < maxWait) {
+        if (ref.read(settingsProvider).metServiceApiKey.isNotEmpty) break;
+        await Future.delayed(tick);
+        waited += tick;
+        if (mounted) setState(() => _currentStep = '等待从网络同步配置… ${(maxWait - waited).inSeconds}s');
+      }
+      // Run validation now that MetService key should be synced.
+      await _runFromStep(3);
     } else {
       // No LAN peers — guide through vessel name + SK setup.
       _goToPage(2);
@@ -539,31 +568,48 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
                 ),
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => _retryFromStep(blockedStep!),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.cyan,
-                        side: const BorderSide(color: AppColors.cyan),
-                      ),
-                      child: const Text('重试'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => context.push('/settings'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.cyan,
-                        foregroundColor: AppColors.background,
-                      ),
-                      child: const Text('修改配置'),
-                    ),
-                  ),
-                ],
+              OutlinedButton(
+                onPressed: () => _retryFromStep(blockedStep!),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.cyan,
+                  side: const BorderSide(color: AppColors.cyan),
+                ),
+                child: const Text('重试'),
               ),
+              if (blockedStep == 3) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _inlineMetKeyCtrl,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    hintText: '粘贴 MetService API Key',
+                    prefixIcon: Icon(Icons.vpn_key_rounded),
+                  ),
+                  onSubmitted: (_) => _saveInlineMetKey(),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _saveInlineMetKey,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.cyan,
+                      foregroundColor: AppColors.background,
+                    ),
+                    child: const Text('保存并重试'),
+                  ),
+                ),
+              ] else ...[
+                TextButton(
+                  onPressed: () {
+                    _markStep(4);
+                    setState(() => _isBlocked = false);
+                    _finishAndEnterApp();
+                  },
+                  child: const Text('跳过 Signal K', style: TextStyle(color: AppColors.textSecondary)),
+                ),
+              ],
             ] else
               AnimatedOpacity(
                 opacity: _phase == _Phase.ready ? 1.0 : 0.6,
