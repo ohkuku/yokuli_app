@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -10,6 +11,7 @@ import '../../../core/models/log_entry.dart';
 import '../../../core/providers/device_provider.dart';
 import '../../../core/providers/lan_broadcast.dart';
 import '../../../core/providers/log_provider.dart';
+import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/services/lan_sync/lan_sync_service.dart';
 import '../../../core/services/telemetry_service.dart';
@@ -119,11 +121,12 @@ class MobNotifier extends Notifier<MobState> {
     if (state.isMobActive) return; // already active
 
     final vessel = ref.read(vesselProvider);
+    final deviceName = ref.read(settingsProvider).deviceName;
     final alert = MobAlert(
       id: generateId(),
       triggeredAt: DateTime.now(),
       position: vessel.position,
-      triggeredByDevice: 'this device',
+      triggeredByDevice: deviceName.isNotEmpty ? deviceName : '本设备',
       triggerSource: triggerSource,
       triggerRuleName: triggerRuleName,
     );
@@ -200,8 +203,18 @@ class MobNotifier extends Notifier<MobState> {
     ref.read(logProvider.notifier).log(
       type: LogEntryType.system,
       subtype: 'mob_start',
-      message: 'MOB ALERT — 接收自远程设备',
+      message: 'MOB ALERT — 接收自 ${alert.triggeredByDevice}',
     );
+    // Haptic pulse to grab attention even on a noisy vessel.
+    _hapticMobAlert();
+  }
+
+  static void _hapticMobAlert() {
+    HapticFeedback.heavyImpact();
+    Future.delayed(const Duration(milliseconds: 350), HapticFeedback.heavyImpact);
+    Future.delayed(const Duration(milliseconds: 700), HapticFeedback.heavyImpact);
+    Future.delayed(const Duration(milliseconds: 1050), HapticFeedback.heavyImpact);
+    Future.delayed(const Duration(milliseconds: 1400), HapticFeedback.heavyImpact);
   }
 
   /// Receive a MOB cancel from a LAN peer.

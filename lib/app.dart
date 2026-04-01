@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/models/alarm_instance.dart';
 import 'core/models/alarm_rule.dart';
+import 'core/models/mob_alert.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/locale_provider.dart';
@@ -30,6 +34,10 @@ class YokulApp extends ConsumerWidget {
       (prev, mobId) {
         if (mobId != null && mobId != prev) {
           router.push('/mob');
+          // Haptic burst so the crew feels it even on a noisy bridge.
+          HapticFeedback.heavyImpact();
+          Future.delayed(const Duration(milliseconds: 300), HapticFeedback.heavyImpact);
+          Future.delayed(const Duration(milliseconds: 600), HapticFeedback.heavyImpact);
         }
       },
     );
@@ -101,6 +109,7 @@ class _AlarmBannerOverlay extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final alarm = ref.watch(inAppAlarmBannerProvider);
     final joining = ref.watch(networkJoinInProgressProvider);
+    final mob = ref.watch(mobProvider);
 
     return Stack(
       children: [
@@ -136,6 +145,17 @@ class _AlarmBannerOverlay extends ConsumerWidget {
                   ),
                 ),
               ),
+            ),
+          ),
+        // Persistent MOB strip — visible on every screen while alert is active.
+        if (mob.isMobActive)
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: _MobPersistentBanner(
+              mob: mob.activeMob!,
+              onTap: () => ref.read(appRouterProvider).push('/mob'),
             ),
           ),
         if (alarm != null)
@@ -245,6 +265,118 @@ class _AlarmBannerState extends State<_AlarmBanner>
                     padding: const EdgeInsets.all(4),
                     child: const Icon(Icons.close_rounded,
                         color: Colors.white, size: 18),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Persistent MOB strip — shown on every screen while a MOB alert is active
+// ---------------------------------------------------------------------------
+
+class _MobPersistentBanner extends StatefulWidget {
+  final MobAlert mob;
+  final VoidCallback onTap;
+  const _MobPersistentBanner({required this.mob, required this.onTap});
+
+  @override
+  State<_MobPersistentBanner> createState() => _MobPersistentBannerState();
+}
+
+class _MobPersistentBannerState extends State<_MobPersistentBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+  late final Animation<double> _opacity;
+  Timer? _clockTimer;
+  int _elapsedSeconds = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _elapsedSeconds = widget.mob.elapsed.inSeconds;
+    _clockTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) { if (mounted) setState(() => _elapsedSeconds++); },
+    );
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
+    _opacity = Tween<double>(begin: 0.7, end: 1.0).animate(
+      CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mins = _elapsedSeconds ~/ 60;
+    final secs = _elapsedSeconds % 60;
+    final elapsed =
+        '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+
+    return FadeTransition(
+      opacity: _opacity,
+      child: SafeArea(
+        top: false,
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: Container(
+            color: AppColors.danger,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'MAN OVERBOARD',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      Text(
+                        '${widget.mob.triggeredByDevice} · $elapsed',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.85),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    '查看',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
