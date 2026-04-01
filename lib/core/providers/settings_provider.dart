@@ -28,6 +28,15 @@ class AppSettings {
   /// LWW timestamp for metServiceApiKey — the newest value across all devices wins.
   final DateTime? metServiceApiKeyUpdatedAt;
 
+  // WorldTides API key for tidal predictions (worldtides.info)
+  final String worldTidesApiKey;
+  final DateTime? worldTidesApiKeyUpdatedAt;
+
+  // NZ Coastguard Trip Filing credentials (optional)
+  final String coastguardEmail;
+  final String coastguardPassword; // stored in plain text
+  final DateTime? coastguardCredentialsUpdatedAt;
+
   const AppSettings({
     this.deviceName = '',
     this.vesselName = 'My Vessel',
@@ -45,6 +54,11 @@ class AppSettings {
     this.tileOrder = const [],
     this.metServiceApiKey = '',
     this.metServiceApiKeyUpdatedAt,
+    this.worldTidesApiKey = '',
+    this.worldTidesApiKeyUpdatedAt,
+    this.coastguardEmail = '',
+    this.coastguardPassword = '',
+    this.coastguardCredentialsUpdatedAt,
   });
 
   bool get hasCredentials =>
@@ -97,6 +111,11 @@ class AppSettings {
     List<String>? tileOrder,
     String? metServiceApiKey,
     DateTime? metServiceApiKeyUpdatedAt,
+    String? worldTidesApiKey,
+    DateTime? worldTidesApiKeyUpdatedAt,
+    String? coastguardEmail,
+    String? coastguardPassword,
+    DateTime? coastguardCredentialsUpdatedAt,
   }) =>
       AppSettings(
         deviceName: deviceName ?? this.deviceName,
@@ -115,6 +134,11 @@ class AppSettings {
         tileOrder: tileOrder ?? this.tileOrder,
         metServiceApiKey: metServiceApiKey ?? this.metServiceApiKey,
         metServiceApiKeyUpdatedAt: metServiceApiKeyUpdatedAt ?? this.metServiceApiKeyUpdatedAt,
+        worldTidesApiKey: worldTidesApiKey ?? this.worldTidesApiKey,
+        worldTidesApiKeyUpdatedAt: worldTidesApiKeyUpdatedAt ?? this.worldTidesApiKeyUpdatedAt,
+        coastguardEmail: coastguardEmail ?? this.coastguardEmail,
+        coastguardPassword: coastguardPassword ?? this.coastguardPassword,
+        coastguardCredentialsUpdatedAt: coastguardCredentialsUpdatedAt ?? this.coastguardCredentialsUpdatedAt,
       );
 }
 
@@ -135,6 +159,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
   static const _keyTileOrder        = 'tile_order';
   static const _keyMetServiceApiKey      = 'metservice_api_key';
   static const _keyMetServiceApiKeyTs    = 'metservice_api_key_ts';
+  static const _keyWorldTidesApiKey      = 'world_tides_api_key';
+  static const _keyWorldTidesApiKeyTs    = 'world_tides_api_key_ts';
+  static const _keyCoastguardEmail       = 'coastguard_email';
+  static const _keyCoastguardPassword    = 'coastguard_password';
+  static const _keyCoastguardCredsTs     = 'coastguard_creds_ts';
 
   @override
   AppSettings build() {
@@ -171,6 +200,17 @@ class SettingsNotifier extends Notifier<AppSettings> {
       metServiceApiKey: prefs.getString(_keyMetServiceApiKey) ?? '',
       metServiceApiKeyUpdatedAt: () {
         final ts = prefs.getString(_keyMetServiceApiKeyTs);
+        return ts != null ? DateTime.tryParse(ts) : null;
+      }(),
+      worldTidesApiKey: prefs.getString(_keyWorldTidesApiKey) ?? '',
+      worldTidesApiKeyUpdatedAt: () {
+        final ts = prefs.getString(_keyWorldTidesApiKeyTs);
+        return ts != null ? DateTime.tryParse(ts) : null;
+      }(),
+      coastguardEmail: prefs.getString(_keyCoastguardEmail) ?? '',
+      coastguardPassword: prefs.getString(_keyCoastguardPassword) ?? '',
+      coastguardCredentialsUpdatedAt: () {
+        final ts = prefs.getString(_keyCoastguardCredsTs);
         return ts != null ? DateTime.tryParse(ts) : null;
       }(),
     );
@@ -226,6 +266,23 @@ class SettingsNotifier extends Notifier<AppSettings> {
       data['metServiceApiKey'] = updated.metServiceApiKey;
       data['metServiceApiKeyUpdatedAt'] = now.toIso8601String();
     }
+    if (updated.worldTidesApiKey != previous.worldTidesApiKey) {
+      final now = DateTime.now().toUtc();
+      state = state.copyWith(worldTidesApiKeyUpdatedAt: now);
+      await _saveToPrefs(state);
+      data['worldTidesApiKey'] = updated.worldTidesApiKey;
+      data['worldTidesApiKeyUpdatedAt'] = now.toIso8601String();
+    }
+    final cgChanged = updated.coastguardEmail != previous.coastguardEmail ||
+        updated.coastguardPassword != previous.coastguardPassword;
+    if (cgChanged) {
+      final now = DateTime.now().toUtc();
+      state = state.copyWith(coastguardCredentialsUpdatedAt: now);
+      await _saveToPrefs(state);
+      data['coastguardEmail'] = updated.coastguardEmail;
+      data['coastguardPassword'] = updated.coastguardPassword;
+      data['coastguardCredentialsUpdatedAt'] = now.toIso8601String();
+    }
     if (data.isEmpty) return;
     ref.read(lanBroadcastProvider)?.call({'type': 'settings_sync', 'data': data});
   }
@@ -256,6 +313,15 @@ class SettingsNotifier extends Notifier<AppSettings> {
     await prefs.setString(_keyMetServiceApiKey, s.metServiceApiKey);
     if (s.metServiceApiKeyUpdatedAt != null) {
       await prefs.setString(_keyMetServiceApiKeyTs, s.metServiceApiKeyUpdatedAt!.toIso8601String());
+    }
+    await prefs.setString(_keyWorldTidesApiKey, s.worldTidesApiKey);
+    if (s.worldTidesApiKeyUpdatedAt != null) {
+      await prefs.setString(_keyWorldTidesApiKeyTs, s.worldTidesApiKeyUpdatedAt!.toIso8601String());
+    }
+    await prefs.setString(_keyCoastguardEmail, s.coastguardEmail);
+    await prefs.setString(_keyCoastguardPassword, s.coastguardPassword);
+    if (s.coastguardCredentialsUpdatedAt != null) {
+      await prefs.setString(_keyCoastguardCredsTs, s.coastguardCredentialsUpdatedAt!.toIso8601String());
     }
   }
 }

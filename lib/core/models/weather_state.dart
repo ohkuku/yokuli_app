@@ -617,6 +617,17 @@ class SkyParticlePainter extends CustomPainter {
 }
 
 // ---------------------------------------------------------------------------
+// Tidal data model
+// ---------------------------------------------------------------------------
+
+class TideEntry {
+  final DateTime time;
+  final double height; // meters
+  final bool isHighTide; // true = high tide, false = low tide
+  const TideEntry({required this.time, required this.height, required this.isHighTide});
+}
+
+// ---------------------------------------------------------------------------
 // Forecast data models
 // ---------------------------------------------------------------------------
 
@@ -691,6 +702,7 @@ class WeatherState {
   final double? windGust;      // current, knots
   final List<HourlyForecast> hourly;
   final List<DailyForecast> daily;
+  final List<TideEntry> tides;
 
   const WeatherState({
     this.temperature,
@@ -712,6 +724,7 @@ class WeatherState {
     this.windGust,
     this.hourly = const [],
     this.daily = const [],
+    this.tides = const [],
   });
 
   const WeatherState.loading() : this(isLoading: true);
@@ -750,6 +763,7 @@ class WeatherState {
     double? windGust,
     List<HourlyForecast>? hourly,
     List<DailyForecast>? daily,
+    List<TideEntry>? tides,
   }) =>
       WeatherState(
         temperature: temperature ?? this.temperature,
@@ -771,5 +785,6 @@ class WeatherState {
         windGust: windGust ?? this.windGust,
         hourly: hourly ?? this.hourly,
         daily: daily ?? this.daily,
+        tides: tides ?? this.tides,
       );
 }

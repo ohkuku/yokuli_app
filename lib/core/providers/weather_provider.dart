@@ -9,6 +9,8 @@ import '../models/weather_state.dart';
 import '../providers/vessel_provider.dart';
 import '../providers/settings_provider.dart';
 
+// ignore_for_file: avoid_catches_without_on_clauses
+
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
@@ -92,7 +94,17 @@ class WeatherNotifier extends Notifier<WeatherState> {
         return;
       }
 
-      state = result.copyWith(isLoading: false, error: null);
+      // Fetch tides if WorldTides key is configured
+      List<TideEntry> tides = const [];
+      if (settings.worldTidesApiKey.isNotEmpty) {
+        tides = await _fetchTides(
+          lat: pos.latitude,
+          lon: pos.longitude,
+          apiKey: settings.worldTidesApiKey,
+        );
+      }
+
+      state = result.copyWith(isLoading: false, error: null, tides: tides);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
