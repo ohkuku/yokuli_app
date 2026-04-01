@@ -9,7 +9,7 @@ import 'package:web_socket_channel/status.dart' as ws_status;
 import '../../models/ais_state.dart';
 import '../../models/vessel_state.dart';
 import '../../providers/connection_provider.dart'
-    show ConnectionNotifier, ConnectionStatus, connectionProvider;
+    show ConnectionNotifier, ConnectionStatus, SignalKFailureReason, connectionProvider;
 import '../../providers/vessel_provider.dart';
 import 'signalk_auth.dart';
 import 'signalk_parser.dart';
@@ -28,6 +28,8 @@ class SignalKClient {
   Timer? _reconnectTimer;
   Timer? _watchdogTimer;
   DateTime? _lastDeltaReceived;
+  int _consecutiveErrors = 0;
+  static const _maxConsecutiveErrors = 3;
 
   /// The own-vessel context string received in the SK hello message, e.g.
   /// 'vessels.urn:mrn:imo:mmsi:338234631'.  Used to distinguish own-ship AIS
@@ -80,6 +82,8 @@ class SignalKClient {
 
       // Hello message – Signal K sends this immediately after the WS is opened.
       if (json.containsKey('version') && json.containsKey('roles')) {
+        // Successful connection — reset error counter.
+        _consecutiveErrors = 0;
         // Store the own-vessel context so the AIS parser can distinguish self.
         _selfContext = json['self'] as String?;
 
@@ -122,8 +126,17 @@ class SignalKClient {
   }
 
   void _onError(Object error) {
+    _consecutiveErrors++;
     _conn.setSignalKStatus(ConnectionStatus.error, error: error.toString());
-    if (!_intentionalDisconnect) _scheduleReconnect();
+    if (!_intentionalDisconnect) {
+      if (_consecutiveErrors >= _maxConsecutiveErrors) {
+        // Persistent failure — address is unreachable. Notify app to redirect
+        // the user back to setup so they can fix the Signal K address.
+        _conn.setSignalKPermanentFailure(SignalKFailureReason.addressUnreachable);
+      } else {
+        _scheduleReconnect();
+      }
+    }
   }
 
   void _onDone() {

@@ -10,6 +10,7 @@ import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/locale_provider.dart';
 import 'core/providers/alarm_instance_provider.dart';
+import 'core/providers/connection_provider.dart';
 import 'core/providers/settings_provider.dart';
 import 'features/mob/providers/mob_provider.dart';
 import 'core/services/lan_sync/lan_sync_service.dart';
@@ -79,6 +80,23 @@ class _YokulAppState extends ConsumerState<YokulApp> {
       fireImmediately: false,
     );
 
+    // ── Signal K persistent failure → redirect to setup ─────────────────────
+    ref.listenManual(
+      connectionProvider.select((s) => s.signalKPermanentFailure),
+      (prev, failure) {
+        if (failure == SignalKFailureReason.none) return;
+        if (prev == failure) return; // already handled
+        SchedulerBinding.instance.scheduleFrame();
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          // Clear the failure flag so re-entry to setup doesn't loop.
+          ref.read(connectionProvider.notifier).clearSignalKPermanentFailure();
+          ref.read(appRouterProvider).go('/setup');
+        });
+      },
+      fireImmediately: false,
+    );
+
     // ── Network join overlay ─────────────────────────────────────────────────
     ref.listenManual(
       networkJoinInProgressProvider,
@@ -121,27 +139,32 @@ class _YokulAppState extends ConsumerState<YokulApp> {
     final router = ref.watch(appRouterProvider);
     final locale = ref.watch(flutterLocaleProvider);
 
-    return Stack(
-      children: [
-        MaterialApp.router(
-          title: 'Yokuli',
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.darkTheme,
-          locale: locale,
-          supportedLocales: const [Locale('en'), Locale('zh')],
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
-          routerConfig: router,
-          builder: (context, child) {
-            return _OverlayLayer(child: child ?? const SizedBox.shrink());
-          },
-        ),
-        if (_showJoinOverlay)
-          _NetworkJoinOverlay(peerCount: _joinPeerCount),
+    // _NetworkJoinOverlay MUST be inside MaterialApp to inherit Directionality.
+    // We pass showJoinOverlay + peerCount down through the builder.
+    final showJoin = _showJoinOverlay;
+    final peerCount = _joinPeerCount;
+
+    return MaterialApp.router(
+      title: 'Yokuli',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.darkTheme,
+      locale: locale,
+      supportedLocales: const [Locale('en'), Locale('zh')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
       ],
+      routerConfig: router,
+      builder: (context, child) {
+        return Stack(
+          children: [
+            _OverlayLayer(child: child ?? const SizedBox.shrink()),
+            if (showJoin)
+              _NetworkJoinOverlay(peerCount: peerCount),
+          ],
+        );
+      },
     );
   }
 }
