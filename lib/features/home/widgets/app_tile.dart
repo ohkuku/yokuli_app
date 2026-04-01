@@ -200,23 +200,27 @@ class _GlassTile extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         borderRadius: radius,
-        border: Border.all(
-          color: isStub
-              ? Colors.white.withOpacity(0.08)
-              : Colors.white.withOpacity(0.16),
-          width: 0.8,
-        ),
+        // Gradient border: bright top (light source), faint bottom
+        border: isStub
+            ? Border.all(color: Colors.white.withOpacity(0.08), width: 0.8)
+            : Border(
+                top: BorderSide(color: Colors.white.withOpacity(0.60), width: 1.0),
+                left: BorderSide(color: Colors.white.withOpacity(0.30), width: 0.8),
+                right: BorderSide(color: Colors.white.withOpacity(0.10), width: 0.8),
+                bottom: BorderSide(color: Colors.white.withOpacity(0.06), width: 0.8),
+              ),
         boxShadow: isStub
             ? null
             : [
                 BoxShadow(
-                  color: accent.withOpacity(0.08),
-                  blurRadius: 20,
-                  offset: const Offset(0, 6),
+                  color: accent.withOpacity(0.15),
+                  blurRadius: 24,
+                  spreadRadius: -4,
+                  offset: const Offset(0, 8),
                 ),
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.15),
-                  blurRadius: 20,
+                  color: Colors.black.withOpacity(0.22),
+                  blurRadius: 16,
                   offset: const Offset(0, 4),
                 ),
               ],
@@ -224,51 +228,40 @@ class _GlassTile extends StatelessWidget {
       child: ClipRRect(
         borderRadius: radius,
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: isStub
-                        ? [
-                            Colors.white.withOpacity(0.05),
-                            Colors.white.withOpacity(0.02),
-                          ]
-                        : [
-                            accent.withOpacity(0.14),
-                            Colors.white.withOpacity(0.05),
-                          ],
-                  ),
-                ),
-                child: child,
+          // Minimal haze — glass is clear, not frosted
+          filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              // Near-transparent fill with very subtle accent tint
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isStub
+                    ? [
+                        Colors.white.withOpacity(0.05),
+                        Colors.white.withOpacity(0.02),
+                      ]
+                    : [
+                        accent.withOpacity(0.10),
+                        Colors.white.withOpacity(0.03),
+                      ],
               ),
-              // Specular top highlight
-              if (!isStub)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: 1.0,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.white.withOpacity(0.50),
-                          Colors.white.withOpacity(0.08),
-                          Colors.transparent,
-                        ],
-                        stops: const [0.0, 0.5, 1.0],
-                      ),
+            ),
+            foregroundDecoration: isStub
+                ? null
+                : const BoxDecoration(
+                    // Inner caustic: soft light wash from top
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.center,
+                      colors: [
+                        Color(0x28FFFFFF), // ~16% white
+                        Color(0x00FFFFFF),
+                      ],
                     ),
                   ),
-                ),
-            ],
+            child: child,
           ),
         ),
       ),

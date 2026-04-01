@@ -1,16 +1,17 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
-/// iOS / macOS-style frosted glass card.
+/// iOS 26-style liquid glass card.
 ///
-/// Requires a rich background (gradients, blobs) behind it so the
-/// BackdropFilter blur has something interesting to render.
+/// Clear glass — nearly transparent, no heavy blur.
+/// Visual depth comes from specular edge highlights and a subtle inner caustic,
+/// not frosting. Requires a rich colourful background to show through.
 class GlassCard extends StatelessWidget {
   final Widget child;
   final BorderRadius? borderRadius;
   final EdgeInsetsGeometry? padding;
-  /// Optional accent tint that bleeds through the glass.
   final Color? tint;
+  /// Minimal haze — keeps text legible on very busy backgrounds.
   final double blur;
   final double opacity;
   final VoidCallback? onTap;
@@ -21,8 +22,8 @@ class GlassCard extends StatelessWidget {
     this.borderRadius,
     this.padding,
     this.tint,
-    this.blur = 18,
-    this.opacity = 0.09,
+    this.blur = 3,
+    this.opacity = 0.07,
     this.onTap,
   });
 
@@ -34,15 +35,19 @@ class GlassCard extends StatelessWidget {
     Widget card = Container(
       decoration: BoxDecoration(
         borderRadius: radius,
-        border: Border.all(
-          color: Colors.white.withOpacity(0.22),
-          width: 0.8,
+        // Gradient border: bright top/left (light source), faint bottom/right
+        border: Border(
+          top: BorderSide(color: Colors.white.withOpacity(0.65), width: 1.0),
+          left: BorderSide(color: Colors.white.withOpacity(0.35), width: 0.8),
+          right: BorderSide(color: Colors.white.withOpacity(0.12), width: 0.8),
+          bottom: BorderSide(color: Colors.white.withOpacity(0.08), width: 0.8),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.25),
-            blurRadius: 32,
-            offset: const Offset(0, 10),
+            color: Colors.black.withOpacity(0.28),
+            blurRadius: 40,
+            spreadRadius: -4,
+            offset: const Offset(0, 12),
           ),
           BoxShadow(
             color: Colors.black.withOpacity(0.10),
@@ -54,26 +59,30 @@ class GlassCard extends StatelessWidget {
       child: ClipRRect(
         borderRadius: radius,
         child: BackdropFilter(
+          // Very light haze — just enough to pop on busy backgrounds
           filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
           child: Container(
             padding: padding,
             decoration: BoxDecoration(
+              // Near-transparent fill: top-left slightly lighter (incident light)
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
                   color.withOpacity(opacity + 0.05),
-                  color.withOpacity(opacity * 0.35),
+                  color.withOpacity(opacity * 0.4),
                 ],
               ),
             ),
             foregroundDecoration: BoxDecoration(
-              borderRadius: radius,
-              border: Border(
-                top: BorderSide(
-                  color: Colors.white.withOpacity(0.45),
-                  width: 1.2,
-                ),
+              // Inner caustic: soft bright wash from the top (light through glass)
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.center,
+                colors: [
+                  Colors.white.withOpacity(0.18),
+                  Colors.transparent,
+                ],
               ),
             ),
             child: child,
@@ -83,10 +92,7 @@ class GlassCard extends StatelessWidget {
     );
 
     if (onTap != null) {
-      card = GestureDetector(
-        onTap: onTap,
-        child: card,
-      );
+      card = GestureDetector(onTap: onTap, child: card);
     }
 
     return card;
@@ -102,7 +108,6 @@ class AuroraBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Base deep navy
         Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -112,16 +117,12 @@ class AuroraBackground extends StatelessWidget {
             ),
           ),
         ),
-        // Cyan glow — top-left
         _blob(size: 500, color: const Color(0xFF00D9FF), opacity: 0.13,
             top: -120, left: -80),
-        // Blue glow — top-right
         _blob(size: 320, color: const Color(0xFF0A84FF), opacity: 0.11,
             top: -60, right: -60),
-        // Teal glow — bottom-right
         _blob(size: 400, color: const Color(0xFF00B4A0), opacity: 0.10,
             right: -80, bottom: 80),
-        // Purple hint — bottom-left
         _blob(size: 280, color: const Color(0xFF5E5CE6), opacity: 0.08,
             left: -40, bottom: 160),
       ],
@@ -138,10 +139,7 @@ class AuroraBackground extends StatelessWidget {
     double? bottom,
   }) {
     return Positioned(
-      top: top,
-      left: left,
-      right: right,
-      bottom: bottom,
+      top: top, left: left, right: right, bottom: bottom,
       child: IgnorePointer(
         child: Container(
           width: size,
@@ -149,10 +147,7 @@ class AuroraBackground extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: RadialGradient(
-              colors: [
-                color.withOpacity(opacity),
-                Colors.transparent,
-              ],
+              colors: [color.withOpacity(opacity), Colors.transparent],
             ),
           ),
         ),
