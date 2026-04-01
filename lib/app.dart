@@ -36,22 +36,33 @@ class _YokulAppState extends ConsumerState<YokulApp> {
   void initState() {
     super.initState();
 
-    // ── MOB: navigate EVERY device to /mob when an alert activates ──────────
-    // Using listenManual in initState is the correct Riverpod pattern for
-    // navigation — it registers exactly once and survives rebuilds.
+    // ── MOB start: navigate EVERY device to /mob ────────────────────────────
     ref.listenManual(
       mobProvider.select((s) => s.activeMob?.id),
       (prev, mobId) {
         if (mobId == null || mobId == prev) return;
-        // Defer to next frame so the router is fully settled.
         SchedulerBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           ref.read(appRouterProvider).push('/mob');
         });
-        // Haptic burst — crew feels it on a noisy bridge.
         HapticFeedback.heavyImpact();
         Future.delayed(const Duration(milliseconds: 300), HapticFeedback.heavyImpact);
         Future.delayed(const Duration(milliseconds: 600), HapticFeedback.heavyImpact);
+      },
+      fireImmediately: false,
+    );
+
+    // ── MOB end: pop /mob on every device when alert is resolved ────────────
+    ref.listenManual(
+      mobProvider.select((s) => s.isMobActive),
+      (wasActive, isActive) {
+        if (wasActive != true || isActive != false) return;
+        // 2-second pause so the crew sees "resolved" before leaving the screen.
+        Future.delayed(const Duration(seconds: 2), () {
+          if (!mounted) return;
+          final router = ref.read(appRouterProvider);
+          if (router.canPop()) router.pop();
+        });
       },
       fireImmediately: false,
     );
