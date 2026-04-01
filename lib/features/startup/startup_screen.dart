@@ -199,30 +199,6 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     // Start alarm evaluator (watches vessel state and fires alarm instances)
     ref.read(alarmEvaluatorProvider).start();
 
-    // Wire LAN sync callbacks
-    final lanSync = ref.read(lanSyncServiceProvider);
-    lanSync.onMobAlert = (alert) => ref.read(mobProvider.notifier).receiveMob(alert);
-    lanSync.getActiveMob = () => ref.read(mobProvider).activeMob;
-    lanSync.getMobRules = () =>
-        ref.read(mobProvider).rules.map((r) => r.toJson()).toList();
-    lanSync.getAlarmSettings = () => {
-          'depthAlarmEnabled': ref.read(safetyProvider).depthAlarmEnabled,
-          'depthAlarmThreshold': ref.read(safetyProvider).depthAlarmThreshold,
-          'speedAlarmEnabled': ref.read(safetyProvider).speedAlarmEnabled,
-          'speedAlarmThreshold': ref.read(safetyProvider).speedAlarmThreshold,
-        };
-    lanSync.getAlarmRules = () => {
-          'rules': ref.read(alarmRuleProvider).map((r) => r.toJson()).toList(),
-        };
-    lanSync.onAlarmSettingsReceived = (data) =>
-        ref.read(safetyProvider.notifier).applyAlarmSync(data);
-    lanSync.onAlarmRulesReceived = (records) =>
-        ref.read(alarmRuleProvider.notifier).applyRemote(records);
-    lanSync.getNotifyChannelCfg = () =>
-        ref.read(notifyChannelProvider).toJson();
-    lanSync.onNotifyChannelReceived = (data) =>
-        ref.read(notifyChannelProvider.notifier).applySync(data);
-
     // Wire MOB watcher to SignalK raw delta stream
     final mobWatcher = MobWatcherService();
     mobWatcher.updateRules(ref.read(mobProvider).rules);
@@ -240,15 +216,6 @@ class _StartupScreenState extends ConsumerState<StartupScreen>
     });
     ref.read(signalKClientProvider).onRawDelta = mobWatcher.onDelta;
 
-    // Wire alarm rule / instance / action sync callbacks
-    lanSync.onMobRuleSync = (data) =>
-        ref.read(mobProvider.notifier).applyRuleRemote(data);
-    lanSync.onAlarmRuleSync = (data) =>
-        ref.read(alarmRuleProvider.notifier).applyRemote([data]);
-    lanSync.onAlarmInstanceSync = (data) =>
-        ref.read(alarmInstanceProvider.notifier).upsertRemote(data);
-    lanSync.onAlarmActionSync = (data) =>
-        ref.read(alarmActionProvider.notifier).applyRemote(data);
   }
 
   Future<void> _connectSK(AppSettings settings) async {

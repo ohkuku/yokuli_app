@@ -141,12 +141,13 @@ class LanSyncService {
       }
     };
     _platform.onMobReceived = (alert) {
-      onMobAlert?.call(alert);
+      // Direct provider update FIRST — never blocked by an external callback throw.
       _ref.read(mobProvider.notifier).receiveMob(alert);
+      try { onMobAlert?.call(alert); } catch (_) {}
     };
     _platform.onMobCancelReceived = (data) {
-      onMobCancelReceived?.call();
       _ref.read(mobProvider.notifier).receiveMobCancel(data);
+      try { onMobCancelReceived?.call(); } catch (_) {}
     };
     _platform.onMobHistorySync = (data) {
       _ref.read(mobProvider.notifier).receiveMobHistory(data);
@@ -187,24 +188,24 @@ class LanSyncService {
       _ref.read(voyageProvider.notifier).upsertRemote(data);
     };
     _platform.onAlarmRuleSync = (data) {
-      onAlarmRuleSync?.call(data);
       _ref.read(alarmRuleProvider.notifier).applyRemote([data]);
+      try { onAlarmRuleSync?.call(data); } catch (_) {}
     };
     _platform.onAlarmInstanceSync = (data) {
-      onAlarmInstanceSync?.call(data);
       _ref.read(alarmInstanceProvider.notifier).upsertRemote(data);
+      try { onAlarmInstanceSync?.call(data); } catch (_) {}
     };
     _platform.onAlarmActionSync = (data) {
-      onAlarmActionSync?.call(data);
       _ref.read(alarmActionProvider.notifier).applyRemote(data);
+      try { onAlarmActionSync?.call(data); } catch (_) {}
     };
     _platform.onMobRuleSync = (data) {
-      onMobRuleSync?.call(data);
       _ref.read(mobProvider.notifier).applyRuleRemote(data);
+      try { onMobRuleSync?.call(data); } catch (_) {}
     };
     _platform.onNotifyChannelSyncReceived = (data) {
-      onNotifyChannelReceived?.call(data);
       _ref.read(notifyChannelProvider.notifier).applySync(data);
+      try { onNotifyChannelReceived?.call(data); } catch (_) {}
     };
     _platform.onVesselStatePush = (state) {
       // A client is sharing their SK vessel state — apply only if we have no SK.
@@ -746,23 +747,23 @@ class LanSyncService {
         if (speedEnabled != null) 'speedAlarmEnabled': speedEnabled,
         if (speedThreshold != null) 'speedAlarmThreshold': speedThreshold,
       };
-      onAlarmSettingsReceived?.call(alarmSettingsData);
       _ref.read(safetyProvider.notifier).applyAlarmSync(alarmSettingsData);
+      try { onAlarmSettingsReceived?.call(alarmSettingsData); } catch (_) {}
     }
 
     // Apply alarm rules if present
     final alarmRulesRaw = data['alarmRules'];
     final normalizedAlarmRules = _parseAlarmRulesPayload(alarmRulesRaw);
     if (normalizedAlarmRules.isNotEmpty) {
-      onAlarmRulesReceived?.call(normalizedAlarmRules);
       _ref.read(alarmRuleProvider.notifier).applyRemote(normalizedAlarmRules);
+      try { onAlarmRulesReceived?.call(normalizedAlarmRules); } catch (_) {}
     }
 
     // Apply notify channel config if present
     final notifyChannelRaw = data['notifyChannel'] as Map<String, dynamic>?;
     if (notifyChannelRaw != null) {
-      onNotifyChannelReceived?.call(notifyChannelRaw);
       _ref.read(notifyChannelProvider.notifier).applySync(notifyChannelRaw);
+      try { onNotifyChannelReceived?.call(notifyChannelRaw); } catch (_) {}
     }
   }
 
