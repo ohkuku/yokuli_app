@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -65,17 +66,39 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
   _RadarMode _mode = _RadarMode.northUp;
   _RadarMode _mapMode = _RadarMode.northUp; // separate mode for map view
   double _rangeNm = 0; // 0 = auto
+  Timer? _headingTimer;
 
   static const _zoomSteps = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0];
 
   @override
+  void initState() {
+    super.initState();
+    // Periodically update map rotation when in heading-up mode.
+    // Running in initState (not build) avoids setState-during-build issues.
+    _headingTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!mounted) return;
+      final hdg = ref.read(vesselProvider).heading;
+      if (_mapMode == _RadarMode.headingUp && hdg != null) {
+        try { _mapController.rotate(-hdg); } catch (_) {}
+      } else if (_mapMode == _RadarMode.northUp) {
+        try { _mapController.rotate(0); } catch (_) {}
+      }
+    });
+  }
+
+  @override
   void dispose() {
+    _headingTimer?.cancel();
     _mapController.dispose();
     super.dispose();
   }
 
   void _zoomIn() {
-    if (_rangeNm == 0) return;
+    if (_rangeNm == 0) {
+      // Auto mode → enter zoom mode at the finest step
+      setState(() => _rangeNm = _zoomSteps[0]);
+      return;
+    }
     final idx = _zoomSteps.indexWhere((s) => s >= _rangeNm);
     if (idx > 0) setState(() => _rangeNm = _zoomSteps[idx - 1]);
   }
@@ -191,41 +214,69 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
     final center = ll.LatLng(ownPos.latitude as double, ownPos.longitude as double);
     final vessel = ref.watch(vesselProvider);
     final hdg = vessel.heading;
+    final cog = vessel.courseOverGround;
+    final sog = vessel.speedOverGround;
 
-    // Apply heading-up rotation
-    if (_mapMode == _RadarMode.headingUp && hdg != null) {
-      try { _mapController.rotate(-hdg); } catch (_) {}
-    } else if (_mapMode == _RadarMode.northUp) {
-      try { _mapController.rotate(0); } catch (_) {}
+    // Build COG/heading prediction polylines
+    final headingLines = <Polyline>[];
+
+    // Own ship 6-minute COG prediction line
+    if (cog != null && sog != null && sog > 0.1) {
+      final predPt = _projectPosition(
+        lat: center.latitude,
+        lon: center.longitude,
+        cogDeg: cog,
+        sogKn: sog,
+        minutes: 6,
+      );
+      headingLines.add(Polyline(
+        points: [center, predPt],
+        color: AppColors.cyan.withOpacity(0.7),
+        strokeWidth: 2.0,
+      ));
+    }
+
+    // AIS target 6-minute COG prediction lines
+    for (final t in targets) {
+      if (t.position == null || t.cog == null || t.sog == null || t.sog! < 0.1) continue;
+      final tPos = ll.LatLng(t.position!.latitude, t.position!.longitude);
+      final tPred = _projectPosition(
+        lat: t.position!.latitude,
+        lon: t.position!.longitude,
+        cogDeg: t.cog!,
+        sogKn: t.sog!,
+        minutes: 6,
+      );
+      final color = _riskColor(t);
+      headingLines.add(Polyline(
+        points: [tPos, tPred],
+        color: color.withOpacity(0.6),
+        strokeWidth: 1.5,
+      ));
     }
 
     final markers = <Marker>[
-      // Own ship
+      // Own ship — directional triangle pointing toward heading/COG
       Marker(
         point: center,
-        width: 28,
-        height: 28,
+        width: 32,
+        height: 32,
         child: Transform.rotate(
-          angle: (_mapMode == _RadarMode.headingUp ? 0 : (hdg ?? 0)) *
+          angle: (_mapMode == _RadarMode.headingUp ? 0 : (hdg ?? cog ?? 0)) *
               math.pi / 180.0,
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppColors.cyan,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-            ),
-            child: const Icon(Icons.navigation_rounded,
-                color: Colors.white, size: 14),
+          child: CustomPaint(
+            size: const Size(32, 32),
+            painter: _ShipTrianglePainter(color: AppColors.cyan, isOwnShip: true),
           ),
         ),
       ),
-      // AIS targets
+      // AIS targets — directional triangles rotated by COG
       for (final t in targets)
         if (t.position != null)
           Marker(
             point: ll.LatLng(t.position!.latitude, t.position!.longitude),
-            width: 80,
-            height: 44,
+            width: 84,
+            height: 48,
             child: GestureDetector(
               onTap: () => _showTargetDetailSheet(context, t),
               child: _AisMapMarker(target: t),
@@ -240,12 +291,28 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
           options: MapOptions(
             initialCenter: center,
             initialZoom: 12,
+            interactionOptions: const InteractionOptions(
+              flags: InteractiveFlag.pinchZoom |
+                  InteractiveFlag.drag |
+                  InteractiveFlag.doubleTapZoom,
+            ),
           ),
           children: [
+            // Base: OpenStreetMap
             TileLayer(
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'com.yokuli.app',
+              maxZoom: 19,
             ),
+            // Marine overlay: OpenSeaMap (nautical marks, depth contours, buoys, lights)
+            TileLayer(
+              urlTemplate: 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.yokuli.app',
+              maxZoom: 18,
+              backgroundColor: Colors.transparent,
+            ),
+            // COG/heading prediction polylines
+            PolylineLayer(polylines: headingLines),
             MarkerLayer(markers: markers),
           ],
         ),
@@ -255,7 +322,16 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
           left: 8,
           child: _RadarModeToggle(
             mode: _mapMode,
-            onChanged: (m) => setState(() => _mapMode = m),
+            onChanged: (m) {
+              setState(() => _mapMode = m);
+              // Immediately apply rotation on mode switch
+              final heading = ref.read(vesselProvider).heading;
+              if (m == _RadarMode.headingUp && heading != null) {
+                try { _mapController.rotate(-heading); } catch (_) {}
+              } else {
+                try { _mapController.rotate(0); } catch (_) {}
+              }
+            },
           ),
         ),
         // Top-right: switch to polar radar
@@ -268,22 +344,111 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
             onTap: () => setState(() => _showMap = false),
           ),
         ),
-        // Bottom-right: re-center
+        // Right side: zoom buttons
+        Positioned(
+          bottom: 80,
+          right: 8,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _MapIconBtn(
+                icon: Icons.add,
+                tooltip: 'Zoom in',
+                onTap: () {
+                  try {
+                    _mapController.move(
+                        _mapController.camera.center,
+                        _mapController.camera.zoom + 1);
+                  } catch (_) {}
+                },
+              ),
+              const SizedBox(height: 4),
+              _MapIconBtn(
+                icon: Icons.remove,
+                tooltip: 'Zoom out',
+                onTap: () {
+                  try {
+                    _mapController.move(
+                        _mapController.camera.center,
+                        _mapController.camera.zoom - 1);
+                  } catch (_) {}
+                },
+              ),
+            ],
+          ),
+        ),
+        // Bottom-right: re-center + fit all
         Positioned(
           bottom: 16,
           right: 8,
-          child: _MapIconBtn(
-            icon: Icons.my_location_rounded,
-            tooltip: 'Center',
-            onTap: () {
-              try {
-                _mapController.move(center, _mapController.camera.zoom);
-              } catch (_) {}
-            },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _MapIconBtn(
+                icon: Icons.fit_screen_rounded,
+                tooltip: 'Fit all targets',
+                onTap: () {
+                  if (targets.isEmpty) return;
+                  final allPoints = <ll.LatLng>[center];
+                  for (final t in targets) {
+                    if (t.position != null) {
+                      allPoints.add(ll.LatLng(
+                          t.position!.latitude, t.position!.longitude));
+                    }
+                  }
+                  try {
+                    final bounds = ll.LatLngBounds.fromPoints(allPoints);
+                    _mapController.fitCamera(
+                      CameraFit.bounds(
+                        bounds: bounds,
+                        padding: const EdgeInsets.all(40),
+                      ),
+                    );
+                  } catch (_) {}
+                },
+              ),
+              const SizedBox(height: 4),
+              _MapIconBtn(
+                icon: Icons.my_location_rounded,
+                tooltip: 'Center',
+                onTap: () {
+                  try {
+                    _mapController.move(center, _mapController.camera.zoom);
+                  } catch (_) {}
+                },
+              ),
+            ],
           ),
+        ),
+        // Zoom level indicator (bottom-left)
+        Positioned(
+          bottom: 16,
+          left: 8,
+          child: _ZoomLevelIndicator(mapController: _mapController),
         ),
       ],
     );
+  }
+
+  /// Project a position by [minutes] ahead at [sogKn] knots on [cogDeg].
+  static ll.LatLng _projectPosition({
+    required double lat,
+    required double lon,
+    required double cogDeg,
+    required double sogKn,
+    required double minutes,
+  }) {
+    final distNm = sogKn * minutes / 60.0;
+    final cogRad = cogDeg * math.pi / 180.0;
+    final dlat = distNm * math.cos(cogRad) / 60.0;
+    final dlon = distNm * math.sin(cogRad) / 60.0 / math.cos(lat * math.pi / 180.0);
+    return ll.LatLng(lat + dlat, lon + dlon);
+  }
+
+  static Color _riskColor(AisTargetState t) {
+    if (t.closestPointNm != null && t.closestPointNm! < 0.5) return AppColors.danger;
+    if (t.closestPointNm != null && t.closestPointNm! < 1.0) return AppColors.warning;
+    return AppColors.success;
   }
 
   Widget _buildPolarView(List<AisTargetState> targets, bool hasPosition) {
@@ -432,16 +597,17 @@ class _AisMapMarker extends StatelessWidget {
         (target.mmsi.length >= 4
             ? target.mmsi.substring(target.mmsi.length - 4)
             : target.mmsi);
+    final dirDeg = target.cog ?? target.heading ?? 0.0;
+    final cpa = target.closestPointNm;
+    final tcpa = target.tcpaMinutes;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white70, width: 1),
+        Transform.rotate(
+          angle: dirDeg * math.pi / 180.0,
+          child: CustomPaint(
+            size: const Size(18, 18),
+            painter: _ShipTrianglePainter(color: color, isOwnShip: false),
           ),
         ),
         Text(
@@ -453,7 +619,94 @@ class _AisMapMarker extends StatelessWidget {
             shadows: const [Shadow(color: Colors.black, blurRadius: 3)],
           ),
         ),
+        if (cpa != null && tcpa != null && tcpa > 0 && cpa < 1.0)
+          Text(
+            'CPA ${cpa.toStringAsFixed(1)}NM',
+            style: TextStyle(
+              color: color.withOpacity(0.9),
+              fontSize: 8,
+              fontWeight: FontWeight.w600,
+              shadows: const [Shadow(color: Colors.black, blurRadius: 3)],
+            ),
+          ),
       ],
+    );
+  }
+}
+
+/// Paints a simple ship-triangle pointing upward (north) before any rotation.
+class _ShipTrianglePainter extends CustomPainter {
+  final Color color;
+  final bool isOwnShip;
+  const _ShipTrianglePainter({required this.color, required this.isOwnShip});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final path = Path()
+      ..moveTo(w / 2, 0)
+      ..lineTo(w, h * 0.8)
+      ..lineTo(w / 2, h * 0.6)
+      ..lineTo(0, h * 0.8)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
+    if (isOwnShip) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ShipTrianglePainter old) =>
+      old.color != color || old.isOwnShip != isOwnShip;
+}
+
+/// Small overlay that displays the current flutter_map zoom level.
+class _ZoomLevelIndicator extends StatefulWidget {
+  final MapController mapController;
+  const _ZoomLevelIndicator({required this.mapController});
+
+  @override
+  State<_ZoomLevelIndicator> createState() => _ZoomLevelIndicatorState();
+}
+
+class _ZoomLevelIndicatorState extends State<_ZoomLevelIndicator> {
+  late StreamSubscription<MapEvent> _sub;
+  double _zoom = 12;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = widget.mapController.mapEventStream.listen((event) {
+      if (mounted) setState(() => _zoom = event.camera.zoom);
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withOpacity(0.88),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Text(
+        'Z${_zoom.toStringAsFixed(1)}',
+        style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+      ),
     );
   }
 }
@@ -886,7 +1139,11 @@ class _RiskTab extends ConsumerWidget {
         return _TargetListTile(
           target: target,
           showRiskIndicator: true,
-          onTap: () => _showTargetDetailSheet(context, target),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => _CollisionAvoidanceScreen(target: target),
+            ),
+          ),
         );
       },
     );
@@ -1634,6 +1891,440 @@ class _EmptyState extends StatelessWidget {
                 color: AppColors.textSecondary, fontSize: 15),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Collision Avoidance Screen
+// ---------------------------------------------------------------------------
+
+class _CollisionAvoidanceScreen extends ConsumerStatefulWidget {
+  final AisTargetState target;
+  const _CollisionAvoidanceScreen({required this.target});
+
+  @override
+  ConsumerState<_CollisionAvoidanceScreen> createState() =>
+      _CollisionAvoidanceScreenState();
+}
+
+class _CollisionAvoidanceScreenState
+    extends ConsumerState<_CollisionAvoidanceScreen> {
+  final _mapController = MapController();
+  late Timer _countdownTimer;
+  int _secondsElapsed = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _secondsElapsed++);
+    });
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer.cancel();
+    _mapController.dispose();
+    super.dispose();
+  }
+
+  /// Project a lat/lon forward by [minutes] at [sogKn] knots on [cogDeg].
+  static ll.LatLng _project({
+    required double lat,
+    required double lon,
+    required double cogDeg,
+    required double sogKn,
+    required double minutes,
+  }) {
+    final distNm = sogKn * minutes / 60.0;
+    final cogRad = cogDeg * math.pi / 180.0;
+    final dlat = distNm * math.cos(cogRad) / 60.0;
+    final dlon =
+        distNm * math.sin(cogRad) / 60.0 / math.cos(lat * math.pi / 180.0);
+    return ll.LatLng(lat + dlat, lon + dlon);
+  }
+
+  /// Determine COLREGS situation and guidance text.
+  String _colregsGuidance({
+    required double? ownCog,
+    required double? tgtBearing,
+    required double? tgtCpa,
+  }) {
+    if (tgtCpa == null || tgtBearing == null || ownCog == null) {
+      return 'Insufficient data for COLREGS assessment';
+    }
+    // Relative bearing of target from own ship bow
+    final relBear = ((tgtBearing - ownCog) + 360) % 360;
+
+    if (tgtCpa < 0.5) {
+      // Determine stand-on vs give-way
+      if (relBear >= 315 || relBear <= 45) {
+        // Target ahead
+        return 'Head-on situation — Both vessels: alter course to starboard';
+      } else if (relBear > 45 && relBear < 225) {
+        // Target on starboard side
+        return 'Crossing — Give-way vessel: alter course to starboard';
+      } else {
+        // Target on port side
+        return 'Crossing — Stand-on vessel: maintain course and speed';
+      }
+    } else if (tgtCpa < 1.0) {
+      return 'Caution: monitor closely — maintain safe passing distance';
+    }
+    return 'Safe passing distance — Continue monitoring';
+  }
+
+  Color _riskColor(double? cpa) {
+    if (cpa == null) return AppColors.inactive;
+    if (cpa < 0.5) return AppColors.danger;
+    if (cpa < 1.0) return AppColors.warning;
+    return AppColors.success;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vessel = ref.watch(vesselProvider);
+    final t = widget.target;
+
+    final ownPos = vessel.position;
+    final ownCog = vessel.courseOverGround;
+    final ownSog = vessel.speedOverGround;
+    final ownHdg = vessel.heading;
+
+    final tgtPos = t.position;
+    final tgtCog = t.cog;
+    final tgtSog = t.sog;
+
+    // Build map points list
+    final List<ll.LatLng> allPoints = [];
+    ll.LatLng? ownLatLng;
+    ll.LatLng? tgtLatLng;
+
+    if (ownPos != null) {
+      ownLatLng = ll.LatLng(ownPos.latitude, ownPos.longitude);
+      allPoints.add(ownLatLng);
+    }
+    if (tgtPos != null) {
+      tgtLatLng = ll.LatLng(tgtPos.latitude, tgtPos.longitude);
+      allPoints.add(tgtLatLng);
+    }
+
+    // CPA point (midpoint approximation using own projection)
+    ll.LatLng? cpaPoint;
+    if (ownLatLng != null && ownCog != null && ownSog != null &&
+        t.tcpaMinutes != null && t.tcpaMinutes! > 0) {
+      cpaPoint = _project(
+        lat: ownLatLng.latitude,
+        lon: ownLatLng.longitude,
+        cogDeg: ownCog,
+        sogKn: ownSog,
+        minutes: t.tcpaMinutes!,
+      );
+      allPoints.add(cpaPoint);
+    }
+
+    // 15-minute prediction polylines
+    final polylines = <Polyline>[];
+
+    if (ownLatLng != null && ownCog != null && ownSog != null && ownSog > 0.1) {
+      final ownEnd = _project(
+        lat: ownLatLng.latitude, lon: ownLatLng.longitude,
+        cogDeg: ownCog, sogKn: ownSog, minutes: 15,
+      );
+      polylines.add(Polyline(
+        points: [ownLatLng, ownEnd],
+        color: AppColors.cyan.withOpacity(0.8),
+        strokeWidth: 2.5,
+      ));
+    }
+
+    if (tgtLatLng != null && tgtCog != null && tgtSog != null && tgtSog > 0.1) {
+      final tgtEnd = _project(
+        lat: tgtLatLng.latitude, lon: tgtLatLng.longitude,
+        cogDeg: tgtCog, sogKn: tgtSog, minutes: 15,
+      );
+      polylines.add(Polyline(
+        points: [tgtLatLng, tgtEnd],
+        color: _riskColor(t.closestPointNm).withOpacity(0.8),
+        strokeWidth: 2.5,
+      ));
+    }
+
+    final markers = <Marker>[];
+    if (ownLatLng != null) {
+      markers.add(Marker(
+        point: ownLatLng,
+        width: 32,
+        height: 32,
+        child: Transform.rotate(
+          angle: (ownHdg ?? ownCog ?? 0) * math.pi / 180.0,
+          child: CustomPaint(
+            size: const Size(32, 32),
+            painter: _ShipTrianglePainter(color: AppColors.cyan, isOwnShip: true),
+          ),
+        ),
+      ));
+    }
+    if (tgtLatLng != null) {
+      markers.add(Marker(
+        point: tgtLatLng,
+        width: 32,
+        height: 32,
+        child: Transform.rotate(
+          angle: (tgtCog ?? 0) * math.pi / 180.0,
+          child: CustomPaint(
+            size: const Size(32, 32),
+            painter: _ShipTrianglePainter(
+                color: _riskColor(t.closestPointNm), isOwnShip: false),
+          ),
+        ),
+      ));
+    }
+    if (cpaPoint != null) {
+      markers.add(Marker(
+        point: cpaPoint,
+        width: 24,
+        height: 24,
+        child: Container(
+          width: 14,
+          height: 14,
+          decoration: BoxDecoration(
+            color: AppColors.danger.withOpacity(0.8),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 1.5),
+          ),
+          child: const Center(
+            child: Text('!', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900)),
+          ),
+        ),
+      ));
+    }
+
+    // TCPA remaining (subtract elapsed seconds since screen opened)
+    final tcpaRemaining = t.tcpaMinutes != null
+        ? (t.tcpaMinutes! - _secondsElapsed / 60.0)
+        : null;
+
+    final cpa = t.closestPointNm;
+    final riskCol = _riskColor(cpa);
+    final colregs = _colregsGuidance(
+      ownCog: ownCog,
+      tgtBearing: t.relativeBearingDeg,
+      tgtCpa: cpa,
+    );
+
+    final ll.LatLng mapCenter = ownLatLng ??
+        tgtLatLng ??
+        const ll.LatLng(0, 0);
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: Text(t.displayName),
+        backgroundColor: AppColors.surface,
+        foregroundColor: AppColors.textPrimary,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: riskCol.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: riskCol.withOpacity(0.6)),
+            ),
+            child: Text(
+              cpa != null ? 'CPA ${cpa.toStringAsFixed(2)} NM' : 'CPA —',
+              style: TextStyle(color: riskCol, fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Map view — takes ~55% of screen
+          Expanded(
+            flex: 55,
+            child: FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: mapCenter,
+                initialZoom: 11,
+                onMapReady: () {
+                  if (allPoints.length >= 2) {
+                    try {
+                      final bounds = ll.LatLngBounds.fromPoints(allPoints);
+                      _mapController.fitCamera(
+                        CameraFit.bounds(
+                          bounds: bounds,
+                          padding: const EdgeInsets.all(60),
+                        ),
+                      );
+                    } catch (_) {}
+                  }
+                },
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate:
+                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.yokuli.app',
+                  maxZoom: 19,
+                ),
+                TileLayer(
+                  urlTemplate:
+                      'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.yokuli.app',
+                  maxZoom: 18,
+                  backgroundColor: Colors.transparent,
+                ),
+                PolylineLayer(polylines: polylines),
+                MarkerLayer(markers: markers),
+              ],
+            ),
+          ),
+          // Info panel — takes ~45% of screen
+          Expanded(
+            flex: 45,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Key metrics row
+                  Row(
+                    children: [
+                      _CaInfoCard(
+                        label: 'CPA',
+                        value: cpa != null
+                            ? '${cpa.toStringAsFixed(2)} NM'
+                            : '—',
+                        color: riskCol,
+                      ),
+                      const SizedBox(width: 8),
+                      _CaInfoCard(
+                        label: 'TCPA',
+                        value: tcpaRemaining != null && tcpaRemaining > 0
+                            ? '${tcpaRemaining.toStringAsFixed(1)} min'
+                            : (t.tcpaMinutes != null ? 'Passed' : '—'),
+                        color: tcpaRemaining != null && tcpaRemaining < 10
+                            ? AppColors.danger
+                            : AppColors.warning,
+                      ),
+                      const SizedBox(width: 8),
+                      _CaInfoCard(
+                        label: 'Bearing',
+                        value: t.relativeBearingDeg != null
+                            ? '${t.relativeBearingDeg!.toStringAsFixed(0)}°'
+                            : '—',
+                        color: AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 8),
+                      _CaInfoCard(
+                        label: 'Rel. Speed',
+                        value: (ownSog != null && tgtSog != null)
+                            ? '${(tgtSog! - ownSog!).abs().toStringAsFixed(1)} kn'
+                            : '—',
+                        color: AppColors.textSecondary,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // COLREGS guidance
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: riskCol.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: riskCol.withOpacity(0.4)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Icon(Icons.gavel_rounded, color: riskCol, size: 15),
+                          const SizedBox(width: 6),
+                          Text(
+                            'COLREGS Guidance',
+                            style: TextStyle(
+                              color: riskCol,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ]),
+                        const SizedBox(height: 6),
+                        Text(
+                          colregs,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // Target detail row
+                  Row(children: [
+                    const Icon(Icons.directions_boat_outlined,
+                        color: AppColors.textSecondary, size: 14),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${t.displayName}  •  '
+                      'SOG: ${t.sog?.toStringAsFixed(1) ?? '—'} kn  •  '
+                      'COG: ${t.cog?.toStringAsFixed(0) ?? '—'}°',
+                      style: const TextStyle(
+                          color: AppColors.textSecondary, fontSize: 12),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CaInfoCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const _CaInfoCard(
+      {required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        decoration: BoxDecoration(
+          color: AppColors.cardBg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label,
+                style: const TextStyle(
+                    color: AppColors.textMuted, fontSize: 10)),
+            const SizedBox(height: 3),
+            Text(value,
+                style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700)),
+          ],
+        ),
       ),
     );
   }
