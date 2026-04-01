@@ -35,12 +35,9 @@ class GlassCard extends StatelessWidget {
     Widget card = Container(
       decoration: BoxDecoration(
         borderRadius: radius,
-        // Gradient border: bright top/left (light source), faint bottom/right
-        border: Border(
-          top: BorderSide(color: Colors.white.withOpacity(0.65), width: 1.0),
-          left: BorderSide(color: Colors.white.withOpacity(0.35), width: 0.8),
-          right: BorderSide(color: Colors.white.withOpacity(0.12), width: 0.8),
-          bottom: BorderSide(color: Colors.white.withOpacity(0.08), width: 0.8),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.22),
+          width: 0.8,
         ),
         boxShadow: [
           BoxShadow(
@@ -73,12 +70,15 @@ class GlassCard extends StatelessWidget {
               ),
             ),
             foregroundDecoration: BoxDecoration(
-              // Inner caustic: soft bright wash from the top
+              // Top specular edge + inner caustic combined
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
-                end: Alignment.center,
+                end: Alignment.bottomCenter,
+                stops: const [0.0, 0.04, 0.30, 1.0],
                 colors: [
-                  Colors.white.withOpacity(0.22),
+                  Colors.white.withOpacity(0.55), // bright top edge (specular)
+                  Colors.white.withOpacity(0.20), // caustic fade
+                  Colors.white.withOpacity(0.04),
                   Colors.transparent,
                 ],
               ),

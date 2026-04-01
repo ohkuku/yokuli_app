@@ -201,14 +201,12 @@ class _GlassTile extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: radius,
         // Gradient border: bright top (light source), faint bottom
-        border: isStub
-            ? Border.all(color: Colors.white.withOpacity(0.08), width: 0.8)
-            : Border(
-                top: BorderSide(color: Colors.white.withOpacity(0.60), width: 1.0),
-                left: BorderSide(color: Colors.white.withOpacity(0.30), width: 0.8),
-                right: BorderSide(color: Colors.white.withOpacity(0.10), width: 0.8),
-                bottom: BorderSide(color: Colors.white.withOpacity(0.06), width: 0.8),
-              ),
+        border: Border.all(
+          color: isStub
+              ? Colors.white.withOpacity(0.08)
+              : Colors.white.withOpacity(0.20),
+          width: 0.8,
+        ),
         boxShadow: isStub
             ? null
             : [
@@ -249,14 +247,16 @@ class _GlassTile extends StatelessWidget {
             ),
             foregroundDecoration: isStub
                 ? null
-                : const BoxDecoration(
-                    // Inner caustic: soft light wash from top
+                : BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
-                      end: Alignment.center,
+                      end: Alignment.bottomCenter,
+                      stops: const [0.0, 0.04, 0.35, 1.0],
                       colors: [
-                        Color(0x30FFFFFF), // ~19% white
-                        Color(0x00FFFFFF),
+                        Colors.white.withOpacity(0.50),
+                        Colors.white.withOpacity(0.18),
+                        Colors.white.withOpacity(0.03),
+                        Colors.transparent,
                       ],
                     ),
                   ),
