@@ -12,6 +12,7 @@ import '../../../core/providers/vessel_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/id_gen.dart';
 import '../providers/mob_provider.dart';
+import '../../../app.dart' show isOnMobScreenProvider;
 
 class MobScreen extends ConsumerStatefulWidget {
   const MobScreen({super.key});
@@ -28,10 +29,15 @@ class _MobScreenState extends ConsumerState<MobScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
+    // Tell the overlay layer we're on this screen — suppresses the MOB strip.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(isOnMobScreenProvider.notifier).state = true;
+    });
   }
 
   @override
   void dispose() {
+    ref.read(isOnMobScreenProvider.notifier).state = false;
     _tabs.dispose();
     super.dispose();
   }

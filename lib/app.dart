@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,43 +18,62 @@ import 'core/services/lan_sync/lan_sync_service.dart';
 import 'router/app_router.dart';
 
 /// Provider that holds the alarm instance to display as an in-app banner.
-/// The alarm evaluator sets this when a new alarm triggers.
 final inAppAlarmBannerProvider = StateProvider<AlarmInstance?>((ref) => null);
 
-class YokulApp extends ConsumerWidget {
+/// True while the user is actively viewing the MOB screen.
+/// Used to suppress the persistent MOB bottom banner on that screen.
+final isOnMobScreenProvider = StateProvider<bool>((ref) => false);
+
+// ---------------------------------------------------------------------------
+// Root app widget
+// ---------------------------------------------------------------------------
+
+class YokulApp extends ConsumerStatefulWidget {
   const YokulApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final router = ref.watch(appRouterProvider);
-    final locale = ref.watch(flutterLocaleProvider);
+  ConsumerState<YokulApp> createState() => _YokulAppState();
+}
 
-    // Navigate every device to the MOB screen when a MOB is triggered.
-    ref.listen(
+class _YokulAppState extends ConsumerState<YokulApp> {
+  @override
+  void initState() {
+    super.initState();
+
+    // ── MOB: navigate EVERY device to /mob when an alert activates ──────────
+    // Using listenManual in initState is the correct Riverpod pattern for
+    // navigation — it registers exactly once and survives rebuilds.
+    ref.listenManual(
       mobProvider.select((s) => s.activeMob?.id),
       (prev, mobId) {
-        if (mobId != null && mobId != prev) {
-          router.push('/mob');
-          // Haptic burst so the crew feels it even on a noisy bridge.
-          HapticFeedback.heavyImpact();
-          Future.delayed(const Duration(milliseconds: 300), HapticFeedback.heavyImpact);
-          Future.delayed(const Duration(milliseconds: 600), HapticFeedback.heavyImpact);
-        }
+        if (mobId == null || mobId == prev) return;
+        // Defer to next frame so the router is fully settled.
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ref.read(appRouterProvider).push('/mob');
+        });
+        // Haptic burst — crew feels it on a noisy bridge.
+        HapticFeedback.heavyImpact();
+        Future.delayed(const Duration(milliseconds: 300), HapticFeedback.heavyImpact);
+        Future.delayed(const Duration(milliseconds: 600), HapticFeedback.heavyImpact);
       },
+      fireImmediately: false,
     );
 
-    // During join sync, return to the main waiting page (home) for all devices.
-    ref.listen(
+    // ── Join sync: take all devices back to home while a peer is syncing ────
+    ref.listenManual(
       networkJoinInProgressProvider,
       (prev, next) {
-        if (next == true && prev != true) {
-          router.go('/');
-        }
+        if (next != true || prev == true) return;
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (mounted) ref.read(appRouterProvider).go('/');
+        });
       },
+      fireImmediately: false,
     );
 
-    // Show in-app banner when a new active alarm instance appears.
-    ref.listen(
+    // ── In-app alarm banner ──────────────────────────────────────────────────
+    ref.listenManual(
       activeAlarmInstancesProvider,
       (prev, next) {
         final prevIds = prev?.map((a) => a.id).toSet() ?? {};
@@ -65,7 +85,14 @@ class YokulApp extends ConsumerWidget {
           ref.read(inAppAlarmBannerProvider.notifier).state = newAlarm;
         }
       },
+      fireImmediately: false,
     );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final router = ref.watch(appRouterProvider);
+    final locale = ref.watch(flutterLocaleProvider);
 
     return MaterialApp.router(
       title: 'Yokuli',
@@ -80,44 +107,35 @@ class YokulApp extends ConsumerWidget {
       ],
       routerConfig: router,
       builder: (context, child) {
-        return _AlarmBannerOverlay(child: child ?? const SizedBox.shrink());
+        return _OverlayLayer(child: child ?? const SizedBox.shrink());
       },
     );
   }
 }
 
 // ---------------------------------------------------------------------------
-// In-app alarm banner overlay
+// Global overlay layer: alarm banner + MOB persistent strip + join sync dim
 // ---------------------------------------------------------------------------
 
-Color _levelColor(AlarmLevel level) {
-  switch (level) {
-    case AlarmLevel.critical:
-      return AppColors.danger;
-    case AlarmLevel.warning:
-      return AppColors.warning;
-    case AlarmLevel.info:
-      return AppColors.cyan;
-  }
-}
-
-class _AlarmBannerOverlay extends ConsumerWidget {
+class _OverlayLayer extends ConsumerWidget {
   final Widget child;
-  const _AlarmBannerOverlay({required this.child});
+  const _OverlayLayer({required this.child});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final alarm = ref.watch(inAppAlarmBannerProvider);
-    final joining = ref.watch(networkJoinInProgressProvider);
-    final mob = ref.watch(mobProvider);
+    final alarm       = ref.watch(inAppAlarmBannerProvider);
+    final joining     = ref.watch(networkJoinInProgressProvider);
+    final mob         = ref.watch(mobProvider);
+    final onMobScreen = ref.watch(isOnMobScreenProvider);
 
     return Stack(
       children: [
         child,
+
+        // ── Join-sync dim overlay ────────────────────────────────────────────
         if (joining)
           Positioned.fill(
             child: AbsorbPointer(
-              absorbing: true,
               child: Container(
                 color: Colors.black.withOpacity(0.35),
                 alignment: Alignment.center,
@@ -132,8 +150,7 @@ class _AlarmBannerOverlay extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       SizedBox(
-                        width: 16,
-                        height: 16,
+                        width: 16, height: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                       SizedBox(width: 10),
@@ -147,22 +164,21 @@ class _AlarmBannerOverlay extends ConsumerWidget {
               ),
             ),
           ),
-        // Persistent MOB strip — visible on every screen while alert is active.
-        if (mob.isMobActive)
+
+        // ── Persistent MOB strip — hidden while already on /mob ─────────────
+        if (mob.isMobActive && !onMobScreen)
           Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
+            bottom: 0, left: 0, right: 0,
             child: _MobPersistentBanner(
               mob: mob.activeMob!,
               onTap: () => ref.read(appRouterProvider).push('/mob'),
             ),
           ),
+
+        // ── Alarm banner (top) ───────────────────────────────────────────────
         if (alarm != null)
           Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
+            top: 0, left: 0, right: 0,
             child: SafeArea(
               child: _AlarmBanner(
                 alarm: alarm,
@@ -176,108 +192,8 @@ class _AlarmBannerOverlay extends ConsumerWidget {
   }
 }
 
-class _AlarmBanner extends StatefulWidget {
-  final AlarmInstance alarm;
-  final VoidCallback onDismiss;
-  const _AlarmBanner({required this.alarm, required this.onDismiss});
-
-  @override
-  State<_AlarmBanner> createState() => _AlarmBannerState();
-}
-
-class _AlarmBannerState extends State<_AlarmBanner>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  late final Animation<Offset> _slide;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 320));
-    _slide = Tween<Offset>(
-      begin: const Offset(0, -1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
-    _ctrl.forward();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final color = _levelColor(widget.alarm.level);
-
-    return SlideTransition(
-      position: _slide,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.92),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: color.withOpacity(0.35),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              children: [
-                const Icon(Icons.warning_amber_rounded,
-                    color: Colors.white, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        widget.alarm.ruleName,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700),
-                      ),
-                      Text(
-                        widget.alarm.message,
-                        style: TextStyle(
-                            color: Colors.white.withOpacity(0.85),
-                            fontSize: 12),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: widget.onDismiss,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    child: const Icon(Icons.close_rounded,
-                        color: Colors.white, size: 18),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Persistent MOB strip — shown on every screen while a MOB alert is active
+// Persistent MOB strip
 // ---------------------------------------------------------------------------
 
 class _MobPersistentBanner extends StatefulWidget {
@@ -364,19 +280,116 @@ class _MobPersistentBannerState extends State<_MobPersistentBanner>
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(8),
+                // Tap anywhere on the bar to go to MOB screen — no button needed
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Alarm banner (slides in from top)
+// ---------------------------------------------------------------------------
+
+Color _levelColor(AlarmLevel level) {
+  switch (level) {
+    case AlarmLevel.critical: return AppColors.danger;
+    case AlarmLevel.warning:  return AppColors.warning;
+    case AlarmLevel.info:     return AppColors.cyan;
+  }
+}
+
+class _AlarmBanner extends StatefulWidget {
+  final AlarmInstance alarm;
+  final VoidCallback onDismiss;
+  const _AlarmBanner({required this.alarm, required this.onDismiss});
+
+  @override
+  State<_AlarmBanner> createState() => _AlarmBannerState();
+}
+
+class _AlarmBannerState extends State<_AlarmBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<Offset> _slide;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 320));
+    _slide = Tween<Offset>(
+      begin: const Offset(0, -1),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _levelColor(widget.alarm.level);
+    return SlideTransition(
+      position: _slide,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.92),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(0.35),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded,
+                    color: Colors.white, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.alarm.ruleName,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700),
+                      ),
+                      Text(
+                        widget.alarm.message,
+                        style: TextStyle(
+                            color: Colors.white.withOpacity(0.85),
+                            fontSize: 12),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
-                  child: const Text(
-                    '查看',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
+                ),
+                GestureDetector(
+                  onTap: widget.onDismiss,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    child: const Icon(Icons.close_rounded,
+                        color: Colors.white, size: 18),
                   ),
                 ),
               ],

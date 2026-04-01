@@ -36,15 +36,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) showUpdateDialogIfNeeded(context);
-      // Auto-navigate to MOB screen when a remote MOB arrives
-      ref.listenManual(
-        mobProvider.select((s) => s.activeMob),
-        (prev, next) {
-          if (next != null && prev == null && mounted) {
-            context.push('/mob');
-          }
-        },
-      );
     });
   }
 

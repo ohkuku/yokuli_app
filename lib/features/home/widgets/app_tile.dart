@@ -1,5 +1,5 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:liquid_glass_lts/liquid_glass_lts.dart';
 import '../../../core/theme/app_colors.dart';
 
 class AppTileData {
@@ -196,19 +196,22 @@ class _GlassTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LiquidGlassWidget(
-      expand: true, // fills the GridView cell
-      config: LiquidGlassConfig(
-        borderRadius: 22.0,
-        blur: const BlurConfig(sigma: 18.0),
-        tint: TintConfig(
-          color: isStub ? const Color(0x14FFFFFF) : accent.withOpacity(0.08),
+    const radius = BorderRadius.all(Radius.circular(22));
+    final tint = isStub
+        ? const Color(0x14FFFFFF)
+        : accent.withOpacity(0.08);
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        border: Border.all(
+          color: isStub
+              ? Colors.white.withOpacity(0.10)
+              : Colors.white.withOpacity(0.22),
+          width: 0.8,
         ),
-        fresnel: const FresnelConfig(intensity: 0.55, power: 3.5),
-        glare: const GlareConfig(opacity: 0.35, angle: -35.0, size: 0.6, hardness: 0.25),
-        refraction: const RefractionConfig(strength: 0.18, dispersion: 0.012, edgeSoftness: 0.06),
-        shadows: isStub
-            ? const []
+        boxShadow: isStub
+            ? null
             : [
                 BoxShadow(
                   color: accent.withOpacity(0.20),
@@ -223,10 +226,78 @@ class _GlassTile extends StatelessWidget {
                 ),
               ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: child,
+      child: ClipRRect(
+        borderRadius: radius,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: CustomPaint(
+            painter: _LiquidGlassTilePainter(tint: tint, isStub: isStub, accent: accent),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: child,
+            ),
+          ),
+        ),
       ),
     );
   }
+}
+
+class _LiquidGlassTilePainter extends CustomPainter {
+  final Color tint;
+  final bool isStub;
+  final Color accent;
+
+  const _LiquidGlassTilePainter({
+    required this.tint,
+    required this.isStub,
+    required this.accent,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+
+    // 1. Tint fill
+    canvas.drawRect(rect, Paint()..color = tint);
+
+    if (isStub) return;
+
+    // 2. Fresnel rim
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = RadialGradient(
+          center: Alignment.center,
+          radius: 1.0,
+          colors: [
+            Colors.transparent,
+            Colors.white.withOpacity(0.15),
+            Colors.white.withOpacity(0.40),
+          ],
+          stops: const [0.0, 0.65, 1.0],
+        ).createShader(rect),
+    );
+
+    // 3. Specular — diagonal glare upper-left → lower-right, -35°
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = LinearGradient(
+          begin: const Alignment(-1.2, -1.2),
+          end: const Alignment(0.6, 0.6),
+          colors: [
+            Colors.white.withOpacity(0.35),
+            Colors.white.withOpacity(0.15),
+            Colors.white.withOpacity(0.04),
+            Colors.transparent,
+          ],
+          stops: const [0.0, 0.20, 0.45, 1.0],
+        ).createShader(rect),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_LiquidGlassTilePainter old) =>
+      old.tint != tint || old.isStub != isStub || old.accent != accent;
 }
