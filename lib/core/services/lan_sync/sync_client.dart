@@ -442,15 +442,20 @@ class HostDiscovery {
               ? json['deviceId'] as String
               : ws;
           final sv = json['sv'] as int? ?? 0;
+          final host = json['host'] as String;
+          final port = json['port'] as int;
+          final addrKey = '$host:$port';
 
-          // Emit (or re-emit) only when stateVersionMs increases
+          // Emit (or re-emit) only when stateVersionMs increases.
+          // Also register the address so the TCP scan doesn't re-emit the same host.
           final lastSv = _seenVersions[deviceId] ?? -1;
           if (sv > lastSv) {
             _seenVersions[deviceId] = sv;
+            _emittedAddresses.add(addrKey);
             _controller?.add((
               name: json['name'] as String? ?? 'Unknown',
-              host: json['host'] as String,
-              port: json['port'] as int,
+              host: host,
+              port: port,
               ws: ws,
               deviceId: deviceId,
               stateVersionMs: sv,
@@ -464,42 +469,105 @@ class HostDiscovery {
   void stop() {
     _mdnsRetryTimer?.cancel();
     _mdnsRetryTimer = null;
+    _subnetScanTimer?.cancel();
+    _subnetScanTimer = null;
+    _subnetScanDone = false;
     try { _mdnsClient?.stop(); } catch (_) {}
     _mdnsClient = null;
     _socket?.close();
     _socket = null;
     _seenVersions.clear();
+    _emittedAddresses.clear();
   }
 
-  /// Probe a subnet for running hosts (fallback when UDP not available).
+  /// Internal: scan the /24 subnet of this device's own IP for open [port].
+  /// Emits discovered hosts directly into [stream], respecting [_emittedAddresses]
+  /// so a host already found via mDNS or UDP is never emitted twice.
+  /// Runs in parallel batches of 20 with a 500 ms timeout per host.
+  Future<void> _runSubnetScanAndEmit({int port = SyncHost.defaultPort}) async {
+    final ownIp = await _getLocalIp();
+    if (ownIp == null) return;
+    final parts = ownIp.split('.');
+    if (parts.length != 4) return;
+    final prefix = '${parts[0]}.${parts[1]}.${parts[2]}';
+
+    for (var batch = 1; batch <= 254; batch += 20) {
+      final futures = <Future<void>>[];
+      for (var i = batch; i < batch + 20 && i <= 254; i++) {
+        final ip = '$prefix.$i';
+        if (ip == ownIp) continue;
+        final addrKey = '$ip:$port';
+        futures.add(
+          Socket.connect(ip, port, timeout: const Duration(milliseconds: 500))
+              .then((s) {
+            s.destroy();
+            if (!_emittedAddresses.contains(addrKey)) {
+              _emittedAddresses.add(addrKey);
+              _controller?.add((
+                name: 'Yokuli @ $ip',
+                host: ip,
+                port: port,
+                ws: 'ws://$ip:$port',
+                deviceId: '',
+                stateVersionMs: 0,
+              ));
+            }
+          })
+              .catchError((_) {}),
+        );
+      }
+      await Future.wait(futures);
+    }
+  }
+
+  /// Get this device's local IPv4 address; returns null if unavailable.
+  static Future<String?> _getLocalIp() async {
+    try {
+      for (final iface in await NetworkInterface.list()) {
+        for (final addr in iface.addresses) {
+          if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+            return addr.address;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Probe a subnet for running hosts (used by the settings UI manual scan).
   /// TCP scan can't retrieve deviceId or sv, so they default to empty/0.
+  /// Runs in parallel batches of 20 with a 500 ms timeout per host.
   static Future<List<DiscoveredHost>> scanSubnet({
     required String subnet, // e.g. "192.168.1"
     int port = SyncHost.defaultPort,
-    Duration timeout = const Duration(milliseconds: 300),
   }) async {
+    final ownIp = await _getLocalIp();
     final results = <DiscoveredHost>[];
-    final futures = <Future<void>>[];
 
-    for (int i = 1; i <= 254; i++) {
-      final ip = '$subnet.$i';
-      futures.add(() async {
-        try {
-          final socket = await Socket.connect(ip, port, timeout: timeout);
-          socket.destroy();
-          results.add((
-            name: 'Yokuli @ $ip',
-            host: ip,
-            port: port,
-            ws: 'ws://$ip:$port',
-            deviceId: '',
-            stateVersionMs: 0,
-          ));
-        } catch (_) {}
-      }());
+    for (var batch = 1; batch <= 254; batch += 20) {
+      final futures = <Future<void>>[];
+      for (var i = batch; i < batch + 20 && i <= 254; i++) {
+        final ip = '$subnet.$i';
+        if (ip == ownIp) continue;
+        futures.add(
+          Socket.connect(ip, port, timeout: const Duration(milliseconds: 500))
+              .then((s) {
+            s.destroy();
+            results.add((
+              name: 'Yokuli @ $ip',
+              host: ip,
+              port: port,
+              ws: 'ws://$ip:$port',
+              deviceId: '',
+              stateVersionMs: 0,
+            ));
+          })
+              .catchError((_) {}),
+        );
+      }
+      await Future.wait(futures);
     }
 
-    await Future.wait(futures);
     return results;
   }
 }

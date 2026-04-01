@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/models/vessel_state.dart';
 import '../../../core/providers/vessel_provider.dart';
 import '../../../core/providers/connection_provider.dart';
 import '../../../core/providers/locale_provider.dart';
@@ -102,14 +103,14 @@ class VesselStatusBar extends ConsumerWidget {
 
   static _SkQuality _skQualityFor(
     AppConnectionState conn,
-    dynamic vessel, // VesselState
+    VesselState vessel,
   ) {
     if (!conn.isSignalKConnected) return _SkQuality.dead;
 
-    final lastUpdated = vessel.lastUpdated as DateTime?;
-    if (lastUpdated == null) return _SkQuality.dead;
+    // epoch-0 means no data has arrived yet
+    if (vessel.lastUpdated.millisecondsSinceEpoch == 0) return _SkQuality.dead;
 
-    final age = DateTime.now().difference(lastUpdated);
+    final age = DateTime.now().difference(vessel.lastUpdated);
     if (age.inSeconds <= 5) return _SkQuality.good;
     if (age.inSeconds <= 30) return _SkQuality.stale;
     return _SkQuality.dead;
