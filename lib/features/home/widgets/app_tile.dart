@@ -226,6 +226,7 @@ class _GlassTile extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
           child: Stack(
+            fit: StackFit.expand,
             children: [
               Container(
                 padding: const EdgeInsets.all(16),

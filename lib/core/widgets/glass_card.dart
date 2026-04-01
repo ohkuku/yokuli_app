@@ -56,6 +56,7 @@ class GlassCard extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
           child: Stack(
+            fit: StackFit.expand,
             children: [
               // Frosted base
               Container(
