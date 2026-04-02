@@ -700,6 +700,8 @@ class WeatherState {
   final double? swellHeight;   // current, metres
   final int? swellDirection;   // current, degrees
   final double? windGust;      // current, knots
+  final double? pressure;      // hPa
+  final double? humidity;      // %
   final List<HourlyForecast> hourly;
   final List<DailyForecast> daily;
   final List<TideEntry> tides;
@@ -722,6 +724,8 @@ class WeatherState {
     this.swellHeight,
     this.swellDirection,
     this.windGust,
+    this.pressure,
+    this.humidity,
     this.hourly = const [],
     this.daily = const [],
     this.tides = const [],
@@ -761,6 +765,8 @@ class WeatherState {
     double? swellHeight,
     int? swellDirection,
     double? windGust,
+    double? pressure,
+    double? humidity,
     List<HourlyForecast>? hourly,
     List<DailyForecast>? daily,
     List<TideEntry>? tides,
@@ -783,6 +789,8 @@ class WeatherState {
         swellHeight: swellHeight ?? this.swellHeight,
         swellDirection: swellDirection ?? this.swellDirection,
         windGust: windGust ?? this.windGust,
+        pressure: pressure ?? this.pressure,
+        humidity: humidity ?? this.humidity,
         hourly: hourly ?? this.hourly,
         daily: daily ?? this.daily,
         tides: tides ?? this.tides,
