@@ -109,43 +109,32 @@ class WeatherNotifier extends Notifier<WeatherState> {
         return;
       }
 
-      // 2. Choose weather source: MetService NZ for NZ waters, Open-Meteo elsewhere
+      // 2. MetService NZ
       final settings = ref.read(settingsProvider);
-      final bool inNZ = _isInNewZealand(pos.latitude, pos.longitude);
 
-      WeatherState? result;
-      if (inNZ && settings.metServiceApiKey.isNotEmpty) {
-        result = await _fetchMetService(
-          lat: pos.latitude,
-          lon: pos.longitude,
-          apiKey: settings.metServiceApiKey,
+      if (settings.metServiceApiKey.isEmpty) {
+        state = state.copyWith(
+          isLoading: false,
+          error: 'MetService API Key 未配置，请在设置中配置',
         );
-        if (result == null) {
-          final detail = _lastMetServiceError;
-          // Fall back to Open-Meteo if MetService fails
-          result = await _fetchOpenMeteo(lat: pos.latitude, lon: pos.longitude);
-          if (result == null) {
-            state = state.copyWith(
-              isLoading: false,
-              error: detail != null
-                  ? 'MetService 请求失败 ($detail)'
-                  : 'MetService 请求失败，请检查 API Key 和网络',
-            );
-            return;
-          }
-        }
-      } else {
-        // Outside NZ or no MetService key — use free Open-Meteo
-        result = await _fetchOpenMeteo(lat: pos.latitude, lon: pos.longitude);
-        if (result == null) {
-          state = state.copyWith(
-            isLoading: false,
-            error: inNZ
-                ? 'MetService API Key 未配置，请在设置中配置'
-                : '天气数据获取失败，请检查网络连接',
-          );
-          return;
-        }
+        return;
+      }
+
+      final result = await _fetchMetService(
+        lat: pos.latitude,
+        lon: pos.longitude,
+        apiKey: settings.metServiceApiKey,
+      );
+
+      if (result == null) {
+        final detail = _lastMetServiceError;
+        state = state.copyWith(
+          isLoading: false,
+          error: detail != null
+              ? 'MetService 请求失败 ($detail)'
+              : 'MetService 请求失败，请检查 API Key 和网络',
+        );
+        return;
       }
 
       // Fetch tides if WorldTides key is configured
@@ -223,141 +212,6 @@ class WeatherNotifier extends Notifier<WeatherState> {
     } catch (_) {
       return null;
     }
-  }
-
-  /// Rough bounding box for New Zealand + territorial waters.
-  bool _isInNewZealand(double lat, double lon) =>
-      lat >= -52.0 && lat <= -29.0 && lon >= 162.0 && lon <= 180.0;
-
-  // --------------------------------------------------------------------------
-  // Open-Meteo (free, no API key, global coverage)
-  // --------------------------------------------------------------------------
-
-  Future<WeatherState?> _fetchOpenMeteo({
-    required double lat,
-    required double lon,
-  }) async {
-    try {
-      final uri = Uri.https('api.open-meteo.com', '/v1/forecast', {
-        'latitude': lat.toStringAsFixed(4),
-        'longitude': lon.toStringAsFixed(4),
-        'current': [
-          'temperature_2m', 'relative_humidity_2m', 'apparent_temperature',
-          'weather_code', 'wind_speed_10m', 'wind_direction_10m',
-          'wind_gusts_10m', 'surface_pressure', 'visibility',
-        ].join(','),
-        'hourly': [
-          'temperature_2m', 'wind_speed_10m', 'wind_direction_10m',
-          'weather_code', 'wave_height', 'wave_period',
-        ].join(','),
-        'daily': [
-          'weather_code', 'temperature_2m_max', 'temperature_2m_min',
-          'wind_speed_10m_max', 'wind_direction_10m_dominant',
-        ].join(','),
-        'wind_speed_unit': 'kn',
-        'timezone': 'auto',
-        'forecast_days': '7',
-      });
-      final resp = await http
-          .get(uri, headers: {'Accept': 'application/json'})
-          .timeout(const Duration(seconds: 20));
-      if (resp.statusCode != 200) return null;
-      final body = jsonDecode(resp.body) as Map<String, dynamic>;
-      final cur = body['current'] as Map<String, dynamic>? ?? {};
-      final hourlyRaw = body['hourly'] as Map<String, dynamic>? ?? {};
-      final dailyRaw = body['daily'] as Map<String, dynamic>? ?? {};
-
-      // --- current conditions ---
-      final tempC = (cur['temperature_2m'] as num?)?.toDouble();
-      final windKn = (cur['wind_speed_10m'] as num?)?.toDouble();
-      final windDir = (cur['wind_direction_10m'] as num?)?.toInt();
-      final gustKn = (cur['wind_gusts_10m'] as num?)?.toDouble();
-      final humidity = (cur['relative_humidity_2m'] as num?)?.toDouble();
-      final pressureHPa = (cur['surface_pressure'] as num?)?.toDouble();
-      final visibilityM = (cur['visibility'] as num?)?.toDouble();
-      final wmoCode = (cur['weather_code'] as num?)?.toInt() ?? 0;
-      final (code, description) = _wmoToCondition(wmoCode);
-
-      // --- hourly (next 24 h) ---
-      final times = (hourlyRaw['time'] as List?)?.cast<String>() ?? [];
-      final hwSpeed = (hourlyRaw['wind_speed_10m'] as List?)?.cast<num?>() ?? [];
-      final hwDir = (hourlyRaw['wind_direction_10m'] as List?)?.cast<num?>() ?? [];
-      final hwCode = (hourlyRaw['weather_code'] as List?)?.cast<num?>() ?? [];
-      final hwHeight = (hourlyRaw['wave_height'] as List?)?.cast<num?>() ?? [];
-      final hwPeriod = (hourlyRaw['wave_period'] as List?)?.cast<num?>() ?? [];
-      final hourly = <HourlyForecast>[];
-      for (int i = 0; i < times.length && i < 24; i++) {
-        final dt = DateTime.tryParse(times[i]);
-        if (dt == null) continue;
-        final (hCode, hDesc) = _wmoToCondition((hwCode.elementAtOrNull(i) ?? 0).toInt());
-        hourly.add(HourlyForecast(
-          time: dt,
-          temp: (hourlyRaw['temperature_2m'] as List?)?.elementAtOrNull(i) != null
-              ? ((hourlyRaw['temperature_2m'] as List)[i] as num).toDouble() : null,
-          windSpeed: hwSpeed.elementAtOrNull(i)?.toDouble(),
-          windDir: hwDir.elementAtOrNull(i)?.toInt(),
-          waveHeight: hwHeight.elementAtOrNull(i)?.toDouble(),
-          wavePeriod: hwPeriod.elementAtOrNull(i)?.toDouble(),
-        ));
-      }
-
-      // --- daily ---
-      final dTimes = (dailyRaw['time'] as List?)?.cast<String>() ?? [];
-      final dMax = (dailyRaw['temperature_2m_max'] as List?)?.cast<num?>() ?? [];
-      final dMin = (dailyRaw['temperature_2m_min'] as List?)?.cast<num?>() ?? [];
-      final dWind = (dailyRaw['wind_speed_10m_max'] as List?)?.cast<num?>() ?? [];
-      final dWindDir = (dailyRaw['wind_direction_10m_dominant'] as List?)?.cast<num?>() ?? [];
-      final dCode = (dailyRaw['weather_code'] as List?)?.cast<num?>() ?? [];
-      final daily = <DailyForecast>[];
-      for (int i = 0; i < dTimes.length; i++) {
-        final dt = DateTime.tryParse(dTimes[i]);
-        if (dt == null) continue;
-        final (dWmoCode, dDesc) = _wmoToCondition((dCode.elementAtOrNull(i) ?? 0).toInt());
-        daily.add(DailyForecast(
-          date: dt,
-          tempMax: dMax.elementAtOrNull(i)?.toDouble(),
-          tempMin: dMin.elementAtOrNull(i)?.toDouble(),
-          windSpeedMax: dWind.elementAtOrNull(i)?.toDouble(),
-          windDirDominant: dWindDir.elementAtOrNull(i)?.toInt(),
-        ));
-      }
-
-      return WeatherState(
-        temperature: tempC,
-        windSpeed: windKn,
-        windDirection: windDir,
-        windGust: gustKn,
-        humidity: humidity,
-        pressure: pressureHPa,
-        visibility: visibilityM != null ? visibilityM / 1000.0 : null, // m → km
-        weatherCode: code,
-        condition: conditionFromCode(code),
-        description: description,
-        hourly: hourly,
-        daily: daily,
-        fetchedAt: DateTime.now(),
-        locationLabel: 'Open-Meteo',
-        isLoading: false,
-      );
-    } on TimeoutException {
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Map WMO weather codes to (appCode, Chinese description).
-  (int, String) _wmoToCondition(int wmo) {
-    if (wmo == 0) return (0, '晴');
-    if (wmo <= 2) return (1, '少云');
-    if (wmo == 3) return (2, '多云');
-    if (wmo <= 49) return (3, '雾');
-    if (wmo <= 59) return (51, '毛毛雨');
-    if (wmo <= 69) return (61, '雨');
-    if (wmo <= 79) return (71, '雪');
-    if (wmo <= 84) return (80, '阵雨');
-    if (wmo <= 99) return (95, '雷暴');
-    return (2, '多云');
   }
 
   // --------------------------------------------------------------------------
