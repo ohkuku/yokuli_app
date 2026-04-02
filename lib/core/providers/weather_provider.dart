@@ -330,16 +330,12 @@ class WeatherNotifier extends Notifier<WeatherState> {
           .get(uri, headers: {'apikey': apiKey, 'Accept': 'application/json'})
           .timeout(const Duration(seconds: 20));
       if (resp.statusCode != 200) {
-        // Try to extract a human-readable reason from the response body.
-        String reason = 'HTTP ${resp.statusCode}';
-        try {
-          final errBody = jsonDecode(resp.body);
-          final msg = (errBody is Map)
-              ? (errBody['message'] ?? errBody['error'] ?? errBody['title'])
-              : null;
-          if (msg != null) reason += ' — $msg';
-        } catch (_) {}
-        _lastMetServiceError = reason;
+        // Show URL + raw body so we can diagnose the exact failure.
+        final rawBody = resp.body.length > 300
+            ? resp.body.substring(0, 300)
+            : resp.body;
+        _lastMetServiceError =
+            'HTTP ${resp.statusCode} URL:$uri BODY:$rawBody';
         return null;
       }
 
