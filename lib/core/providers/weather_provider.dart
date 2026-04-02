@@ -321,8 +321,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
   static const _metoceanVars = [
     'wind.speed.at-10m',         // m/s  → ×1.944 knots
     'wind.direction.at-10m',     // degrees
-    'wind.speed.gust',           // m/s
-    'air.temperature.at-2m',     // Kelvin (API default) → −273.15 °C
+    'air.temperature.at-2m',     // Kelvin → −273.15 °C
     'air.pressure.at-sea-level', // hPa
     'air.humidity.at-2m',        // %
     'wave.height',               // m
@@ -386,7 +385,6 @@ class WeatherNotifier extends Notifier<WeatherState> {
 
       final wsMs  = _v('wind.speed.at-10m');
       final wDir  = _v('wind.direction.at-10m');
-      final gust  = _v('wind.speed.gust');
       final tempK = _v('air.temperature.at-2m');
       final press = _v('air.pressure.at-sea-level');
       final hum   = _v('air.humidity.at-2m');
@@ -395,7 +393,6 @@ class WeatherNotifier extends Notifier<WeatherState> {
 
       // Current = index 0
       final curWindKn  = toKn(wsMs.elementAtOrNull(0));
-      final curGustKn  = toKn(gust.elementAtOrNull(0));
       final curWindDir = wDir.elementAtOrNull(0)?.toInt();
       final curTemp    = toC(tempK.elementAtOrNull(0));
       final curWaveH   = waveH.elementAtOrNull(0);
@@ -413,7 +410,6 @@ class WeatherNotifier extends Notifier<WeatherState> {
           temp: toC(tempK.elementAtOrNull(i)),
           windSpeed: toKn(wsMs.elementAtOrNull(i)),
           windDir: wDir.elementAtOrNull(i)?.toInt(),
-          windGust: toKn(gust.elementAtOrNull(i)),
           waveHeight: waveH.elementAtOrNull(i),
           wavePeriod: waveP.elementAtOrNull(i),
         ));
@@ -465,7 +461,6 @@ class WeatherNotifier extends Notifier<WeatherState> {
         condition: conditionFromCode(code),
         windSpeed: curWindKn,
         windDirection: curWindDir,
-        windGust: curGustKn,
         waveHeight: curWaveH,
         wavePeriod: curWaveP,
         pressure: curPress,
