@@ -282,38 +282,54 @@ class WeatherNotifier extends Notifier<WeatherState> {
     catch (_) { return null; }
   }
 
-  /// Tests MetService API key with a known NZ position (Wellington).
-  /// Returns null on success, or an error string on failure.
-  /// Only blocks for 401/403 (invalid key). Non-auth errors pass through.
+  /// Validates MetOcean API key using Wellington position.
+  /// Returns null on success, error string on failure.
   static Future<String?> validateApiKey(String apiKey) async {
     if (apiKey.isEmpty) return 'MetService API Key 未配置';
     try {
-      final uri = Uri.https('data.metservice.com', '/v1/point-forecast', {
+      final uri = Uri.https('forecast-v2.metoceanapi.com', '/point/time', {
         'lat': '-41.2865',
         'lon': '174.7762',
+        'variables': 'wind.speed.at-10m',
+        'count': '1',
       });
       final resp = await http
-          .get(uri, headers: {
-            'apikey': apiKey,
-            'Accept': 'application/json',
-          })
+          .get(uri, headers: {'x-api-key': apiKey, 'Accept': 'application/json'})
           .timeout(const Duration(seconds: 12));
-      if (resp.statusCode == 200) return null; // valid
+      if (resp.statusCode == 200) return null;
       if (resp.statusCode == 401 || resp.statusCode == 403) {
-        return 'API Key 无效 — 请检查密钥 (HTTP ${resp.statusCode})';
+        return 'API Key 无效 (HTTP ${resp.statusCode})';
       }
-      // For 404 and other errors: key might be valid but endpoint has issues.
-      // Don't block app startup for non-auth errors.
-      return null; // treat as "probably OK"
+      return null;
     } on TimeoutException {
-      return null; // Don't block on timeout — might just be network issue
-    } catch (e) {
-      return null; // Don't block on connection errors
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 
   // Internal: last MetService HTTP error for surfacing to the user.
   String? _lastMetServiceError;
+
+  // ---------------------------------------------------------------------------
+  // MetOcean Solutions / MetService NZ point forecast API
+  // Docs: https://forecast-docs.metoceanapi.com/swagger-ui/
+  // Auth: x-api-key header; key from https://console.metoceanapi.com/
+  // ---------------------------------------------------------------------------
+
+  static const _metoceanVars = [
+    'wind.speed.at-10m',        // m/s
+    'wind.direction.at-10m',    // degrees
+    'wind.speed.gust',          // m/s
+    'air.temperature.at-2m',    // °C
+    'air.pressure.at-sea-level',// hPa
+    'air.humidity.at-2m',       // %
+    'precipitation.rate',       // mm/h
+    'wave.height',              // m
+    'wave.period.peak',         // s
+    'wave.height.swell',        // m
+    'wave.direction.swell',     // degrees
+  ];
 
   Future<WeatherState?> _fetchMetService({
     required double lat,
@@ -322,160 +338,155 @@ class WeatherNotifier extends Notifier<WeatherState> {
   }) async {
     _lastMetServiceError = null;
     try {
-      final uri = Uri.https('data.metservice.com', '/v1/point-forecast', {
+      final now = DateTime.now().toUtc();
+      final uri = Uri.https('forecast-v2.metoceanapi.com', '/point/time', {
         'lat': lat.toStringAsFixed(4),
         'lon': lon.toStringAsFixed(4),
+        'variables': _metoceanVars.join(','),
+        'from': now.toIso8601String(),
+        'interval': '1h',
+        'count': '168', // 7 days hourly
       });
       final resp = await http
-          .get(uri, headers: {'apikey': apiKey, 'Accept': 'application/json'})
-          .timeout(const Duration(seconds: 20));
+          .get(uri, headers: {'x-api-key': apiKey, 'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 25));
+
       if (resp.statusCode != 200) {
-        // Show URL + raw body so we can diagnose the exact failure.
-        final rawBody = resp.body.length > 300
-            ? resp.body.substring(0, 300)
-            : resp.body;
-        _lastMetServiceError =
-            'HTTP ${resp.statusCode} URL:$uri BODY:$rawBody';
+        final body = resp.body.length > 400 ? resp.body.substring(0, 400) : resp.body;
+        _lastMetServiceError = 'HTTP ${resp.statusCode}: $body';
         return null;
       }
 
-      final raw = jsonDecode(resp.body);
-      // MetService may wrap data in different ways; normalise to a flat map.
-      final Map<String, dynamic> body;
-      if (raw is Map<String, dynamic>) {
-        // Some versions wrap in {"forecastData": {...}} or {"data": {...}}
-        body = (raw['forecastData'] as Map<String, dynamic>?) ??
-               (raw['data'] as Map<String, dynamic>?) ??
-               raw;
-      } else {
-        _lastMetServiceError = '响应格式不支持';
-        return null;
+      final json = jsonDecode(resp.body) as Map<String, dynamic>;
+      // Response: { "dimensions": { "time": { "data": [...] } },
+      //             "variables": { "wind.speed.at-10m": { "data": [...] } } }
+      final dims = json['dimensions'] as Map<String, dynamic>? ?? {};
+      final vars = json['variables'] as Map<String, dynamic>? ?? {};
+      final times = ((dims['time'] as Map<String, dynamic>?)?['data'] as List?)
+              ?.cast<String>() ?? [];
+
+      List<double?> _v(String name) {
+        final v = vars[name] as Map<String, dynamic>?;
+        return (v?['data'] as List?)
+                ?.map((e) => (e as num?)?.toDouble())
+                .toList() ?? [];
       }
 
-      // --- Current — try both "current" and "currently" keys ---
-      final current = (body['current'] ?? body['currently'] ?? body['now'] ??
-                       body['conditions']) as Map<String, dynamic>? ?? {};
-      final tempC = (current['airTemperature'] ?? current['temperature'] as num?)?.toDouble();
-      final windMs = (current['windSpeed'] as num?)?.toDouble();
-      final windKn = windMs != null ? windMs * 1.944 : null;
-      final windDir = (current['windDirection'] as num?)?.toInt();
-      final gustMs = (current['windGust'] as num?)?.toDouble();
-      final gustKn = gustMs != null ? gustMs * 1.944 : null;
-      final symbolCode = current['symbolCode'] as String? ?? '';
-      final (code, description) = _metServiceSymbolToWmo(symbolCode);
-      final waveHeight = (current['waveHeight'] as num?)?.toDouble();
-      final wavePeriod = (current['wavePeriod'] as num?)?.toDouble();
-      final swellHeight = (current['swellHeight'] as num?)?.toDouble();
-      final swellDir = (current['swellDirection'] as num?)?.toInt();
+      final wsMs   = _v('wind.speed.at-10m');
+      final wDir   = _v('wind.direction.at-10m');
+      final gustMs = _v('wind.speed.gust');
+      final temp   = _v('air.temperature.at-2m');
+      final press  = _v('air.pressure.at-sea-level');
+      final hum    = _v('air.humidity.at-2m');
+      final waveH  = _v('wave.height');
+      final waveP  = _v('wave.period.peak');
+      final swellH = _v('wave.height.swell');
+      final swellD = _v('wave.direction.swell');
 
-      // --- Hourly ---
-      final hourlyRaw = body['hourly'] as List<dynamic>? ?? [];
+      double? toKn(double? ms) => ms != null ? ms * 1.944 : null;
+
+      // Current = index 0
+      final curWindKn  = toKn(wsMs.elementAtOrNull(0));
+      final curGustKn  = toKn(gustMs.elementAtOrNull(0));
+      final curWindDir = wDir.elementAtOrNull(0)?.toInt();
+      final curTemp    = temp.elementAtOrNull(0);
+      final curWaveH   = waveH.elementAtOrNull(0);
+      final curWaveP   = waveP.elementAtOrNull(0);
+      final curSwellH  = swellH.elementAtOrNull(0);
+      final curSwellD  = swellD.elementAtOrNull(0)?.toInt();
+      final curPress   = press.elementAtOrNull(0);
+      final curHum     = hum.elementAtOrNull(0);
+
+      // Hourly — next 24h
       final hourly = <HourlyForecast>[];
-      for (final h in hourlyRaw) {
-        if (h is! Map<String, dynamic>) continue;
-        try {
-          final t = DateTime.tryParse(h['time'] as String? ?? '');
-          if (t == null) continue;
-          final wSpeedMs = (h['windSpeed'] as num?)?.toDouble();
-          final gMs = (h['windGust'] as num?)?.toDouble();
-          hourly.add(HourlyForecast(
-            time: t,
-            temp: (h['airTemperature'] as num?)?.toDouble(),
-            windSpeed: wSpeedMs != null ? wSpeedMs * 1.944 : null,
-            windDir: (h['windDirection'] as num?)?.toInt(),
-            windGust: gMs != null ? gMs * 1.944 : null,
-            precip: (h['precipitation'] as num?)?.toDouble(),
-            waveHeight: (h['waveHeight'] as num?)?.toDouble(),
-            wavePeriod: (h['wavePeriod'] as num?)?.toDouble(),
-            symbolCode: h['symbolCode'] as String?,
-          ));
-        } catch (_) {}
+      for (int i = 0; i < times.length && i < 24; i++) {
+        final dt = DateTime.tryParse(times[i]);
+        if (dt == null) continue;
+        hourly.add(HourlyForecast(
+          time: dt,
+          temp: temp.elementAtOrNull(i),
+          windSpeed: toKn(wsMs.elementAtOrNull(i)),
+          windDir: wDir.elementAtOrNull(i)?.toInt(),
+          windGust: toKn(gustMs.elementAtOrNull(i)),
+          waveHeight: waveH.elementAtOrNull(i),
+          wavePeriod: waveP.elementAtOrNull(i),
+        ));
       }
 
-      // --- Daily ---
-      final dailyRaw = body['daily'] as List<dynamic>? ?? [];
-      final daily = <DailyForecast>[];
-      for (final d in dailyRaw) {
-        if (d is! Map<String, dynamic>) continue;
-        try {
-          // Try 'date', 'time', or 'day' key
-          final dateStr = (d['date'] ?? d['time'] ?? d['day']) as String?;
-          if (dateStr == null) continue;
-          final date = DateTime.tryParse(dateStr);
-          if (date == null) continue;
-          final maxWSpeedMs = (d['maxWindSpeed'] as num?)?.toDouble();
-          daily.add(DailyForecast(
-            date: date,
-            tempMax: (d['maxTemperature'] ?? d['maxAirTemperature']) is num
-                ? ((d['maxTemperature'] ?? d['maxAirTemperature']) as num)
-                    .toDouble()
-                : null,
-            tempMin: (d['minTemperature'] ?? d['minAirTemperature']) is num
-                ? ((d['minTemperature'] ?? d['minAirTemperature']) as num)
-                    .toDouble()
-                : null,
-            windSpeedMax:
-                maxWSpeedMs != null ? maxWSpeedMs * 1.944 : null,
-            windDirDominant:
-                (d['dominantWindDirection'] ?? d['windDirection']) is num
-                    ? ((d['dominantWindDirection'] ?? d['windDirection']) as num)
-                        .toInt()
-                    : null,
-            precipTotal:
-                (d['totalPrecipitation'] ?? d['precipitation']) is num
-                    ? ((d['totalPrecipitation'] ?? d['precipitation']) as num)
-                        .toDouble()
-                    : null,
-            waveHeightMax:
-                (d['maxWaveHeight'] ?? d['waveHeight']) is num
-                    ? ((d['maxWaveHeight'] ?? d['waveHeight']) as num)
-                        .toDouble()
-                    : null,
-            symbolCode: d['symbolCode'] as String?,
-          ));
-        } catch (_) {}
+      // Daily — aggregate into day buckets
+      final Map<String, List<int>> buckets = {};
+      for (int i = 0; i < times.length; i++) {
+        final dt = DateTime.tryParse(times[i]);
+        if (dt == null) continue;
+        final key = '${dt.year}-${dt.month.toString().padLeft(2,'0')}-${dt.day.toString().padLeft(2,'0')}';
+        buckets.putIfAbsent(key, () => []).add(i);
       }
+      final daily = <DailyForecast>[];
+      for (final entry in buckets.entries) {
+        final idxs = entry.value;
+        final dt = DateTime.tryParse(times[idxs.first]);
+        if (dt == null) continue;
+        double? maxWind, minTemp, maxTemp, maxWave;
+        int? midWindDir;
+        for (final i in idxs) {
+          final w = toKn(wsMs.elementAtOrNull(i));
+          if (w != null && (maxWind == null || w > maxWind)) maxWind = w;
+          final t = temp.elementAtOrNull(i);
+          if (t != null) {
+            if (minTemp == null || t < minTemp) minTemp = t;
+            if (maxTemp == null || t > maxTemp) maxTemp = t;
+          }
+          final wh = waveH.elementAtOrNull(i);
+          if (wh != null && (maxWave == null || wh > maxWave)) maxWave = wh;
+        }
+        midWindDir = wDir.elementAtOrNull(idxs[idxs.length ~/ 2])?.toInt();
+        daily.add(DailyForecast(
+          date: DateTime(dt.year, dt.month, dt.day),
+          tempMax: maxTemp,
+          tempMin: minTemp,
+          windSpeedMax: maxWind,
+          windDirDominant: midWindDir,
+          waveHeightMax: maxWave,
+        ));
+      }
+
+      // Derive a simple weather code from wind speed
+      final (code, description) = _windToCondition(curWindKn ?? 0);
 
       return WeatherState(
-        temperature: tempC,
-        feelsLike: (current['feelsLike'] as num?)?.toDouble() ?? tempC,
+        temperature: curTemp,
         weatherCode: code,
         condition: conditionFromCode(code),
-        windSpeed: windKn,
-        windDirection: windDir,
-        windGust: gustKn,
-        precipitation: (current['precipitation'] as num?)?.toDouble(),
-        waveHeight: waveHeight,
-        wavePeriod: wavePeriod,
-        swellHeight: swellHeight,
-        swellDirection: swellDir,
+        windSpeed: curWindKn,
+        windDirection: curWindDir,
+        windGust: curGustKn,
+        waveHeight: curWaveH,
+        wavePeriod: curWaveP,
+        swellHeight: curSwellH,
+        swellDirection: curSwellD,
+        pressure: curPress,
+        humidity: curHum,
         description: description,
         fetchedAt: DateTime.now(),
-        locationLabel: (body['location'] as Map<String, dynamic>?)?['name']
-                as String? ??
-            'MetService NZ',
+        locationLabel: 'MetOcean/MetService NZ',
         hourly: hourly,
         daily: daily,
       );
-    } catch (_) {
+    } on TimeoutException {
+      _lastMetServiceError = '请求超时';
+      return null;
+    } catch (e) {
+      _lastMetServiceError = e.toString();
       return null;
     }
   }
 
-  /// Map MetService symbol codes to WMO codes + Chinese description.
-  (int, String) _metServiceSymbolToWmo(String symbol) {
-    if (symbol.contains('sun') || symbol.contains('clear')) return (0, '晴朗');
-    if (symbol.contains('few_cloud') || symbol.contains('partly'))
-      return (2, '局部多云');
-    if (symbol.contains('cloud')) return (3, '多云');
-    if (symbol.contains('fog')) return (45, '有雾');
-    if (symbol.contains('drizzle')) return (51, '毛毛雨');
-    if (symbol.contains('heavy_rain') || symbol.contains('rain_heavy'))
-      return (65, '大雨');
-    if (symbol.contains('rain')) return (61, '小雨');
-    if (symbol.contains('snow')) return (71, '降雪');
-    if (symbol.contains('thunder')) return (95, '雷阵雨');
-    return (1, '基本晴朗');
+  (int, String) _windToCondition(double windKn) {
+    if (windKn >= 48) return (95, '烈风');
+    if (windKn >= 34) return (65, '强风');
+    if (windKn >= 22) return (55, '中等风力');
+    if (windKn >= 11) return (3,  '微风');
+    return (1, '平静');
   }
 }
 
