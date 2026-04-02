@@ -291,7 +291,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
         'lat': '-41.2865',
         'lon': '174.7762',
         'variables': 'wind.speed.at-10m',
-        'count': '1',
+        'repeat': '1',
       });
       final resp = await http
           .get(uri, headers: {'x-api-key': apiKey, 'Accept': 'application/json'})
@@ -345,7 +345,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
         'variables': _metoceanVars.join(','),
         'from': now.toIso8601String(),
         'interval': '1h',
-        'count': '168', // 7 days hourly
+        'repeat': '168', // 7 days hourly
       });
       final resp = await http
           .get(uri, headers: {'x-api-key': apiKey, 'Accept': 'application/json'})
