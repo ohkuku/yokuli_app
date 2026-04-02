@@ -325,7 +325,14 @@ class WeatherNotifier extends Notifier<WeatherState> {
     'air.pressure.at-sea-level', // hPa
     'air.humidity.at-2m',        // %
     'wave.height',               // m
-    'wave.period.peak',          // s  (wave.period alone is not a valid name)
+    'wave.period.peak',          // s
+  ];
+
+  // Optional variables tried after the main request — failure does not block.
+  static const _metoceanOptional = [
+    'wind.speed.gust.at-10m',   // gust candidates
+    'wind.speed.gust',
+    'wind.gust.at-10m',
   ];
 
   /// One-shot variable probe: tests every candidate variable against the real
@@ -402,16 +409,19 @@ class WeatherNotifier extends Notifier<WeatherState> {
               ?.map((e) => e.toString()).toList() ?? [];
 
       // Extract variable data, applying noData mask
-      List<double?> _v(String name) {
-        final v = vars[name] as Map<String, dynamic>?;
-        if (v == null) return [];
+      List<double?> _vFrom(Map<String, dynamic> v) {
         final data   = v['data']   as List? ?? [];
         final noData = v['noData'] as List? ?? [];
         return List.generate(data.length, (i) {
-          if (noData.elementAtOrNull(i) != 0) return null; // masked
+          if ((noData.elementAtOrNull(i) as num? ?? 0) != 0) return null;
           final e = data[i];
           return e is num ? e.toDouble() : null;
         });
+      }
+      List<double?> _v(String name) {
+        final v = vars[name] as Map<String, dynamic>?;
+        if (v == null) return [];
+        return _vFrom(v);
       }
 
       double? toKn(double? ms)     => ms != null ? ms * 1.944 : null;
@@ -423,10 +433,37 @@ class WeatherNotifier extends Notifier<WeatherState> {
       final press = _v('air.pressure.at-sea-level');
       final hum   = _v('air.humidity.at-2m');
       final waveH = _v('wave.height');
-      final waveP = _v('wave.period');
+      final waveP = _v('wave.period.peak');
+
+      // Try optional variables (gust) — one at a time, silently ignore 400.
+      List<double?> gustMs = [];
+      for (final candidate in _metoceanOptional) {
+        try {
+          final gr = await http.post(
+            Uri.parse('https://forecast-v2.metoceanapi.com/point/time'),
+            headers: {'x-api-key': apiKey, 'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'points': [{'lat': lat, 'lon': lon}],
+              'variables': [candidate],
+              'time': {'from': from, 'interval': '1h', 'repeat': 168},
+            }),
+          ).timeout(const Duration(seconds: 10));
+          if (gr.statusCode == 200) {
+            final gj = jsonDecode(gr.body) as Map<String, dynamic>;
+            final gv = (gj['variables'] as Map<String, dynamic>?)?[candidate];
+            if (gv != null) {
+              gustMs = _vFrom(gv);
+              // ignore: avoid_print
+              print('[MetOcean] gust variable found: $candidate');
+              break;
+            }
+          }
+        } catch (_) {}
+      }
 
       // Current = index 0
       final curWindKn  = toKn(wsMs.elementAtOrNull(0));
+      final curGustKn  = toKn(gustMs.elementAtOrNull(0));
       final curWindDir = wDir.elementAtOrNull(0)?.toInt();
       final curTemp    = toC(tempK.elementAtOrNull(0));
       final curWaveH   = waveH.elementAtOrNull(0);
@@ -444,6 +481,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
           temp: toC(tempK.elementAtOrNull(i)),
           windSpeed: toKn(wsMs.elementAtOrNull(i)),
           windDir: wDir.elementAtOrNull(i)?.toInt(),
+          windGust: toKn(gustMs.elementAtOrNull(i)),
           waveHeight: waveH.elementAtOrNull(i),
           wavePeriod: waveP.elementAtOrNull(i),
         ));
@@ -495,6 +533,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
         condition: conditionFromCode(code),
         windSpeed: curWindKn,
         windDirection: curWindDir,
+        windGust: curGustKn,
         waveHeight: curWaveH,
         wavePeriod: curWaveP,
         pressure: curPress,
