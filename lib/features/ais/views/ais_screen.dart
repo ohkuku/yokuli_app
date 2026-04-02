@@ -309,7 +309,6 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
               urlTemplate: 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
               userAgentPackageName: 'com.yokuli.app',
               maxZoom: 18,
-              backgroundColor: Colors.transparent,
             ),
             // COG/heading prediction polylines
             PolylineLayer(polylines: headingLines),
@@ -397,10 +396,9 @@ class _RadarTabState extends ConsumerState<_RadarTab> {
                     }
                   }
                   try {
-                    final bounds = ll.LatLngBounds.fromPoints(allPoints);
                     _mapController.fitCamera(
                       CameraFit.bounds(
-                        bounds: bounds,
+                        bounds: _boundsFromPoints(allPoints),
                         padding: const EdgeInsets.all(40),
                       ),
                     );
@@ -2158,10 +2156,9 @@ class _CollisionAvoidanceScreenState
                 onMapReady: () {
                   if (allPoints.length >= 2) {
                     try {
-                      final bounds = ll.LatLngBounds.fromPoints(allPoints);
                       _mapController.fitCamera(
                         CameraFit.bounds(
-                          bounds: bounds,
+                          bounds: _boundsFromPoints(allPoints),
                           padding: const EdgeInsets.all(60),
                         ),
                       );
@@ -2181,7 +2178,6 @@ class _CollisionAvoidanceScreenState
                       'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
                   userAgentPackageName: 'com.yokuli.app',
                   maxZoom: 18,
-                  backgroundColor: Colors.transparent,
                 ),
                 PolylineLayer(polylines: polylines),
                 MarkerLayer(markers: markers),
@@ -2328,4 +2324,28 @@ class _CaInfoCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Compute a flutter_map [LatLngBounds] from a list of [ll.LatLng] points.
+/// flutter_map 7.x removed `LatLngBounds.fromPoints`; we replicate it here.
+LatLngBounds _boundsFromPoints(List<ll.LatLng> points) {
+  assert(points.isNotEmpty);
+  double minLat = points.first.latitude;
+  double maxLat = points.first.latitude;
+  double minLon = points.first.longitude;
+  double maxLon = points.first.longitude;
+  for (final p in points) {
+    if (p.latitude < minLat) minLat = p.latitude;
+    if (p.latitude > maxLat) maxLat = p.latitude;
+    if (p.longitude < minLon) minLon = p.longitude;
+    if (p.longitude > maxLon) maxLon = p.longitude;
+  }
+  return LatLngBounds(
+    ll.LatLng(minLat, minLon),
+    ll.LatLng(maxLat, maxLon),
+  );
 }
