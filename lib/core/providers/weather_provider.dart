@@ -359,10 +359,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
       // --- Current — try both "current" and "currently" keys ---
       final current = (body['current'] ?? body['currently'] ?? body['now'] ??
                        body['conditions']) as Map<String, dynamic>? ?? {};
-      final tempC = (current['airTemperature'] ?? current['temperature'] as num?)?.toDouble() is double
-          ? (current['airTemperature'] ?? current['temperature'] as num).toDouble()
-          : (current['airTemperature'] as num?)?.toDouble();
-      final tempC = (current['airTemperature'] as num?)?.toDouble();
+      final tempC = (current['airTemperature'] ?? current['temperature'] as num?)?.toDouble();
       final windMs = (current['windSpeed'] as num?)?.toDouble();
       final windKn = windMs != null ? windMs * 1.944 : null;
       final windDir = (current['windDirection'] as num?)?.toInt();

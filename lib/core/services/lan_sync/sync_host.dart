@@ -45,6 +45,7 @@ class SyncHost {
   void Function(Map<String, dynamic> data)? onNotifyChannelSync;
   void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
   void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
+  void Function(Map<String, dynamic> data)? onSkReconnectReceived;
   void Function()? onNetworkJoinSync;
   void Function(Map<String, dynamic> data)? onWeatherSyncReceived;
   void Function(VesselState state)? onVesselStatePush;

@@ -61,6 +61,7 @@ class SyncClient {
   void Function(Map<String, dynamic> data)? onAlarmInstanceSync;
   void Function(Map<String, dynamic> data)? onAlarmActionSync;
   void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
+  void Function(Map<String, dynamic> data)? onSkReconnectReceived;
   void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
   void Function(Map<String, dynamic> data)? onMobRuleSync;
   void Function(Map<String, dynamic> data)? onNotifyChannelSyncReceived;
