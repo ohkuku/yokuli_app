@@ -163,13 +163,17 @@ class KanbanState {
     this.cards = const [],
   });
 
-  List<KanbanCard> cardsForColumn(String columnId, {String? category}) =>
+  List<KanbanCard> cardsForColumn(String columnId,
+          {String? category, Set<String>? categories}) =>
       cards
           .where((c) =>
               c.columnId == columnId &&
               !c.archived &&
               !c.deleted &&
-              (category == null || c.category == category))
+              (category == null || c.category == category) &&
+              (categories == null ||
+                  categories.isEmpty ||
+                  categories.contains(c.category)))
           .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 

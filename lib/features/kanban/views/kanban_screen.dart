@@ -15,8 +15,9 @@ class KanbanScreen extends ConsumerStatefulWidget {
 }
 
 class _KanbanScreenState extends ConsumerState<KanbanScreen> {
-  String? _filterColumnId;
-  String? _filterCategory;
+  // Multi-select filters: empty set = show all
+  final Set<String> _filterColumnIds = {};
+  final Set<String> _filterCategories = {};
 
   @override
   Widget build(BuildContext context) {
@@ -83,7 +84,7 @@ class _KanbanScreenState extends ConsumerState<KanbanScreen> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Column (status) filter ──────────────────────────
+                // ── Column (status) filter — multi-select ──────────
                 if (kanban.columns.length > 1)
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
@@ -92,26 +93,28 @@ class _KanbanScreenState extends ConsumerState<KanbanScreen> {
                       children: [
                         _FilterChip(
                           label: '全部',
-                          selected: _filterColumnId == null,
+                          selected: _filterColumnIds.isEmpty,
                           onTap: () =>
-                              setState(() => _filterColumnId = null),
+                              setState(() => _filterColumnIds.clear()),
                         ),
                         ...kanban.columns.map((col) => Padding(
                               padding: const EdgeInsets.only(left: 6),
                               child: _FilterChip(
                                 label: col.title,
-                                selected: _filterColumnId == col.id,
-                                onTap: () => setState(() =>
-                                    _filterColumnId =
-                                        _filterColumnId == col.id
-                                            ? null
-                                            : col.id),
+                                selected: _filterColumnIds.contains(col.id),
+                                onTap: () => setState(() {
+                                  if (_filterColumnIds.contains(col.id)) {
+                                    _filterColumnIds.remove(col.id);
+                                  } else {
+                                    _filterColumnIds.add(col.id);
+                                  }
+                                }),
                               ),
                             )),
                       ],
                     ),
                   ),
-                // ── Category filter ────────────────────────────────
+                // ── Category filter — multi-select ─────────────────
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   padding: EdgeInsets.fromLTRB(
@@ -120,19 +123,23 @@ class _KanbanScreenState extends ConsumerState<KanbanScreen> {
                     children: [
                       _FilterChip(
                         label: '所有类型',
-                        selected: _filterCategory == null,
+                        selected: _filterCategories.isEmpty,
                         onTap: () =>
-                            setState(() => _filterCategory = null),
+                            setState(() => _filterCategories.clear()),
                         accent: AppColors.teal,
                       ),
                       ...kKanbanDefaultCategories.map((cat) => Padding(
                             padding: const EdgeInsets.only(left: 6),
                             child: _FilterChip(
                               label: cat,
-                              selected: _filterCategory == cat,
-                              onTap: () => setState(() =>
-                                  _filterCategory =
-                                      _filterCategory == cat ? null : cat),
+                              selected: _filterCategories.contains(cat),
+                              onTap: () => setState(() {
+                                if (_filterCategories.contains(cat)) {
+                                  _filterCategories.remove(cat);
+                                } else {
+                                  _filterCategories.add(cat);
+                                }
+                              }),
                               accent: AppColors.teal,
                             ),
                           )),
@@ -154,16 +161,18 @@ class _KanbanScreenState extends ConsumerState<KanbanScreen> {
                       physics: const BouncingScrollPhysics(),
                       padding: const EdgeInsets.all(12),
                       child: Builder(builder: (context) {
-                        final columns = _filterColumnId != null
+                        final columns = _filterColumnIds.isNotEmpty
                             ? kanban.columns
-                                .where((c) => c.id == _filterColumnId)
+                                .where((c) => _filterColumnIds.contains(c.id))
                                 .toList()
                             : kanban.columns;
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: columns.map((col) {
                             final cards = kanban.cardsForColumn(col.id,
-                                category: _filterCategory);
+                                categories: _filterCategories.isNotEmpty
+                                    ? _filterCategories
+                                    : null);
                             return _KanbanColumnWidget(
                               column: col,
                               cards: cards,
