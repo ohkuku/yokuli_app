@@ -158,6 +158,7 @@ class LanSyncService {
     };
     _platform.onSkCredentialsReceived = _onSkCredentialsReceived;
     _platform.onSettingsSyncReceived = _onSettingsSyncReceived;
+    _platform.onSkReconnectReceived = _onSkReconnectReceived;
     _platform.onClientConnectionChanged = (connected) {
       // Use disconnected (not connecting) when the link drops — connecting is
       // only set right before a connection attempt is made.
@@ -630,6 +631,38 @@ class LanSyncService {
         'password': s.signalKPassword,
       },
     });
+  }
+
+  /// Called when any device (including self via host relay) broadcasts sk_reconnect.
+  /// Applies the SK settings locally and triggers an immediate reconnect.
+  Future<void> _onSkReconnectReceived(Map<String, dynamic> data) async {
+    final host = data['skHost'] as String? ?? '';
+    final port = (data['skPort'] as num?)?.toInt() ?? 3000;
+    final user = data['skUser'] as String? ?? '';
+    final pass = data['skPass'] as String? ?? '';
+    final skUrl = data['skUrl'] as String? ?? '';
+
+    // Apply settings on this device (silent — no re-broadcast).
+    final current = _ref.read(settingsProvider);
+    final updated = current.copyWith(
+      signalKHost: host.isNotEmpty ? host : current.signalKHost,
+      signalKPort: port,
+      signalKUsername: user.isNotEmpty ? user : current.signalKUsername,
+      signalKPassword: pass.isNotEmpty ? pass : current.signalKPassword,
+      signalKUrl: skUrl.isNotEmpty ? skUrl : current.signalKUrl,
+    );
+    await _ref.read(settingsProvider.notifier).applyRemote(updated);
+
+    // Reconnect.
+    final effectiveUrl = updated.effectiveSignalKUrl;
+    if (effectiveUrl.isEmpty) return;
+    String? token;
+    if (updated.signalKUsername.isNotEmpty && updated.signalKPassword.isNotEmpty) {
+      try {
+        token = await SignalKAuth.login(effectiveUrl, updated.signalKUsername, updated.signalKPassword);
+      } catch (_) {}
+    }
+    await _ref.read(signalKClientProvider).connect(effectiveUrl, token: token);
   }
 
   Future<void> _onSkCredentialsReceived(Map<String, dynamic> data) async {

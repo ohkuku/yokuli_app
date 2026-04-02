@@ -285,6 +285,32 @@ class SettingsNotifier extends Notifier<AppSettings> {
     }
     if (data.isEmpty) return;
     ref.read(lanBroadcastProvider)?.call({'type': 'settings_sync', 'data': data});
+    // If SK address/credentials changed, also broadcast a reconnect trigger
+    // so every peer reconnects with the new credentials automatically.
+    if (skChanged || updated.signalKUrl != previous.signalKUrl) {
+      ref.read(lanBroadcastProvider)?.call({
+        'type': 'sk_reconnect',
+        'skHost': updated.signalKHost,
+        'skPort': updated.signalKPort,
+        'skUser': updated.signalKUsername,
+        'skPass': updated.signalKPassword,
+        'skUrl': updated.signalKUrl,
+      });
+    }
+  }
+
+  /// Called when the user taps "Connect" in settings — triggers reconnect on
+  /// ALL devices that are online, not just the local one.
+  void broadcastSkReconnect() {
+    final s = state;
+    ref.read(lanBroadcastProvider)?.call({
+      'type': 'sk_reconnect',
+      'skHost': s.signalKHost,
+      'skPort': s.signalKPort,
+      'skUser': s.signalKUsername,
+      'skPass': s.signalKPassword,
+      'skUrl': s.signalKUrl,
+    });
   }
 
   /// Apply settings received from a LAN peer WITHOUT re-broadcasting.

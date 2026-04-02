@@ -43,6 +43,9 @@ abstract class LanSyncPlatform {
   void Function(Map<String, dynamic> data)? onAlarmActionSync;
   void Function(Map<String, dynamic> data)? onSkCredentialsReceived;
   void Function(Map<String, dynamic> data)? onSettingsSyncReceived;
+  /// Fired when any peer broadcasts sk_reconnect — tells all devices to
+  /// apply new SK settings and reconnect immediately.
+  void Function(Map<String, dynamic> data)? onSkReconnectReceived;
   /// Called when a mob_rule_sync message arrives (add/update/delete a MOB trigger rule).
   void Function(Map<String, dynamic> data)? onMobRuleSync;
   /// Called when a notify_channel_sync message arrives from a peer.

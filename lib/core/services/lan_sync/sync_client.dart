@@ -217,6 +217,9 @@ class SyncClient {
         case 'settings_sync':
           if (data != null) onSettingsSyncReceived?.call(data);
           break;
+        case 'sk_reconnect':
+          onSkReconnectReceived?.call(json);
+          break;
         case 'sync_meta':
           final svMs = json['sv'] as int?;
           final peerId = json['id'] as String? ?? '';

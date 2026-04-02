@@ -303,6 +303,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             const SizedBox(height: 24),
 
+            // --- Signal K ---
+            _SectionHeader('SIGNAL K'),
+            const SizedBox(height: 8),
+            _SignalKCard(),
+            const SizedBox(height: 24),
+
             // --- Weather ---
             _SectionHeader('天气'),
             const SizedBox(height: 8),
@@ -913,6 +919,194 @@ class _WebBanner extends ConsumerWidget {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Signal K connection card
+// ---------------------------------------------------------------------------
+
+class _SignalKCard extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_SignalKCard> createState() => _SignalKCardState();
+}
+
+class _SignalKCardState extends ConsumerState<_SignalKCard> {
+  late TextEditingController _hostCtrl;
+  late TextEditingController _portCtrl;
+  late TextEditingController _userCtrl;
+  late TextEditingController _passCtrl;
+  bool _showPass = false;
+  bool _connecting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final s = ref.read(settingsProvider);
+    _hostCtrl = TextEditingController(text: s.signalKHost);
+    _portCtrl = TextEditingController(text: s.signalKPort.toString());
+    _userCtrl = TextEditingController(text: s.signalKUsername);
+    _passCtrl = TextEditingController(text: s.signalKPassword);
+    // Keep in sync with LAN updates
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.listenManual(settingsProvider, (_, s) {
+        if (mounted) {
+          if (_hostCtrl.text != s.signalKHost) _hostCtrl.text = s.signalKHost;
+          if (_portCtrl.text != s.signalKPort.toString()) _portCtrl.text = s.signalKPort.toString();
+          if (_userCtrl.text != s.signalKUsername) _userCtrl.text = s.signalKUsername;
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _hostCtrl.dispose(); _portCtrl.dispose();
+    _userCtrl.dispose(); _passCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveAndReconnectAll() async {
+    final host = _hostCtrl.text.trim();
+    final port = int.tryParse(_portCtrl.text.trim()) ?? 3000;
+    final user = _userCtrl.text.trim();
+    final pass = _passCtrl.text.trim();
+    setState(() => _connecting = true);
+    try {
+      await ref.read(settingsProvider.notifier).update(
+        ref.read(settingsProvider).copyWith(
+          signalKHost: host, signalKPort: port,
+          signalKUsername: user, signalKPassword: pass,
+        ),
+      );
+      // Broadcast reconnect to ALL devices online — this triggers sk_reconnect
+      // on every peer so the whole fleet connects simultaneously.
+      ref.read(settingsProvider.notifier).broadcastSkReconnect();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('正在重新连接 Signal K（全设备同步）…'),
+          backgroundColor: AppColors.cyan,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _connecting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final conn = ref.watch(connectionProvider);
+    final skStatus = conn.signalK;
+    final statusColor = skStatus == ConnectionStatus.connected
+        ? AppColors.success
+        : skStatus == ConnectionStatus.connecting
+            ? AppColors.warning
+            : AppColors.danger;
+    final statusLabel = skStatus == ConnectionStatus.connected
+        ? '已连接'
+        : skStatus == ConnectionStatus.connecting
+            ? '连接中…'
+            : skStatus == ConnectionStatus.error
+                ? '连接失败 — ${conn.signalKError ?? ''}'
+                : '未连接';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Status row
+          Row(children: [
+            Container(
+              width: 8, height: 8,
+              decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(statusLabel,
+                  style: TextStyle(color: statusColor, fontSize: 12)),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          // Host
+          _skField(_hostCtrl, 'Signal K Host', 'signalk.local / 192.168.1.10',
+              TextInputType.url),
+          const SizedBox(height: 8),
+          // Port
+          _skField(_portCtrl, 'Port', '3000', TextInputType.number),
+          const SizedBox(height: 8),
+          // Username (optional)
+          _skField(_userCtrl, '用户名（可选）', '', TextInputType.text),
+          const SizedBox(height: 8),
+          // Password
+          TextField(
+            controller: _passCtrl,
+            obscureText: !_showPass,
+            style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+            decoration: InputDecoration(
+              labelText: '密码（可选）',
+              labelStyle: const TextStyle(color: AppColors.textSecondary),
+              filled: true, fillColor: AppColors.surface,
+              border: _skBorder(), enabledBorder: _skBorder(),
+              focusedBorder: _skBorder(focused: true),
+              suffixIcon: IconButton(
+                icon: Icon(_showPass ? Icons.visibility_off : Icons.visibility,
+                    color: AppColors.textMuted, size: 18),
+                onPressed: () => setState(() => _showPass = !_showPass),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _connecting ? null : _saveAndReconnectAll,
+              icon: _connecting
+                  ? const SizedBox(width: 14, height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2,
+                          color: AppColors.background))
+                  : const Icon(Icons.sync_rounded, size: 16),
+              label: Text(_connecting ? '连接中…' : '保存并全设备连接'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.cyan,
+                foregroundColor: AppColors.background,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text('点击按钮将同步 SK 地址并让所有在线设备同时重新连接',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 10)),
+        ],
+      ),
+    );
+  }
+
+  Widget _skField(TextEditingController ctrl, String label, String hint,
+      TextInputType keyboardType) =>
+      TextField(
+        controller: ctrl,
+        keyboardType: keyboardType,
+        style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+        decoration: InputDecoration(
+          labelText: label, hintText: hint,
+          labelStyle: const TextStyle(color: AppColors.textSecondary),
+          filled: true, fillColor: AppColors.surface,
+          border: _skBorder(), enabledBorder: _skBorder(),
+          focusedBorder: _skBorder(focused: true),
+        ),
+      );
+
+  OutlineInputBorder _skBorder({bool focused = false}) => OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(
+            color: focused ? AppColors.cyan : AppColors.border),
+      );
 }
 
 // ---------------------------------------------------------------------------

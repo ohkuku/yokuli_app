@@ -36,6 +36,8 @@ class YokulApp extends ConsumerStatefulWidget {
 class _YokulAppState extends ConsumerState<YokulApp> {
   bool _showJoinOverlay = false;
   String _joinPeerCount = '';
+  // Used to show SK failure snackbar from initState listeners
+  final _scaffoldKey = GlobalKey<ScaffoldMessengerState>();
 
   @override
   void initState() {
@@ -80,18 +82,40 @@ class _YokulAppState extends ConsumerState<YokulApp> {
       fireImmediately: false,
     );
 
-    // ── Signal K persistent failure → redirect to setup ─────────────────────
+    // ── Signal K persistent failure → show banner (do NOT redirect to /setup) ─
+    // Redirecting to /setup on SK failure forces users through the wizard again
+    // even though their device name and MetService are already configured.
+    // The SK health dot in vessel_status_bar.dart already shows the status.
+    // Users can reconnect via Settings → Signal K when ready.
     ref.listenManual(
       connectionProvider.select((s) => s.signalKPermanentFailure),
       (prev, failure) {
         if (failure == SignalKFailureReason.none) return;
-        if (prev == failure) return; // already handled
-        SchedulerBinding.instance.scheduleFrame();
+        if (prev == failure) return;
+        // Clear the flag so it doesn't fire again on next listen.
+        ref.read(connectionProvider.notifier).clearSignalKPermanentFailure();
+        // Show a non-intrusive snackbar instead of forcing /setup.
         SchedulerBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          // Clear the failure flag so re-entry to setup doesn't loop.
-          ref.read(connectionProvider.notifier).clearSignalKPermanentFailure();
-          ref.read(appRouterProvider).go('/setup');
+          final ctx = _scaffoldKey.currentContext;
+          if (ctx == null) return;
+          final reason = failure == SignalKFailureReason.authFailed
+              ? '认证失败，请在设置中更新账号密码'
+              : '无法连接 Signal K，请检查网络或在设置中修改地址';
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            SnackBar(
+              content: Text(reason),
+              backgroundColor: AppColors.warning,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 8),
+              action: SnackBarAction(
+                label: '设置',
+                textColor: AppColors.background,
+                onPressed: () =>
+                    ref.read(appRouterProvider).go('/settings'),
+              ),
+            ),
+          );
         });
       },
       fireImmediately: false,
@@ -145,6 +169,7 @@ class _YokulAppState extends ConsumerState<YokulApp> {
     final peerCount = _joinPeerCount;
 
     return MaterialApp.router(
+      scaffoldMessengerKey: _scaffoldKey,
       title: 'Yokuli',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,

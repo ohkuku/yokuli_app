@@ -295,6 +295,11 @@ class SyncHost {
             broadcastJson(json);
           }
           break;
+        case 'sk_reconnect':
+          // One device wants all devices to reconnect with (possibly new) SK settings.
+          onSkReconnectReceived?.call(json);
+          broadcastJson(json); // relay to all other clients
+          break;
         case 'network_join_sync':
           onNetworkJoinSync?.call();
           broadcastJson(json);

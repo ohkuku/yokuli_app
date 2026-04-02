@@ -127,9 +127,12 @@ class WeatherNotifier extends Notifier<WeatherState> {
       );
 
       if (result == null) {
+        final detail = _lastMetServiceError;
         state = state.copyWith(
           isLoading: false,
-          error: 'MetService 请求失败，请检查 API Key 和网络',
+          error: detail != null
+              ? 'MetService 请求失败 ($detail)'
+              : 'MetService 请求失败，请检查 API Key 和网络',
         );
         return;
       }
@@ -309,11 +312,15 @@ class WeatherNotifier extends Notifier<WeatherState> {
     }
   }
 
+  // Internal: last MetService HTTP error for surfacing to the user.
+  String? _lastMetServiceError;
+
   Future<WeatherState?> _fetchMetService({
     required double lat,
     required double lon,
     required String apiKey,
   }) async {
+    _lastMetServiceError = null;
     try {
       final uri = Uri.https('data.metservice.com', '/v1/point_forecast', {
         'lat': lat.toStringAsFixed(4),
@@ -321,13 +328,40 @@ class WeatherNotifier extends Notifier<WeatherState> {
       });
       final resp = await http
           .get(uri, headers: {'apikey': apiKey, 'Accept': 'application/json'})
-          .timeout(const Duration(seconds: 15));
-      if (resp.statusCode != 200) return null;
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode != 200) {
+        // Try to extract a human-readable reason from the response body.
+        String reason = 'HTTP ${resp.statusCode}';
+        try {
+          final errBody = jsonDecode(resp.body);
+          final msg = (errBody is Map)
+              ? (errBody['message'] ?? errBody['error'] ?? errBody['title'])
+              : null;
+          if (msg != null) reason += ' — $msg';
+        } catch (_) {}
+        _lastMetServiceError = reason;
+        return null;
+      }
 
-      final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      final raw = jsonDecode(resp.body);
+      // MetService may wrap data in different ways; normalise to a flat map.
+      final Map<String, dynamic> body;
+      if (raw is Map<String, dynamic>) {
+        // Some versions wrap in {"forecastData": {...}} or {"data": {...}}
+        body = (raw['forecastData'] as Map<String, dynamic>?) ??
+               (raw['data'] as Map<String, dynamic>?) ??
+               raw;
+      } else {
+        _lastMetServiceError = '响应格式不支持';
+        return null;
+      }
 
-      // --- Current ---
-      final current = body['current'] as Map<String, dynamic>? ?? {};
+      // --- Current — try both "current" and "currently" keys ---
+      final current = (body['current'] ?? body['currently'] ?? body['now'] ??
+                       body['conditions']) as Map<String, dynamic>? ?? {};
+      final tempC = (current['airTemperature'] ?? current['temperature'] as num?)?.toDouble() is double
+          ? (current['airTemperature'] ?? current['temperature'] as num).toDouble()
+          : (current['airTemperature'] as num?)?.toDouble();
       final tempC = (current['airTemperature'] as num?)?.toDouble();
       final windMs = (current['windSpeed'] as num?)?.toDouble();
       final windKn = windMs != null ? windMs * 1.944 : null;
