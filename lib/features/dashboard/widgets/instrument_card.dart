@@ -2,6 +2,203 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Bottom-sheet helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+void showInstrumentDetail(
+  BuildContext context, {
+  required String title,
+  required Widget content,
+}) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: AppColors.surface,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (ctx) => DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
+      expand: false,
+      builder: (ctx, controller) => Column(
+        children: [
+          // drag handle
+          Container(
+            margin: const EdgeInsets.only(top: 10, bottom: 8),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.border,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: Row(
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.border),
+          Expanded(
+            child: ListView(
+              controller: controller,
+              padding: const EdgeInsets.all(20),
+              children: [content],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SparklineChart
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A simple sparkline (line + gradient fill) using CustomPainter.
+/// Handles empty / single-point lists gracefully.
+class SparklineChart extends StatelessWidget {
+  final List<double> values;
+  final Color color;
+  final double? minY;
+  final double? maxY;
+  final String? unit;
+  final double height;
+
+  const SparklineChart({
+    super.key,
+    required this.values,
+    this.color = AppColors.cyan,
+    this.minY,
+    this.maxY,
+    this.unit,
+    this.height = 60,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (values.isEmpty) {
+      return SizedBox(
+        height: height,
+        child: const Center(
+          child: Text(
+            '— no history —',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+          ),
+        ),
+      );
+    }
+    return SizedBox(
+      height: height,
+      child: CustomPaint(
+        painter: _SparklinePainter(
+          values: values,
+          color: color,
+          minY: minY,
+          maxY: maxY,
+        ),
+        child: Container(),
+      ),
+    );
+  }
+}
+
+class _SparklinePainter extends CustomPainter {
+  final List<double> values;
+  final Color color;
+  final double? minY;
+  final double? maxY;
+
+  _SparklinePainter({
+    required this.values,
+    required this.color,
+    this.minY,
+    this.maxY,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.isEmpty) return;
+
+    final lo = minY ?? values.reduce(math.min);
+    final hi = maxY ?? values.reduce(math.max);
+    final range = (hi - lo).abs();
+    final effectiveRange = range < 0.001 ? 1.0 : range;
+
+    double xOf(int i) => i * size.width / (values.length - 1).clamp(1, 9999);
+    double yOf(double v) =>
+        size.height - ((v - lo) / effectiveRange * size.height).clamp(0, size.height);
+
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 1.8
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [color.withAlpha(60), color.withAlpha(0)],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
+      ..style = PaintingStyle.fill;
+
+    final linePath = Path();
+    final fillPath = Path();
+
+    fillPath.moveTo(xOf(0), size.height);
+
+    for (int i = 0; i < values.length; i++) {
+      final x = xOf(i);
+      final y = yOf(values[i]);
+      if (i == 0) {
+        linePath.moveTo(x, y);
+        fillPath.lineTo(x, y);
+      } else {
+        linePath.lineTo(x, y);
+        fillPath.lineTo(x, y);
+      }
+    }
+
+    fillPath.lineTo(xOf(values.length - 1), size.height);
+    fillPath.close();
+
+    canvas.drawPath(fillPath, fillPaint);
+    canvas.drawPath(linePath, linePaint);
+
+    // Latest value dot
+    final lastX = xOf(values.length - 1);
+    final lastY = yOf(values.last);
+    canvas.drawCircle(
+      Offset(lastX, lastY),
+      3,
+      Paint()..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SparklinePainter old) =>
+      old.values != values || old.color != color;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// InstrumentCard
+// ─────────────────────────────────────────────────────────────────────────────
+
 /// A single instrument card showing label + numeric value + optional gauge bar.
 class InstrumentCard extends StatelessWidget {
   final String label;
@@ -11,6 +208,7 @@ class InstrumentCard extends StatelessWidget {
   final Color accentColor;
   final double? gaugeValue; // 0.0 .. 1.0
   final Color? gaugeColor;
+  final VoidCallback? onTap;
 
   const InstrumentCard({
     super.key,
@@ -21,11 +219,12 @@ class InstrumentCard extends StatelessWidget {
     this.accentColor = AppColors.cyan,
     this.gaugeValue,
     this.gaugeColor,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final card = Container(
       decoration: BoxDecoration(
         color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(14),
@@ -33,6 +232,7 @@ class InstrumentCard extends StatelessWidget {
       ),
       child: Stack(
         children: [
+          // Accent top bar
           Positioned(
             top: 0,
             left: 0,
@@ -58,15 +258,24 @@ class InstrumentCard extends StatelessWidget {
                   children: [
                     Icon(icon, size: 14, color: accentColor),
                     const SizedBox(width: 6),
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 1.0,
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.0,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    if (onTap != null)
+                      Icon(
+                        Icons.expand_more_rounded,
+                        size: 14,
+                        color: AppColors.textDim,
+                      ),
                   ],
                 ),
                 const Spacer(),
@@ -110,6 +319,20 @@ class InstrumentCard extends StatelessWidget {
         ],
       ),
     );
+
+    if (onTap == null) return card;
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        splashColor: accentColor.withAlpha(30),
+        highlightColor: accentColor.withAlpha(15),
+        child: card,
+      ),
+    );
   }
 }
 
@@ -145,17 +368,22 @@ class _GaugeBar extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CompassCard
+// ─────────────────────────────────────────────────────────────────────────────
+
 /// Compass card with heading (cyan) and COG (green) arrows
 class CompassCard extends StatelessWidget {
   final double? headingDeg;
   final double? cogDeg;
+  final VoidCallback? onTap;
 
-  const CompassCard({super.key, this.headingDeg, this.cogDeg});
+  const CompassCard({super.key, this.headingDeg, this.cogDeg, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final display = headingDeg ?? cogDeg;
-    return Container(
+    final card = Container(
       decoration: BoxDecoration(
         color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(14),
@@ -169,16 +397,18 @@ class CompassCard extends StatelessWidget {
               children: [
                 const Icon(Icons.explore_rounded, size: 14, color: AppColors.cyan),
                 const SizedBox(width: 6),
-                const Text(
-                  'HEADING / COG',
-                  style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.0,
+                const Expanded(
+                  child: Text(
+                    'HEADING / COG',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.0,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const Spacer(),
                 if (cogDeg != null)
                   Row(children: [
                     Container(width: 8, height: 2, color: AppColors.success),
@@ -187,11 +417,16 @@ class CompassCard extends StatelessWidget {
                         style: TextStyle(
                             color: AppColors.textMuted, fontSize: 9)),
                   ]),
+                if (onTap != null) ...[
+                  const SizedBox(width: 4),
+                  const Icon(Icons.expand_more_rounded,
+                      size: 14, color: AppColors.textDim),
+                ],
               ],
             ),
             Expanded(
               child: CustomPaint(
-                painter: _CompassPainter(
+                painter: CompassPainter(
                     headingDeg: headingDeg, cogDeg: cogDeg),
                 child: Container(),
               ),
@@ -209,14 +444,29 @@ class CompassCard extends StatelessWidget {
         ),
       ),
     );
+
+    if (onTap == null) return card;
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        splashColor: AppColors.cyan.withAlpha(30),
+        highlightColor: AppColors.cyan.withAlpha(15),
+        child: card,
+      ),
+    );
   }
 }
 
-class _CompassPainter extends CustomPainter {
+/// Made public so dashboard can reuse a larger version in the detail sheet.
+class CompassPainter extends CustomPainter {
   final double? headingDeg;
   final double? cogDeg;
 
-  _CompassPainter({this.headingDeg, this.cogDeg});
+  CompassPainter({this.headingDeg, this.cogDeg});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -311,26 +561,32 @@ class _CompassPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_CompassPainter old) =>
+  bool shouldRepaint(CompassPainter old) =>
       old.headingDeg != headingDeg || old.cogDeg != cogDeg;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WindAngleCard
+// ─────────────────────────────────────────────────────────────────────────────
 
 /// Wind angle display (apparent wind)
 class WindAngleCard extends StatelessWidget {
   final double? apparentWindAngle; // -180..+180, neg=port
   final double? apparentWindSpeed;
   final double? trueWindSpeed;
+  final VoidCallback? onTap;
 
   const WindAngleCard({
     super.key,
     this.apparentWindAngle,
     this.apparentWindSpeed,
     this.trueWindSpeed,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final card = Container(
       decoration: BoxDecoration(
         color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(14),
@@ -344,12 +600,18 @@ class WindAngleCard extends StatelessWidget {
             Row(children: [
               const Icon(Icons.air_rounded, size: 14, color: AppColors.teal),
               const SizedBox(width: 6),
-              const Text('WIND',
-                  style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 1.0)),
+              const Expanded(
+                child: Text('WIND',
+                    style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.0),
+                    overflow: TextOverflow.ellipsis),
+              ),
+              if (onTap != null)
+                const Icon(Icons.expand_more_rounded,
+                    size: 14, color: AppColors.textDim),
             ]),
             Expanded(
               child: CustomPaint(
@@ -400,6 +662,20 @@ class WindAngleCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+
+    if (onTap == null) return card;
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        splashColor: AppColors.teal.withAlpha(30),
+        highlightColor: AppColors.teal.withAlpha(15),
+        child: card,
       ),
     );
   }
