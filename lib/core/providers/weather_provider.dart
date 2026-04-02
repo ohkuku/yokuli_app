@@ -287,45 +287,46 @@ class WeatherNotifier extends Notifier<WeatherState> {
   static Future<String?> validateApiKey(String apiKey) async {
     if (apiKey.isEmpty) return 'MetService API Key 未配置';
     try {
-      final uri = Uri.https('forecast-v2.metoceanapi.com', '/point/time', {
-        'lat': '-41.2865',
-        'lon': '174.7762',
-        'variables': 'wind.speed.at-10m',
-        'repeat': '1',
-      });
-      final resp = await http
-          .get(uri, headers: {'x-api-key': apiKey, 'Accept': 'application/json'})
-          .timeout(const Duration(seconds: 12));
+      final now = DateTime.now().toUtc();
+      final from = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}T00:00:00Z';
+      final resp = await http.post(
+        Uri.parse('https://forecast-v2.metoceanapi.com/point/time'),
+        headers: {'x-api-key': apiKey, 'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'points': [{'lat': -41.2865, 'lon': 174.7762}],
+          'variables': ['wind.speed.at-10m'],
+          'time': {'from': from, 'interval': '1h', 'repeat': 1},
+        }),
+      ).timeout(const Duration(seconds: 12));
       if (resp.statusCode == 200) return null;
       if (resp.statusCode == 401 || resp.statusCode == 403) {
         return 'API Key 无效 (HTTP ${resp.statusCode})';
       }
       return null;
-    } on TimeoutException {
-      return null;
-    } catch (_) {
-      return null;
-    }
+    } on TimeoutException { return null; }
+    catch (_) { return null; }
   }
 
   // Internal: last MetService HTTP error for surfacing to the user.
   String? _lastMetServiceError;
 
   // ---------------------------------------------------------------------------
-  // MetOcean Solutions / MetService NZ point forecast API
-  // Docs: https://forecast-docs.metoceanapi.com/swagger-ui/
-  // Auth: x-api-key header; key from https://console.metoceanapi.com/
+  // MetOcean Solutions / MetService NZ — POST /point/time
+  // Docs:  https://forecast-docs.metoceanapi.com/swagger-ui/
+  // Auth:  x-api-key header
+  // Notes: temperature returned in Kelvin (subtract 273.15 → °C)
+  //        POST body: { points, variables, time:{from,interval,repeat} }
   // ---------------------------------------------------------------------------
 
   static const _metoceanVars = [
-    'wind.speed.at-10m',        // m/s  → knots ×1.944
-    'wind.direction.at-10m',    // degrees
-    'wind.speed.at-10m-gust',   // m/s gust
-    'air.temperature.at-2m',    // °C
-    'air.pressure.at-sea-level',// hPa
-    'relative.humidity.at-2m',  // %
-    'wave.height',              // m
-    'wave.period.at-peak',      // s
+    'wind.speed.at-10m',         // m/s  → ×1.944 knots
+    'wind.direction.at-10m',     // degrees
+    'wind.speed.gust',           // m/s
+    'air.temperature.at-2m',     // Kelvin (API default) → −273.15 °C
+    'air.pressure.at-sea-level', // hPa
+    'air.humidity.at-2m',        // %
+    'wave.height',               // m
+    'wave.period',               // s
   ];
 
   Future<WeatherState?> _fetchMetService({
@@ -336,17 +337,22 @@ class WeatherNotifier extends Notifier<WeatherState> {
     _lastMetServiceError = null;
     try {
       final now = DateTime.now().toUtc();
-      final uri = Uri.https('forecast-v2.metoceanapi.com', '/point/time', {
-        'lat': lat.toStringAsFixed(4),
-        'lon': lon.toStringAsFixed(4),
-        'variables': _metoceanVars.join(','),
-        'from': now.toIso8601String(),
-        'interval': '1h',
-        'repeat': '168', // 7 days hourly
-      });
-      final resp = await http
-          .get(uri, headers: {'x-api-key': apiKey, 'Accept': 'application/json'})
-          .timeout(const Duration(seconds: 25));
+      // Round to nearest hour to avoid sub-second format issues
+      final from = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}T${now.hour.toString().padLeft(2,'0')}:00:00Z';
+
+      final resp = await http.post(
+        Uri.parse('https://forecast-v2.metoceanapi.com/point/time'),
+        headers: {
+          'x-api-key': apiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'points': [{'lat': lat, 'lon': lon}],
+          'variables': _metoceanVars,
+          'time': {'from': from, 'interval': '1h', 'repeat': 168},
+        }),
+      ).timeout(const Duration(seconds: 25));
 
       if (resp.statusCode != 200) {
         final body = resp.body.length > 400 ? resp.body.substring(0, 400) : resp.body;
@@ -355,36 +361,43 @@ class WeatherNotifier extends Notifier<WeatherState> {
       }
 
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
-      // Response: { "dimensions": { "time": { "data": [...] } },
-      //             "variables": { "wind.speed.at-10m": { "data": [...] } } }
       final dims = json['dimensions'] as Map<String, dynamic>? ?? {};
       final vars = json['variables'] as Map<String, dynamic>? ?? {};
-      final times = ((dims['time'] as Map<String, dynamic>?)?['data'] as List?)
-              ?.cast<String>() ?? [];
 
+      // time array — ISO strings
+      final times = ((dims['time'] as Map<String, dynamic>?)?['data'] as List?)
+              ?.map((e) => e.toString()).toList() ?? [];
+
+      // Extract variable data, applying noData mask
       List<double?> _v(String name) {
         final v = vars[name] as Map<String, dynamic>?;
-        return (v?['data'] as List?)
-                ?.map((e) => e is num ? e.toDouble() : null)
-                .toList() ?? [];
+        if (v == null) return [];
+        final data   = v['data']   as List? ?? [];
+        final noData = v['noData'] as List? ?? [];
+        return List.generate(data.length, (i) {
+          if (noData.elementAtOrNull(i) != 0) return null; // masked
+          final e = data[i];
+          return e is num ? e.toDouble() : null;
+        });
       }
 
-      final wsMs   = _v('wind.speed.at-10m');
-      final wDir   = _v('wind.direction.at-10m');
-      final gustMs = _v('wind.speed.at-10m-gust');
-      final temp   = _v('air.temperature.at-2m');
-      final press  = _v('air.pressure.at-sea-level');
-      final hum    = _v('relative.humidity.at-2m');
-      final waveH  = _v('wave.height');
-      final waveP  = _v('wave.period.at-peak');
+      double? toKn(double? ms)     => ms != null ? ms * 1.944 : null;
+      double? toC(double? k)       => k  != null ? k  - 273.15 : null;
 
-      double? toKn(double? ms) => ms != null ? ms * 1.944 : null;
+      final wsMs  = _v('wind.speed.at-10m');
+      final wDir  = _v('wind.direction.at-10m');
+      final gust  = _v('wind.speed.gust');
+      final tempK = _v('air.temperature.at-2m');
+      final press = _v('air.pressure.at-sea-level');
+      final hum   = _v('air.humidity.at-2m');
+      final waveH = _v('wave.height');
+      final waveP = _v('wave.period');
 
       // Current = index 0
       final curWindKn  = toKn(wsMs.elementAtOrNull(0));
-      final curGustKn  = toKn(gustMs.elementAtOrNull(0));
+      final curGustKn  = toKn(gust.elementAtOrNull(0));
       final curWindDir = wDir.elementAtOrNull(0)?.toInt();
-      final curTemp    = temp.elementAtOrNull(0);
+      final curTemp    = toC(tempK.elementAtOrNull(0));
       final curWaveH   = waveH.elementAtOrNull(0);
       final curWaveP   = waveP.elementAtOrNull(0);
       final curPress   = press.elementAtOrNull(0);
@@ -397,16 +410,16 @@ class WeatherNotifier extends Notifier<WeatherState> {
         if (dt == null) continue;
         hourly.add(HourlyForecast(
           time: dt,
-          temp: temp.elementAtOrNull(i),
+          temp: toC(tempK.elementAtOrNull(i)),
           windSpeed: toKn(wsMs.elementAtOrNull(i)),
           windDir: wDir.elementAtOrNull(i)?.toInt(),
-          windGust: toKn(gustMs.elementAtOrNull(i)),
+          windGust: toKn(gust.elementAtOrNull(i)),
           waveHeight: waveH.elementAtOrNull(i),
           wavePeriod: waveP.elementAtOrNull(i),
         ));
       }
 
-      // Daily — aggregate into day buckets
+      // Daily — aggregate hourly into day buckets
       final Map<String, List<int>> buckets = {};
       for (int i = 0; i < times.length; i++) {
         final dt = DateTime.tryParse(times[i]);
@@ -424,7 +437,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
         for (final i in idxs) {
           final w = toKn(wsMs.elementAtOrNull(i));
           if (w != null && (maxWind == null || w > maxWind)) maxWind = w;
-          final t = temp.elementAtOrNull(i);
+          final t = toC(tempK.elementAtOrNull(i));
           if (t != null) {
             if (minTemp == null || t < minTemp) minTemp = t;
             if (maxTemp == null || t > maxTemp) maxTemp = t;
