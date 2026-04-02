@@ -1,5 +1,3 @@
-import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../../core/theme/app_colors.dart';
@@ -186,7 +184,11 @@ class _AppTileState extends State<AppTile>
   }
 }
 
-class _GlassTile extends StatelessWidget {
+/// GlassContainer-based tile that stays animated even when the scroll is idle.
+/// On Android, liquid_glass shaders stop re-evaluating when the GPU pipeline
+/// idles. Wrapping in an AnimatedBuilder that ticks every frame forces Flutter
+/// to reschedule compositing so the shader always samples the live background.
+class _GlassTile extends StatefulWidget {
   final Color accent;
   final bool isStub;
   final Widget child;
@@ -198,64 +200,47 @@ class _GlassTile extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    // On Android, liquid_glass shaders idle when scroll stops → static blur.
-    // Use BackdropFilter (always correct) on Android; GlassContainer on iOS.
-    if (!Platform.isIOS) {
-      return _AndroidGlassTile(accent: accent, isStub: isStub, child: child);
-    }
-    return GlassContainer(
-      settings: LiquidGlassSettings(
-        blur: isStub ? 6 : 10,
-        thickness: isStub ? 0.3 : 0.45,
-        refractiveIndex: 1.25,
-        glassColor: isStub
-            ? Colors.white.withOpacity(0.06)
-            : accent.withOpacity(0.10),
-        lightIntensity: isStub ? 0.2 : 0.55,
-        chromaticAberration: isStub ? 0.0 : 0.006,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: child,
-      ),
-    );
-  }
+  State<_GlassTile> createState() => _GlassTileState();
 }
 
-/// Android-specific glass tile: BackdropFilter blur stays correct at rest.
-class _AndroidGlassTile extends StatelessWidget {
-  final Color accent;
-  final bool isStub;
-  final Widget child;
+class _GlassTileState extends State<_GlassTile>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ticker;
 
-  const _AndroidGlassTile({
-    required this.accent,
-    required this.isStub,
-    required this.child,
-  });
+  @override
+  void initState() {
+    super.initState();
+    // Drives a continuous tick so the liquid-glass shader is never frozen.
+    _ticker = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 10),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final blur = isStub ? 6.0 : 12.0;
-    final glassColor = isStub
-        ? Colors.white.withOpacity(0.07)
-        : accent.withOpacity(0.12);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        child: Container(
-          decoration: BoxDecoration(
-            color: glassColor,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.white.withOpacity(isStub ? 0.08 : 0.15),
-              width: 0.8,
-            ),
-          ),
+    return AnimatedBuilder(
+      animation: _ticker,
+      builder: (_, __) => GlassContainer(
+        settings: LiquidGlassSettings(
+          blur: widget.isStub ? 6 : 10,
+          thickness: widget.isStub ? 0.3 : 0.45,
+          refractiveIndex: 1.25,
+          glassColor: widget.isStub
+              ? Colors.white.withOpacity(0.06)
+              : widget.accent.withOpacity(0.10),
+          lightIntensity: widget.isStub ? 0.2 : 0.55,
+          chromaticAberration: widget.isStub ? 0.0 : 0.006,
+        ),
+        child: Padding(
           padding: const EdgeInsets.all(16),
-          child: child,
+          child: widget.child,
         ),
       ),
     );
