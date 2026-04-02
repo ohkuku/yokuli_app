@@ -318,17 +318,14 @@ class WeatherNotifier extends Notifier<WeatherState> {
   // ---------------------------------------------------------------------------
 
   static const _metoceanVars = [
-    'wind.speed.at-10m',        // m/s
+    'wind.speed.at-10m',        // m/s  → knots ×1.944
     'wind.direction.at-10m',    // degrees
-    'wind.speed.gust',          // m/s
+    'wind.speed.at-10m-gust',   // m/s gust
     'air.temperature.at-2m',    // °C
     'air.pressure.at-sea-level',// hPa
-    'air.humidity.at-2m',       // %
-    'precipitation.rate',       // mm/h
+    'relative.humidity.at-2m',  // %
     'wave.height',              // m
-    'wave.period.peak',         // s
-    'wave.height.swell',        // m
-    'wave.direction.swell',     // degrees
+    'wave.period.at-peak',      // s
   ];
 
   Future<WeatherState?> _fetchMetService({
@@ -368,20 +365,18 @@ class WeatherNotifier extends Notifier<WeatherState> {
       List<double?> _v(String name) {
         final v = vars[name] as Map<String, dynamic>?;
         return (v?['data'] as List?)
-                ?.map((e) => (e as num?)?.toDouble())
+                ?.map((e) => e is num ? e.toDouble() : null)
                 .toList() ?? [];
       }
 
       final wsMs   = _v('wind.speed.at-10m');
       final wDir   = _v('wind.direction.at-10m');
-      final gustMs = _v('wind.speed.gust');
+      final gustMs = _v('wind.speed.at-10m-gust');
       final temp   = _v('air.temperature.at-2m');
       final press  = _v('air.pressure.at-sea-level');
-      final hum    = _v('air.humidity.at-2m');
+      final hum    = _v('relative.humidity.at-2m');
       final waveH  = _v('wave.height');
-      final waveP  = _v('wave.period.peak');
-      final swellH = _v('wave.height.swell');
-      final swellD = _v('wave.direction.swell');
+      final waveP  = _v('wave.period.at-peak');
 
       double? toKn(double? ms) => ms != null ? ms * 1.944 : null;
 
@@ -392,8 +387,6 @@ class WeatherNotifier extends Notifier<WeatherState> {
       final curTemp    = temp.elementAtOrNull(0);
       final curWaveH   = waveH.elementAtOrNull(0);
       final curWaveP   = waveP.elementAtOrNull(0);
-      final curSwellH  = swellH.elementAtOrNull(0);
-      final curSwellD  = swellD.elementAtOrNull(0)?.toInt();
       final curPress   = press.elementAtOrNull(0);
       final curHum     = hum.elementAtOrNull(0);
 
@@ -462,8 +455,6 @@ class WeatherNotifier extends Notifier<WeatherState> {
         windGust: curGustKn,
         waveHeight: curWaveH,
         wavePeriod: curWaveP,
-        swellHeight: curSwellH,
-        swellDirection: curSwellD,
         pressure: curPress,
         humidity: curHum,
         description: description,
