@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../../core/models/weather_state.dart';
+import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/weather_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../home/widgets/weather_background.dart';
@@ -75,11 +76,24 @@ class _WeatherScreenState extends ConsumerState<WeatherScreen>
                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
               ),
             )
-          else
+          else ...[
             IconButton(
               icon: const Icon(Icons.refresh_rounded, color: Colors.white70),
               onPressed: () => ref.read(weatherProvider.notifier).refresh(),
             ),
+            // DEV: long-press to probe all variable names → logcat
+            IconButton(
+              icon: const Icon(Icons.science_outlined, color: Colors.white30, size: 18),
+              tooltip: 'Probe MetOcean vars',
+              onPressed: () {
+                final key = ref.read(settingsProvider).metServiceApiKey;
+                WeatherNotifier.probeVariables(key);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Probing variables → check logcat')),
+                );
+              },
+            ),
+          ],
         ],
         bottom: TabBar(
           controller: _tabController,

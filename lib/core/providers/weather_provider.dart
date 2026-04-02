@@ -325,8 +325,42 @@ class WeatherNotifier extends Notifier<WeatherState> {
     'air.pressure.at-sea-level', // hPa
     'air.humidity.at-2m',        // %
     'wave.height',               // m
-    'wave.period',               // s
+    'wave.period.peak',          // s  (wave.period alone is not a valid name)
   ];
+
+  /// One-shot variable probe: tests every candidate variable against the real
+  /// API and prints VALID / INVALID to the debug console.  Call from a dev
+  /// button or integration test.  Never shipped in production flows.
+  static Future<void> probeVariables(String apiKey) async {
+    const candidates = [
+      'wind.speed.at-10m', 'wind.direction.at-10m',
+      'wind.speed.gust', 'wind.speed.gust.at-10m',
+      'air.temperature.at-2m', 'air.pressure.at-sea-level',
+      'air.humidity.at-2m', 'relative.humidity.at-2m',
+      'wave.height', 'wave.period', 'wave.period.peak',
+      'wave.period.above-8s.peak', 'wave.period.below-8s.peak',
+      'wave.height.swell', 'wave.direction.peak',
+      'precipitation.rate', 'cloud.cover',
+    ];
+    for (final v in candidates) {
+      try {
+        final r = await http.post(
+          Uri.parse('https://forecast-v2.metoceanapi.com/point/time'),
+          headers: {'x-api-key': apiKey, 'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'points': [{'lat': -41.2865, 'lon': 174.7762}],
+            'variables': [v],
+            'time': {'from': '2026-04-03T00:00:00Z', 'interval': '1h', 'repeat': 1},
+          }),
+        ).timeout(const Duration(seconds: 10));
+        // ignore: avoid_print
+        print('[MetOcean probe] ${r.statusCode == 200 ? "✓ VALID  " : "✗ INVALID"} $v  ${r.statusCode != 200 ? r.body.substring(0, r.body.length.clamp(0, 120)) : ""}');
+      } catch (e) {
+        // ignore: avoid_print
+        print('[MetOcean probe] ? ERROR   $v  $e');
+      }
+    }
+  }
 
   Future<WeatherState?> _fetchMetService({
     required double lat,
