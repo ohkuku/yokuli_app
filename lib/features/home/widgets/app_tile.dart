@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../../core/theme/app_colors.dart';
@@ -197,6 +199,11 @@ class _GlassTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // On Android, liquid_glass shaders idle when scroll stops → static blur.
+    // Use BackdropFilter (always correct) on Android; GlassContainer on iOS.
+    if (!Platform.isIOS) {
+      return _AndroidGlassTile(accent: accent, isStub: isStub, child: child);
+    }
     return GlassContainer(
       settings: LiquidGlassSettings(
         blur: isStub ? 6 : 10,
@@ -211,6 +218,45 @@ class _GlassTile extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: child,
+      ),
+    );
+  }
+}
+
+/// Android-specific glass tile: BackdropFilter blur stays correct at rest.
+class _AndroidGlassTile extends StatelessWidget {
+  final Color accent;
+  final bool isStub;
+  final Widget child;
+
+  const _AndroidGlassTile({
+    required this.accent,
+    required this.isStub,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final blur = isStub ? 6.0 : 12.0;
+    final glassColor = isStub
+        ? Colors.white.withOpacity(0.07)
+        : accent.withOpacity(0.12);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: Container(
+          decoration: BoxDecoration(
+            color: glassColor,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withOpacity(isStub ? 0.08 : 0.15),
+              width: 0.8,
+            ),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: child,
+        ),
       ),
     );
   }
