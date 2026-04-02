@@ -26,10 +26,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late TextEditingController _vesselNameCtrl;
   late TextEditingController _hostIpCtrl; // web only: manual host address
   late TextEditingController _metServiceKeyCtrl;
+  late TextEditingController _worldTidesKeyCtrl;
+  late TextEditingController _cgEmailCtrl;
+  late TextEditingController _cgPasswordCtrl;
   String? _localIp;
   bool _metKeyValidating = false;
   bool? _metKeyStatus; // null = not tested, true = valid, false = invalid
   String? _metKeyError;
+  bool _worldTidesKeyVisible = false;
+  bool _cgPasswordVisible = false;
 
   @override
   void initState() {
@@ -39,6 +44,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _vesselNameCtrl = TextEditingController(text: s.vesselName);
     _hostIpCtrl = TextEditingController(text: s.hostIp);
     _metServiceKeyCtrl = TextEditingController(text: s.metServiceApiKey);
+    _worldTidesKeyCtrl = TextEditingController(text: s.worldTidesApiKey);
+    _cgEmailCtrl = TextEditingController(text: s.coastguardEmail);
+    _cgPasswordCtrl = TextEditingController(text: s.coastguardPassword);
     if (!kIsWeb) _loadLocalIp();
 
     // Keep MetService key field in sync with LAN-synced settings
@@ -64,6 +72,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _vesselNameCtrl.dispose();
     _hostIpCtrl.dispose();
     _metServiceKeyCtrl.dispose();
+    _worldTidesKeyCtrl.dispose();
+    _cgEmailCtrl.dispose();
+    _cgPasswordCtrl.dispose();
     super.dispose();
   }
 
@@ -410,6 +421,138 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
               textInputAction: TextInputAction.done,
+            ),
+            const SizedBox(height: 24),
+
+            // --- WorldTides ---
+            _SectionHeader('WorldTides 潮汐'),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.cardBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: _worldTidesKeyCtrl,
+                    obscureText: !_worldTidesKeyVisible,
+                    decoration: InputDecoration(
+                      labelText: 'WorldTides API 密钥',
+                      hintText: 'worldtides.info API key',
+                      prefixIcon: const Icon(Icons.waves_rounded),
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(_worldTidesKeyVisible
+                                ? Icons.visibility_off_rounded
+                                : Icons.visibility_rounded),
+                            onPressed: () => setState(
+                                () => _worldTidesKeyVisible = !_worldTidesKeyVisible),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.check_rounded),
+                            tooltip: '保存',
+                            onPressed: () async {
+                              final key = _worldTidesKeyCtrl.text.trim();
+                              await ref.read(settingsProvider.notifier).update(
+                                  settings.copyWith(worldTidesApiKey: key));
+                              ref.read(weatherProvider.notifier).refresh();
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('WorldTides 密钥已保存')));
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    textInputAction: TextInputAction.done,
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    '用于实时潮汐预测数据',
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // --- Coastguard ---
+            _SectionHeader('海岸警卫队 (Coastguard)'),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.cardBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: _cgEmailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: '邮箱',
+                      hintText: 'coastguard@example.com',
+                      prefixIcon: Icon(Icons.email_rounded),
+                    ),
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _cgPasswordCtrl,
+                    obscureText: !_cgPasswordVisible,
+                    decoration: InputDecoration(
+                      labelText: '密码',
+                      prefixIcon: const Icon(Icons.lock_rounded),
+                      suffixIcon: IconButton(
+                        icon: Icon(_cgPasswordVisible
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded),
+                        onPressed: () => setState(
+                            () => _cgPasswordVisible = !_cgPasswordVisible),
+                      ),
+                    ),
+                    textInputAction: TextInputAction.done,
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.save_rounded, size: 16),
+                      label: const Text('保存海岸警卫队账号'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.teal,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () async {
+                        await ref.read(settingsProvider.notifier).update(
+                            settings.copyWith(
+                              coastguardEmail: _cgEmailCtrl.text.trim(),
+                              coastguardPassword: _cgPasswordCtrl.text,
+                            ));
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('海岸警卫队账号已保存')));
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    '用于自动提交出发/返航报告',
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 24),
 
