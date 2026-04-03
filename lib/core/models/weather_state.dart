@@ -637,10 +637,11 @@ class HourlyForecast {
   final double? windSpeed;  // knots (converted from m/s × 1.944)
   final int? windDir;       // degrees
   final double? windGust;   // knots
-  final double? precip;     // mm
-  final double? waveHeight; // m (null if not in API)
+  final double? precip;     // mm/h
+  final double? waveHeight; // m
   final double? wavePeriod; // s
-  final String? symbolCode; // MetService symbol
+  final double? pressure;   // hPa
+  final String? symbolCode;
 
   const HourlyForecast({
     required this.time,
@@ -651,6 +652,7 @@ class HourlyForecast {
     this.precip,
     this.waveHeight,
     this.wavePeriod,
+    this.pressure,
     this.symbolCode,
   });
 }

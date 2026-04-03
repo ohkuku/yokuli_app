@@ -505,6 +505,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
           waveHeight: waveH.elementAtOrNull(i),
           wavePeriod: waveP.elementAtOrNull(i),
           precip: precip.elementAtOrNull(i),
+          pressure: press.elementAtOrNull(i),
         ));
       }
 

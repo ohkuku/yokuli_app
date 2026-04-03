@@ -127,7 +127,7 @@ class _WeatherScreenState extends ConsumerState<WeatherScreen>
                     controller: _tabController,
                     children: [
                       _OverviewTab(weather: weather),
-                      _WindTab(hourly: weather.hourly),
+                      _WindTab(weather: weather),
                       _WavesTab(hourly: weather.hourly),
                       _TidesTab(tides: weather.tides),
                       _ForecastTab(daily: weather.daily),
@@ -490,15 +490,14 @@ class _ConditionCell extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _WindTab extends StatelessWidget {
-  final List<HourlyForecast> hourly;
-  const _WindTab({required this.hourly});
+  final WeatherState weather;
+  const _WindTab({required this.weather});
 
   @override
   Widget build(BuildContext context) {
-    // Take next 24 hours
-    final data = hourly.take(24).toList();
+    final data = weather.hourly.take(24).toList();
 
-    if (data.isEmpty) {
+    if (weather.windSpeed == null && data.isEmpty) {
       return _EmptyPlaceholder(message: '暂无风速数据');
     }
 
@@ -507,23 +506,67 @@ class _WindTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _glassCard(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '未来24小时风速 (kn)',
-                  style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 180,
-                  child: _WindBarChart(data: data),
-                ),
-              ],
-            ),
+          // Animated wind particle flow — the main visual
+          _WindFlowCard(
+            windSpeed: weather.windSpeed ?? 0,
+            windDir: weather.windDirection ?? 0,
+            windGust: weather.windGust,
+            hourly: data,
           ),
+          const SizedBox(height: 14),
+
+          // 24h wind bar chart
+          if (data.isNotEmpty)
+            _glassCard(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '未来24小时风速 (kn)',
+                    style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(height: 160, child: _WindBarChart(data: data)),
+                ],
+              ),
+            ),
+
+          const SizedBox(height: 14),
+
+          // 24h pressure sparkline
+          if (data.any((h) => h.pressure != null))
+            _glassCard(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        '气压趋势 (hPa)',
+                        style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      if (weather.pressureTrend != null) ...[
+                        const Spacer(),
+                        Text(
+                          _pressureTrendLabel(weather.pressureTrend) ?? '',
+                          style: TextStyle(
+                            color: weather.pressureTrend! <= -6
+                                ? AppColors.danger
+                                : Colors.white54,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(height: 100, child: _PressureSparkline(hourly: data)),
+                ],
+              ),
+            ),
+
           const SizedBox(height: 14),
           // Beaufort legend
           _glassCard(
@@ -536,15 +579,14 @@ class _WindTab extends StatelessWidget {
                   style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 8),
-                Row(
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 6,
                   children: [
-                    _BeaufortChip(color: const Color(0xFF30D158), label: '0-3级 (轻风)'),
-                    const SizedBox(width: 8),
-                    _BeaufortChip(color: const Color(0xFFFFD60A), label: '4-5级 (中风)'),
-                    const SizedBox(width: 8),
-                    _BeaufortChip(color: const Color(0xFFFF9F0A), label: '6-7级 (强风)'),
-                    const SizedBox(width: 8),
-                    _BeaufortChip(color: const Color(0xFFFF453A), label: '8+级 (暴风)'),
+                    _BeaufortChip(color: const Color(0xFF30D158), label: '0-3级 轻风'),
+                    _BeaufortChip(color: const Color(0xFFFFD60A), label: '4-5级 中风'),
+                    _BeaufortChip(color: const Color(0xFFFF9F0A), label: '6-7级 强风'),
+                    _BeaufortChip(color: const Color(0xFFFF453A), label: '8+级 暴风'),
                   ],
                 ),
               ],
@@ -554,6 +596,429 @@ class _WindTab extends StatelessWidget {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Wind flow animation (Windy/PredictWind style)
+// ---------------------------------------------------------------------------
+
+class _WindFlowCard extends StatefulWidget {
+  final double windSpeed;   // knots
+  final int windDir;        // degrees FROM (meteorological)
+  final double? windGust;   // knots
+  final List<HourlyForecast> hourly;
+
+  const _WindFlowCard({
+    required this.windSpeed,
+    required this.windDir,
+    required this.hourly,
+    this.windGust,
+  });
+
+  @override
+  State<_WindFlowCard> createState() => _WindFlowCardState();
+}
+
+class _WindFlowCardState extends State<_WindFlowCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _anim;
+
+  // Fixed random seeds — deterministic so no layout jumps on rebuild
+  static final _rng = math.Random(7331);
+  static const _n = 70;
+  static final _xs     = List.generate(_n, (_) => _rng.nextDouble());
+  static final _ys     = List.generate(_n, (_) => _rng.nextDouble());
+  static final _phases = List.generate(_n, (_) => _rng.nextDouble());
+  static final _alphas = List.generate(_n, (_) => 0.45 + _rng.nextDouble() * 0.55);
+
+  @override
+  void initState() {
+    super.initState();
+    // Long cycle (60 s) so the t=1→0 wrap happens rarely and is imperceptible
+    _anim = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 60),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _glassCard(
+      padding: EdgeInsets.zero,
+      radius: 16,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: SizedBox(
+          height: 230,
+          width: double.infinity,
+          child: AnimatedBuilder(
+            animation: _anim,
+            builder: (_, __) => CustomPaint(
+              painter: _WindFlowPainter(
+                t: _anim.value,
+                windSpeed: widget.windSpeed,
+                windDir: widget.windDir,
+                windGust: widget.windGust,
+                xs: _xs,
+                ys: _ys,
+                phases: _phases,
+                alphas: _alphas,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WindFlowPainter extends CustomPainter {
+  final double t;
+  final double windSpeed;   // knots
+  final int windDir;        // degrees FROM
+  final double? windGust;
+  final List<double> xs, ys, phases, alphas;
+
+  const _WindFlowPainter({
+    required this.t,
+    required this.windSpeed,
+    required this.windDir,
+    required this.xs,
+    required this.ys,
+    required this.phases,
+    required this.alphas,
+    this.windGust,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Wind direction FROM → flow vector TO (in screen coords, y+ = down)
+    // FROM N (0°): flow toward S → dy+
+    // FROM E (90°): flow toward W → dx-
+    final rad = windDir * math.pi / 180.0;
+    final vx = -math.sin(rad); // normalized flow unit vector x
+    final vy =  math.cos(rad); // normalized flow unit vector y
+
+    // Speed: how many normalized screen-widths a particle travels per cycle (60s).
+    // At 20 kn → 5 widths/cycle → ~0.083 widths/s → ~33px/s on a 400px canvas.
+    final speedPerCycle = (windSpeed / 20.0 * 5.0).clamp(0.5, 18.0);
+
+    // Tail length in normalized [0,1] screen coords — longer at higher speeds.
+    final tailNorm = (windSpeed / 40.0 * 0.14).clamp(0.04, 0.22);
+
+    final color = _beaufortColor(windSpeed);
+
+    for (int i = 0; i < xs.length; i++) {
+      // rawX/rawY are in "wrap-space": integer part = number of wraps,
+      // fractional part = normalized screen position.
+      final progress = t + phases[i];
+      final rawX = xs[i] + vx * progress * speedPerCycle;
+      final rawY = ys[i] + vy * progress * speedPerCycle;
+
+      final x = (rawX % 1.0 + 1.0) % 1.0;
+      final y = (rawY % 1.0 + 1.0) % 1.0;
+      final px = x * size.width;
+      final py = y * size.height;
+
+      // Tail: offset in the same wrap-space, same units.
+      final tailRawX = rawX - vx * tailNorm;
+      final tailRawY = rawY - vy * tailNorm;
+      final noWrap = rawX.floor() == tailRawX.floor() &&
+                     rawY.floor() == tailRawY.floor();
+
+      final a = alphas[i];
+      if (noWrap) {
+        final tx = (tailRawX % 1.0 + 1.0) % 1.0 * size.width;
+        final ty = (tailRawY % 1.0 + 1.0) % 1.0 * size.height;
+        canvas.drawLine(
+          Offset(tx, ty),
+          Offset(px, py),
+          Paint()
+            ..strokeWidth = 1.5
+            ..style = PaintingStyle.stroke
+            ..shader = LinearGradient(
+              colors: [color.withOpacity(0), color.withOpacity(a * 0.80)],
+            ).createShader(Rect.fromPoints(Offset(tx, ty), Offset(px, py))),
+        );
+      }
+
+      canvas.drawCircle(Offset(px, py), 1.7, Paint()..color = color.withOpacity(a));
+    }
+
+    // ── Compass rose (center) ──────────────────────────────────────────────
+    _paintCompass(canvas, size);
+
+    // ── Info overlay (top-left) ────────────────────────────────────────────
+    _paintInfo(canvas, size);
+  }
+
+  void _paintCompass(Canvas canvas, Size size) {
+    final cx = size.width * 0.5;
+    final cy = size.height * 0.5;
+    const r = 46.0;
+
+    // Background circle
+    canvas.drawCircle(
+      Offset(cx, cy), r,
+      Paint()..color = Colors.black.withOpacity(0.40),
+    );
+    canvas.drawCircle(
+      Offset(cx, cy), r,
+      Paint()
+        ..color = Colors.white.withOpacity(0.10)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.6,
+    );
+
+    // Tick marks at 45° intervals
+    for (int deg = 0; deg < 360; deg += 45) {
+      final a = deg * math.pi / 180;
+      final inner = deg % 90 == 0 ? r - 8.0 : r - 5.0;
+      canvas.drawLine(
+        Offset(cx + math.sin(a) * inner, cy - math.cos(a) * inner),
+        Offset(cx + math.sin(a) * r,     cy - math.cos(a) * r),
+        Paint()
+          ..color = Colors.white.withOpacity(deg % 90 == 0 ? 0.55 : 0.25)
+          ..strokeWidth = deg % 90 == 0 ? 1.2 : 0.7,
+      );
+    }
+
+    // Cardinal labels
+    final tp = TextPainter(textDirection: TextDirection.ltr);
+    for (final (label, deg) in [('N', 0), ('E', 90), ('S', 180), ('W', 270)]) {
+      final a = deg * math.pi / 180.0;
+      tp.text = TextSpan(
+        text: label,
+        style: TextStyle(
+          color: Colors.white.withOpacity(0.60),
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+        ),
+      );
+      tp.layout();
+      final lx = cx + math.sin(a) * (r - 13) - tp.width / 2;
+      final ly = cy - math.cos(a) * (r - 13) - tp.height / 2;
+      tp.paint(canvas, Offset(lx, ly));
+    }
+
+    // Wind direction arrow — FROM direction (meteorological convention)
+    // The tail of the arrow points to where wind comes FROM
+    final arrowRad = windDir * math.pi / 180.0;
+    final arrowLen = r * 0.55;
+    final tipX = cx + math.sin(arrowRad) * arrowLen;
+    final tipY = cy - math.cos(arrowRad) * arrowLen;
+    // Shaft: center → tip (tip = FROM direction)
+    final arrowColor = _beaufortColor(windSpeed);
+    canvas.drawLine(
+      Offset(cx, cy),
+      Offset(tipX, tipY),
+      Paint()
+        ..color = arrowColor.withOpacity(0.9)
+        ..strokeWidth = 2.2
+        ..strokeCap = StrokeCap.round,
+    );
+    // Arrowhead at tip
+    final headLen = 7.0;
+    for (final side in [-0.4, 0.4]) {
+      final hx = tipX - math.sin(arrowRad + side) * headLen;
+      final hy = tipY + math.cos(arrowRad + side) * headLen;
+      canvas.drawLine(
+        Offset(tipX, tipY), Offset(hx, hy),
+        Paint()
+          ..color = arrowColor.withOpacity(0.9)
+          ..strokeWidth = 2.2
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+
+    // Speed text in center
+    tp.text = TextSpan(
+      text: '${windSpeed.round()}',
+      style: TextStyle(
+        color: arrowColor,
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+    tp.layout();
+    tp.paint(canvas, Offset(cx - tp.width / 2, cy - tp.height / 2 - 6));
+
+    tp.text = TextSpan(
+      text: 'kn',
+      style: const TextStyle(color: Colors.white54, fontSize: 9),
+    );
+    tp.layout();
+    tp.paint(canvas, Offset(cx - tp.width / 2, cy + 8));
+  }
+
+  void _paintInfo(Canvas canvas, Size size) {
+    final force = _bft(windSpeed);
+    final dirLabel = windDirectionLabel(windDir);
+    final gustStr  = windGust != null ? '  阵 ${windGust!.round()}kn' : '';
+    final color    = _beaufortColor(windSpeed);
+
+    // Background pill
+    final tp = TextPainter(textDirection: TextDirection.ltr);
+    tp.text = TextSpan(
+      text: 'FROM $dirLabel · B$force$gustStr',
+      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+    );
+    tp.layout();
+    final padH = 10.0;
+    final padV = 6.0;
+    final pillRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(12, 12, tp.width + padH * 2, tp.height + padV * 2),
+      const Radius.circular(20),
+    );
+    canvas.drawRRect(pillRect, Paint()..color = Colors.black.withOpacity(0.45));
+    canvas.drawRRect(pillRect,
+      Paint()
+        ..color = color.withOpacity(0.30)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8,
+    );
+    tp.paint(canvas, Offset(12 + padH, 12 + padV));
+  }
+
+  static int _bft(double kn) {
+    if (kn < 1)  return 0; if (kn < 4)  return 1; if (kn < 7)  return 2;
+    if (kn < 11) return 3; if (kn < 17) return 4; if (kn < 22) return 5;
+    if (kn < 28) return 6; if (kn < 34) return 7; if (kn < 41) return 8;
+    if (kn < 48) return 9; if (kn < 56) return 10; if (kn < 64) return 11;
+    return 12;
+  }
+
+  @override
+  bool shouldRepaint(_WindFlowPainter old) =>
+      old.t != t || old.windDir != windDir || old.windSpeed != windSpeed;
+}
+
+// ---------------------------------------------------------------------------
+// Pressure sparkline
+// ---------------------------------------------------------------------------
+
+class _PressureSparkline extends StatelessWidget {
+  final List<HourlyForecast> hourly;
+  const _PressureSparkline({required this.hourly});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _PressureSparklinePainter(hourly: hourly),
+      size: Size.infinite,
+    );
+  }
+}
+
+class _PressureSparklinePainter extends CustomPainter {
+  final List<HourlyForecast> hourly;
+  const _PressureSparklinePainter({required this.hourly});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final pts = hourly
+        .where((h) => h.pressure != null)
+        .toList();
+    if (pts.length < 2) return;
+
+    final pressures = pts.map((h) => h.pressure!).toList();
+    final pMin = pressures.reduce(math.min);
+    final pMax = pressures.reduce(math.max);
+    final pRange = (pMax - pMin).clamp(2.0, double.infinity);
+
+    const padT = 4.0;
+    const padB = 20.0;
+    final chartH = size.height - padT - padB;
+    final stepX  = size.width / (pts.length - 1);
+
+    double px(int i) => i * stepX;
+    double py(double p) => padT + chartH * (1 - (p - pMin) / pRange);
+
+    // Build path
+    final path = Path()..moveTo(px(0), py(pressures[0]));
+    for (int i = 1; i < pts.length; i++) {
+      // Smooth cubic bezier
+      final x0 = px(i - 1), y0 = py(pressures[i - 1]);
+      final x1 = px(i),     y1 = py(pressures[i]);
+      final cp = (x0 + x1) / 2;
+      path.cubicTo(cp, y0, cp, y1, x1, y1);
+    }
+
+    // Filled area
+    final fillPath = Path.from(path)
+      ..lineTo(px(pts.length - 1), size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(
+      fillPath,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            const Color(0xFF64D2FF).withOpacity(0.30),
+            const Color(0xFF64D2FF).withOpacity(0.02),
+          ],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
+    );
+
+    // Line — color-coded: red where falling fast, green where stable/rising
+    for (int i = 1; i < pts.length; i++) {
+      final delta = pressures[i] - pressures[i - 1];
+      Color lineColor;
+      if (delta < -2)      lineColor = const Color(0xFFFF453A);
+      else if (delta < -1) lineColor = const Color(0xFFFF9F0A);
+      else if (delta > 1)  lineColor = const Color(0xFF30D158);
+      else                 lineColor = const Color(0xFF64D2FF);
+
+      final segPath = Path()
+        ..moveTo(px(i - 1), py(pressures[i - 1]));
+      final cp = (px(i - 1) + px(i)) / 2;
+      segPath.cubicTo(cp, py(pressures[i - 1]), cp, py(pressures[i]), px(i), py(pressures[i]));
+      canvas.drawPath(
+        segPath,
+        Paint()
+          ..color = lineColor.withOpacity(0.85)
+          ..strokeWidth = 2.0
+          ..style = PaintingStyle.stroke
+          ..strokeJoin = StrokeJoin.round,
+      );
+    }
+
+    // X-axis time labels + current value label
+    final tp = TextPainter(textDirection: TextDirection.ltr);
+    for (int i = 0; i < pts.length; i += 4) {
+      final hour = pts[i].time.toLocal().hour;
+      tp.text = TextSpan(
+        text: '${hour}h',
+        style: const TextStyle(color: Colors.white38, fontSize: 9),
+      );
+      tp.layout();
+      tp.paint(canvas, Offset(px(i) - tp.width / 2, size.height - 16));
+    }
+
+    // Current pressure dot + label
+    final curP = pressures[0];
+    canvas.drawCircle(
+      Offset(px(0), py(curP)), 4,
+      Paint()..color = const Color(0xFF64D2FF),
+    );
+    tp.text = TextSpan(
+      text: '${curP.round()} hPa',
+      style: const TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w600),
+    );
+    tp.layout();
+    tp.paint(canvas, Offset(6, py(curP) - tp.height - 2));
+  }
+
+  @override
+  bool shouldRepaint(_PressureSparklinePainter old) => old.hourly != hourly;
 }
 
 class _BeaufortChip extends StatelessWidget {
