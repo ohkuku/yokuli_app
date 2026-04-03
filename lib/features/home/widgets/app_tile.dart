@@ -1,7 +1,6 @@
-import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 class AppTileData {
   final String id;
@@ -185,14 +184,13 @@ class _AppTileState extends State<AppTile>
   }
 }
 
-/// Glass tile using [GlassContainer] from liquid_glass_widgets with a
-/// micro-oscillation trick to keep the GLSL shader alive on Android.
+/// Frosted-glass tile using [BackdropFilter] + [ClipRRect].
 ///
-/// Flutter's optimizer skips repaints when the widget tree is bit-for-bit
-/// identical across frames, which freezes the shader when scrolling stops.
-/// A ±0.001 oscillation in [lightIntensity] (imperceptible visually) ensures
-/// [LiquidGlassSettings] differs every frame, forcing shader re-evaluation.
-class _GlassTile extends StatefulWidget {
+/// [ClipRRect] forces Flutter to keep a compositing layer for this subtree
+/// at all times (static or scrolling), so the blur always samples the live
+/// background on Android — no GLSL shader required, no "freezes to solid"
+/// problem.
+class _GlassTile extends StatelessWidget {
   final Color accent;
   final bool isStub;
   final Widget child;
@@ -204,54 +202,39 @@ class _GlassTile extends StatefulWidget {
   });
 
   @override
-  State<_GlassTile> createState() => _GlassTileState();
-}
-
-class _GlassTileState extends State<_GlassTile>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ticker;
-
-  @override
-  void initState() {
-    super.initState();
-    _ticker = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 10),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _ticker.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ticker,
-      builder: (_, __) {
-        // Micro-oscillation: ±0.001 in lightIntensity — imperceptible
-        // but ensures LiquidGlassSettings differs each frame, forcing
-        // Flutter to re-evaluate the GLSL shader (prevents Android freeze).
-        final micro = math.sin(_ticker.value * 2 * math.pi) * 0.001;
-        return GlassContainer(
-          settings: LiquidGlassSettings(
-            blur: widget.isStub ? 6 : 10,
-            thickness: widget.isStub ? 0.3 : 0.45,
-            refractiveIndex: 1.25,
-            glassColor: widget.isStub
-                ? Colors.white.withOpacity(0.06)
-                : widget.accent.withOpacity(0.10),
-            lightIntensity: (widget.isStub ? 0.2 : 0.55) + micro,
-            chromaticAberration: widget.isStub ? 0.0 : 0.006,
+    final blurSigma = isStub ? 8.0 : 14.0;
+    final tint      = isStub
+        ? Colors.white.withOpacity(0.05)
+        : accent.withOpacity(0.08);
+    final border    = Colors.white.withOpacity(isStub ? 0.09 : 0.14);
+
+    // ClipRRect forces a compositing layer → BackdropFilter always works.
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma,
+            tileMode: TileMode.mirror),
+        child: Container(
+          decoration: BoxDecoration(
+            color: tint,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: border, width: 0.8),
+            // Subtle top-edge specular highlight
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.white.withOpacity(isStub ? 0.06 : 0.10),
+                Colors.white.withOpacity(0.0),
+              ],
+              stops: const [0.0, 0.35],
+            ),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: widget.child,
-          ),
-        );
-      },
+          padding: const EdgeInsets.all(16),
+          child: child,
+        ),
+      ),
     );
   }
 }
