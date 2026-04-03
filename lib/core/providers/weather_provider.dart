@@ -326,13 +326,17 @@ class WeatherNotifier extends Notifier<WeatherState> {
     'air.humidity.at-2m',        // %
     'wave.height',               // m
     'wave.period.peak',          // s
+    'precipitation.rate',        // mm/h — confirmed in official examples
+    'cloud.cover',               // 0–1 fraction — confirmed in official examples
   ];
 
   // Optional variables tried after the main request — failure does not block.
+  // wind.speed.gust.at-10m is the best candidate by naming convention
+  // (mirrors wind.speed.at-10m exactly).
   static const _metoceanOptional = [
-    'wind.speed.gust.at-10m',   // gust candidates
-    'wind.speed.gust',
-    'wind.gust.at-10m',
+    'wind.speed.gust.at-10m',   // best candidate: matches naming convention
+    'wind.speed.gust',           // second candidate: shorthand alias
+    'wind.gust.at-10m',          // third candidate: alternate noun structure
   ];
 
   /// One-shot variable probe: tests every candidate variable against the real
@@ -434,6 +438,8 @@ class WeatherNotifier extends Notifier<WeatherState> {
       final hum   = _v('air.humidity.at-2m');
       final waveH = _v('wave.height');
       final waveP = _v('wave.period.peak');
+      final precip = _v('precipitation.rate');
+      final cloudFrac = _v('cloud.cover');
 
       // Try optional variables (gust) — one at a time, silently ignore 400.
       List<double?> gustMs = [];
@@ -470,6 +476,20 @@ class WeatherNotifier extends Notifier<WeatherState> {
       final curWaveP   = waveP.elementAtOrNull(0);
       final curPress   = press.elementAtOrNull(0);
       final curHum     = hum.elementAtOrNull(0);
+      final curPrecip  = precip.elementAtOrNull(0);
+      final curCloud   = cloudFrac.elementAtOrNull(0);
+
+      // Derived: dew point (°C) — Magnus approximation ±1 °C
+      final curDewPt = (curTemp != null && curHum != null)
+          ? curTemp - (100.0 - curHum) / 5.0
+          : null;
+
+      // Pressure trend: compare forecast 3h ahead vs now
+      // Negative = falling (gale risk if < −6 hPa/3h), positive = rising
+      final p3h         = press.elementAtOrNull(3);
+      final pressureTrend = (curPress != null && p3h != null)
+          ? p3h - curPress
+          : null;
 
       // Hourly — next 24h
       final hourly = <HourlyForecast>[];
@@ -484,6 +504,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
           windGust: toKn(gustMs.elementAtOrNull(i)),
           waveHeight: waveH.elementAtOrNull(i),
           wavePeriod: waveP.elementAtOrNull(i),
+          precip: precip.elementAtOrNull(i),
         ));
       }
 
@@ -524,8 +545,12 @@ class WeatherNotifier extends Notifier<WeatherState> {
         ));
       }
 
-      // Derive a simple weather code from wind speed
-      final (code, description) = _windToCondition(curWindKn ?? 0);
+      // Derive weather code from cloud cover + precip, falling back to wind.
+      final (code, description) = _deriveCondition(
+        windKn: curWindKn ?? 0,
+        cloudCover: curCloud,
+        precipRate: curPrecip,
+      );
 
       return WeatherState(
         temperature: curTemp,
@@ -538,6 +563,10 @@ class WeatherNotifier extends Notifier<WeatherState> {
         wavePeriod: curWaveP,
         pressure: curPress,
         humidity: curHum,
+        dewPoint: curDewPt,
+        pressureTrend: pressureTrend,
+        cloudCover: curCloud,
+        precipitation: curPrecip,
         description: description,
         fetchedAt: DateTime.now(),
         locationLabel: 'MetOcean/MetService NZ',
@@ -553,12 +582,33 @@ class WeatherNotifier extends Notifier<WeatherState> {
     }
   }
 
-  (int, String) _windToCondition(double windKn) {
-    if (windKn >= 48) return (95, '烈风');
-    if (windKn >= 34) return (65, '强风');
-    if (windKn >= 22) return (55, '中等风力');
-    if (windKn >= 11) return (3,  '微风');
-    return (1, '平静');
+  /// Derive WMO-style weather code and description from cloud cover,
+  /// precipitation rate, and wind speed.
+  (int, String) _deriveCondition({
+    required double windKn,
+    double? cloudCover, // 0.0–1.0 fraction
+    double? precipRate, // mm/h
+  }) {
+    // Precipitation takes priority
+    if (precipRate != null && precipRate > 4.0) return (65, '中到大雨');
+    if (precipRate != null && precipRate > 0.5) return (61, '小雨');
+    if (precipRate != null && precipRate > 0.1) return (51, '毛毛雨');
+
+    // Cloud cover
+    final cc = cloudCover ?? 0.0;
+    final isOvercast = cc > 0.85;
+    final isMostlyCloudy = cc > 0.60;
+    final isClear = cc < 0.15;
+
+    // Storm wind overrides sky condition
+    if (windKn >= 48) return (95, isOvercast ? '烈风暴雨' : '烈风');
+    if (windKn >= 34) return (65, isOvercast ? '强风阵雨' : '强风');
+    if (windKn >= 22) return (55, isMostlyCloudy ? '多云中等风力' : '中等风力');
+
+    if (isOvercast)    return (3, '阴天');
+    if (isMostlyCloudy) return (2, '多云');
+    if (isClear)       return (0, '晴朗');
+    return (1, '基本晴朗');
   }
 }
 

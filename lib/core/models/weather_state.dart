@@ -702,6 +702,9 @@ class WeatherState {
   final double? windGust;      // current, knots
   final double? pressure;      // hPa
   final double? humidity;      // %
+  final double? dewPoint;      // °C — derived from temp + humidity
+  final double? pressureTrend; // hPa/3h — positive = rising, negative = falling
+  final double? cloudCover;    // 0.0–1.0 fraction
   final List<HourlyForecast> hourly;
   final List<DailyForecast> daily;
   final List<TideEntry> tides;
@@ -726,6 +729,9 @@ class WeatherState {
     this.windGust,
     this.pressure,
     this.humidity,
+    this.dewPoint,
+    this.pressureTrend,
+    this.cloudCover,
     this.hourly = const [],
     this.daily = const [],
     this.tides = const [],
@@ -767,6 +773,9 @@ class WeatherState {
     double? windGust,
     double? pressure,
     double? humidity,
+    double? dewPoint,
+    double? pressureTrend,
+    double? cloudCover,
     List<HourlyForecast>? hourly,
     List<DailyForecast>? daily,
     List<TideEntry>? tides,
@@ -791,6 +800,9 @@ class WeatherState {
         windGust: windGust ?? this.windGust,
         pressure: pressure ?? this.pressure,
         humidity: humidity ?? this.humidity,
+        dewPoint: dewPoint ?? this.dewPoint,
+        pressureTrend: pressureTrend ?? this.pressureTrend,
+        cloudCover: cloudCover ?? this.cloudCover,
         hourly: hourly ?? this.hourly,
         daily: daily ?? this.daily,
         tides: tides ?? this.tides,

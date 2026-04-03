@@ -210,6 +210,22 @@ class _OverviewTab extends StatelessWidget {
   final WeatherState weather;
   const _OverviewTab({required this.weather});
 
+  static int _beaufortForce(double kn) {
+    if (kn < 1)  return 0;
+    if (kn < 4)  return 1;
+    if (kn < 7)  return 2;
+    if (kn < 11) return 3;
+    if (kn < 17) return 4;
+    if (kn < 22) return 5;
+    if (kn < 28) return 6;
+    if (kn < 34) return 7;
+    if (kn < 41) return 8;
+    if (kn < 48) return 9;
+    if (kn < 56) return 10;
+    if (kn < 64) return 11;
+    return 12;
+  }
+
   Color _riskColor(double? windKn) {
     if (windKn == null) return AppColors.success;
     if (windKn >= 34) return AppColors.danger;
@@ -219,9 +235,10 @@ class _OverviewTab extends StatelessWidget {
 
   String _riskText(double? windKn) {
     if (windKn == null) return '海况良好';
-    if (windKn >= 34) return '警告：强风浪';
-    if (windKn >= 22) return '注意：风力较强';
-    return '海况良好';
+    final bf = _beaufortForce(windKn);
+    if (windKn >= 34) return '警告：强风浪 — 蒲福 $bf 级';
+    if (windKn >= 22) return '注意：风力较强 — 蒲福 $bf 级';
+    return '海况良好 — 蒲福 $bf 级';
   }
 
   @override
@@ -272,9 +289,18 @@ class _OverviewTab extends StatelessWidget {
                       ),
                       if (windKn != null) ...[
                         const Spacer(),
-                        Text(
-                          '${windKn.toStringAsFixed(0)} kn',
-                          style: TextStyle(color: riskColor.withOpacity(0.8), fontSize: 13),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '${windKn.toStringAsFixed(0)} kn',
+                              style: TextStyle(color: riskColor.withOpacity(0.9), fontSize: 14, fontWeight: FontWeight.w600),
+                            ),
+                            Text(
+                              'B${_beaufortForce(windKn)}',
+                              style: TextStyle(color: riskColor.withOpacity(0.65), fontSize: 11),
+                            ),
+                          ],
                         ),
                       ],
                     ],
@@ -320,7 +346,9 @@ class _OverviewTab extends StatelessWidget {
                   value: weather.windSpeed != null
                       ? '${weather.windSpeed!.toStringAsFixed(1)} kn'
                       : '--',
-                  sub: windDir != null ? '$windLabel · ${windDir}°' : null,
+                  sub: windDir != null
+                      ? '$windLabel · ${windDir}°${weather.windGust != null ? '  阵 ${weather.windGust!.toStringAsFixed(0)}kn' : ''}'
+                      : null,
                 ),
                 _ConditionCell(
                   icon: Icons.waves_rounded,
@@ -338,28 +366,39 @@ class _OverviewTab extends StatelessWidget {
                   value: weather.temperature != null
                       ? '${weather.temperature!.round()}°C'
                       : '--',
-                  sub: weather.feelsLike != null
-                      ? '体感 ${weather.feelsLike!.round()}°'
+                  sub: weather.dewPoint != null
+                      ? '露点 ${weather.dewPoint!.round()}°C'
                       : null,
                 ),
                 _ConditionCell(
                   icon: Icons.speed_rounded,
                   label: '气压',
-                  value: '--',
-                  sub: null,
+                  value: weather.pressure != null
+                      ? '${weather.pressure!.round()} hPa'
+                      : '--',
+                  sub: _pressureTrendLabel(weather.pressureTrend),
+                  subColor: (weather.pressureTrend != null && weather.pressureTrend! <= -6)
+                      ? AppColors.danger
+                      : null,
                 ),
                 _ConditionCell(
-                  icon: Icons.visibility_rounded,
-                  label: '能见度',
-                  value: '--',
-                  sub: null,
+                  icon: Icons.cloud_outlined,
+                  label: '云量',
+                  value: weather.cloudCover != null
+                      ? '${(weather.cloudCover! * 100).round()}%'
+                      : '--',
+                  sub: weather.precipitation != null && weather.precipitation! > 0
+                      ? '降水 ${weather.precipitation!.toStringAsFixed(1)} mm/h'
+                      : null,
                 ),
                 _ConditionCell(
                   icon: Icons.water_drop_rounded,
                   label: '湿度',
-                  value: '--',
-                  sub: weather.precipitation != null && weather.precipitation! > 0
-                      ? '降水 ${weather.precipitation!.toStringAsFixed(1)}mm'
+                  value: weather.humidity != null
+                      ? '${weather.humidity!.round()}%'
+                      : '--',
+                  sub: weather.dewPoint != null
+                      ? '露点 ${weather.dewPoint!.round()}°C'
                       : null,
                 ),
               ],
@@ -397,12 +436,14 @@ class _ConditionCell extends StatelessWidget {
   final String label;
   final String value;
   final String? sub;
+  final Color? subColor;
 
   const _ConditionCell({
     required this.icon,
     required this.label,
     required this.value,
     this.sub,
+    this.subColor,
   });
 
   @override
@@ -432,7 +473,10 @@ class _ConditionCell extends StatelessWidget {
           if (sub != null)
             Text(
               sub!,
-              style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10),
+              style: TextStyle(
+                color: subColor ?? Colors.white.withOpacity(0.5),
+                fontSize: 10,
+              ),
               overflow: TextOverflow.ellipsis,
             ),
         ],
@@ -528,6 +572,22 @@ class _BeaufortChip extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Returns a human-readable pressure trend label for the Overview card.
+/// [trend] is the expected hPa change over 3 hours (positive = rising).
+String? _pressureTrendLabel(double? trend) {
+  if (trend == null) return null;
+  final abs = trend.abs();
+  // IMO gale warning threshold: ≥ 6 hPa/3h
+  if (trend <= -6) return '↓↓ ${trend.toStringAsFixed(1)} hPa/3h  急降！';
+  if (trend <= -3) return '↓ ${trend.toStringAsFixed(1)} hPa/3h  下降';
+  if (trend >= 6)  return '↑↑ +${trend.toStringAsFixed(1)} hPa/3h  急升';
+  if (trend >= 3)  return '↑ +${trend.toStringAsFixed(1)} hPa/3h  上升';
+  if (abs < 1)     return '→ 稳定';
+  return trend > 0
+      ? '↑ +${trend.toStringAsFixed(1)} hPa/3h'
+      : '↓ ${trend.toStringAsFixed(1)} hPa/3h';
 }
 
 Color _beaufortColor(double kn) {
