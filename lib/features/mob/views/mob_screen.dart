@@ -128,12 +128,13 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
   @override
   void didUpdateWidget(_ActiveTab old) {
     super.didUpdateWidget(old);
-    if (widget.isActive && !old.isActive) _maybeStartTimer();
-    if (!widget.isActive && old.isActive) _stopTimer();
+    final isActive = ref.read(mobProvider).isMobActive;
+    if (isActive && !old.isActive) _maybeStartTimer();
+    if (!isActive && old.isActive) _stopTimer();
   }
 
   void _maybeStartTimer() {
-    if (!widget.isActive) return;
+    if (!ref.read(mobProvider).isMobActive) return;
     final mob = ref.read(mobProvider).activeMob;
     if (mob == null) return;
     _elapsedSeconds = mob.elapsed.inSeconds;
@@ -156,11 +157,13 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
 
   @override
   Widget build(BuildContext context) {
-    return widget.isActive ? _buildActive(context) : _buildStandby(context);
+    final isActive = ref.watch(mobProvider).isMobActive;
+    return isActive ? _buildActive(context) : _buildStandby(context);
   }
 
   Widget _buildActive(BuildContext context) {
-    final mob = ref.watch(mobProvider).activeMob!;
+    final mob = ref.watch(mobProvider).activeMob;
+    if (mob == null) return _buildStandby(context);
     final vessel = ref.watch(vesselProvider);
 
     final mins = _elapsedSeconds ~/ 60;
