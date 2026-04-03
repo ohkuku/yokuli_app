@@ -617,6 +617,25 @@ class SkyParticlePainter extends CustomPainter {
 }
 
 // ---------------------------------------------------------------------------
+// Wind grid point — one cell of the regional wind field
+// ---------------------------------------------------------------------------
+
+class WindGridPoint {
+  final double lat;
+  final double lon;
+  final double? windSpeed;  // knots
+  final int? windDir;       // degrees true
+  final double? pressure;   // hPa
+  const WindGridPoint({
+    required this.lat,
+    required this.lon,
+    this.windSpeed,
+    this.windDir,
+    this.pressure,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Tidal data model
 // ---------------------------------------------------------------------------
 
@@ -710,6 +729,7 @@ class WeatherState {
   final List<HourlyForecast> hourly;
   final List<DailyForecast> daily;
   final List<TideEntry> tides;
+  final List<WindGridPoint> windGrid; // regional grid for map view
 
   const WeatherState({
     this.temperature,
@@ -737,6 +757,7 @@ class WeatherState {
     this.hourly = const [],
     this.daily = const [],
     this.tides = const [],
+    this.windGrid = const [],
   });
 
   const WeatherState.loading() : this(isLoading: true);
@@ -781,6 +802,7 @@ class WeatherState {
     List<HourlyForecast>? hourly,
     List<DailyForecast>? daily,
     List<TideEntry>? tides,
+    List<WindGridPoint>? windGrid,
   }) =>
       WeatherState(
         temperature: temperature ?? this.temperature,
@@ -808,5 +830,6 @@ class WeatherState {
         hourly: hourly ?? this.hourly,
         daily: daily ?? this.daily,
         tides: tides ?? this.tides,
+        windGrid: windGrid ?? this.windGrid,
       );
 }

@@ -137,17 +137,34 @@ class WeatherNotifier extends Notifier<WeatherState> {
         return;
       }
 
-      // Fetch tides if WorldTides key is configured
-      List<TideEntry> tides = const [];
-      if (settings.worldTidesApiKey.isNotEmpty) {
-        tides = await _fetchTides(
-          lat: pos.latitude,
-          lon: pos.longitude,
-          apiKey: settings.worldTidesApiKey,
-        );
-      }
+      // Fetch tides + reverse geocoding in parallel (both optional)
+      final tidesF = settings.worldTidesApiKey.isNotEmpty
+          ? _fetchTides(lat: pos.latitude, lon: pos.longitude, apiKey: settings.worldTidesApiKey)
+          : Future.value(const <TideEntry>[]);
+      final geoF = _reverseGeocode(pos.latitude, pos.longitude);
+      final List<dynamic> aux = await Future.wait([tidesF, geoF]);
+      final tides     = aux[0] as List<TideEntry>;
+      final geoLabel  = aux[1] as String?;
 
-      state = result.copyWith(isLoading: false, error: null, tides: tides);
+      state = result.copyWith(
+        isLoading: false,
+        error: null,
+        tides: tides,
+        locationLabel: geoLabel ?? result.locationLabel,
+      );
+
+      // Fire-and-forget: fetch regional grid for wind map (doesn't block UI)
+      _fetchWindGrid(
+        lat: pos.latitude,
+        lon: pos.longitude,
+        apiKey: settings.metServiceApiKey,
+        from: _isoHour(DateTime.now().toUtc()),
+      ).then((grid) {
+        if (grid.isNotEmpty) {
+          state = state.copyWith(windGrid: grid);
+        }
+      // ignore: avoid_catches_without_on_clauses
+      }).catchError((_) {});
 
       // Broadcast fresh weather to all LAN peers — saves API quota on other
       // devices and ensures fleet-wide weather consistency.
@@ -610,6 +627,139 @@ class WeatherNotifier extends Notifier<WeatherState> {
     if (isMostlyCloudy) return (2, '多云');
     if (isClear)       return (0, '晴朗');
     return (1, '基本晴朗');
+  }
+
+  // --------------------------------------------------------------------------
+  // ISO-8601 hour string helper
+  // --------------------------------------------------------------------------
+
+  static String _isoHour(DateTime utc) =>
+      '${utc.year}-${utc.month.toString().padLeft(2, '0')}-${utc.day.toString().padLeft(2, '0')}'
+      'T${utc.hour.toString().padLeft(2, '0')}:00:00Z';
+
+  // --------------------------------------------------------------------------
+  // Regional wind grid — 7×7 centred on vessel, 0.5° spacing (~55 km)
+  // Makes a single MetOcean multi-point request for current conditions.
+  // --------------------------------------------------------------------------
+
+  static const _gridN = 7;
+  static const _gridStep = 0.5;
+
+  Future<List<WindGridPoint>> _fetchWindGrid({
+    required double lat,
+    required double lon,
+    required String apiKey,
+    required String from,
+  }) async {
+    final half = _gridN ~/ 2;
+    final points = <Map<String, dynamic>>[];
+    for (int r = 0; r < _gridN; r++) {
+      for (int c = 0; c < _gridN; c++) {
+        points.add({
+          'lat': lat + (r - half) * _gridStep,
+          'lon': lon + (c - half) * _gridStep,
+        });
+      }
+    }
+
+    final resp = await http.post(
+      Uri.parse('https://forecast-v2.metoceanapi.com/point/time'),
+      headers: {'x-api-key': apiKey, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'points': points,
+        'variables': [
+          'wind.speed.at-10m',
+          'wind.direction.at-10m',
+          'air.pressure.at-sea-level',
+        ],
+        'time': {'from': from, 'interval': '1h', 'repeat': 1},
+      }),
+    ).timeout(const Duration(seconds: 20));
+
+    if (resp.statusCode != 200) {
+      // ignore: avoid_print
+      print('[WindGrid] HTTP ${resp.statusCode}: ${resp.body.substring(0, resp.body.length.clamp(0, 200))}');
+      return [];
+    }
+
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    final vars = body['variables'] as Map<String, dynamic>? ?? {};
+
+    // Debug: print data structure on first call so we can verify format
+    // ignore: avoid_print
+    final sampleVar = vars.values.firstOrNull as Map<String, dynamic>?;
+    if (sampleVar != null) {
+      final d = sampleVar['data'];
+      // ignore: avoid_print
+      print('[WindGrid] data type=${d.runtimeType}  len=${d is List ? (d as List).length : "?"}  first=${d is List && (d as List).isNotEmpty ? d[0].runtimeType : "?"}');
+    }
+
+    final speeds = _extractGridVals(vars, 'wind.speed.at-10m', points.length);
+    final dirs   = _extractGridVals(vars, 'wind.direction.at-10m', points.length);
+    final presses = _extractGridVals(vars, 'air.pressure.at-sea-level', points.length);
+
+    return List.generate(points.length, (i) => WindGridPoint(
+      lat: (points[i]['lat'] as num).toDouble(),
+      lon: (points[i]['lon'] as num).toDouble(),
+      windSpeed: speeds[i] != null ? speeds[i]! * 1.944 : null, // m/s → kn
+      windDir: dirs[i]?.toInt(),
+      pressure: presses[i],
+    ));
+  }
+
+  /// Robust multi-point value extractor.
+  /// Handles both flat [point0, point1, ...] and nested [[t0],[t0],...] formats.
+  static List<double?> _extractGridVals(
+      Map<String, dynamic> vars, String name, int n) {
+    final v = vars[name] as Map<String, dynamic>?;
+    if (v == null) return List.filled(n, null);
+    final data   = v['data']   as List? ?? [];
+    final noData = v['noData'] as List? ?? [];
+
+    return List.generate(n, (i) {
+      if (i >= data.length) return null;
+      final entry = data[i];
+      // Handle nested [point][time] = [[val]] or flat [val]
+      final raw = entry is List ? (entry.isEmpty ? null : entry[0]) : entry;
+      // noData mask
+      if (i < noData.length) {
+        final nd = noData[i];
+        final ndv = nd is List ? (nd.isEmpty ? 0 : nd[0]) : nd;
+        if ((ndv as num? ?? 0) != 0) return null;
+      }
+      return raw is num ? raw.toDouble() : null;
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Reverse geocoding via OSM Nominatim (free, no key needed)
+  // --------------------------------------------------------------------------
+
+  Future<String?> _reverseGeocode(double lat, double lon) async {
+    try {
+      final resp = await http.get(
+        Uri.parse(
+          'https://nominatim.openstreetmap.org/reverse'
+          '?lat=${lat.toStringAsFixed(4)}&lon=${lon.toStringAsFixed(4)}&format=json',
+        ),
+        headers: {'User-Agent': 'YokuliApp/1.0 (marine navigation)'},
+      ).timeout(const Duration(seconds: 8));
+      if (resp.statusCode != 200) return null;
+      final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      final addr = body['address'] as Map<String, dynamic>?;
+      if (addr != null) {
+        final place = addr['suburb'] ?? addr['city'] ?? addr['town'] ??
+                      addr['village'] ?? addr['county'] ?? addr['state'];
+        final cc = (addr['country_code'] as String?)?.toUpperCase();
+        if (place is String && cc != null) return '$place · $cc';
+        if (place is String) return place;
+      }
+      // Fall back to first segment of display_name
+      final dn = body['display_name'] as String?;
+      return dn?.split(',').first.trim();
+    } catch (_) {
+      return null;
+    }
   }
 }
 

@@ -10,6 +10,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/weather_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../home/widgets/weather_background.dart';
+import '../widgets/wind_map_layer.dart';
 
 // ---------------------------------------------------------------------------
 // WeatherScreen — 5-tab professional maritime weather
@@ -497,16 +498,21 @@ class _WindTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final data = weather.hourly.take(24).toList();
 
-    if (weather.windSpeed == null && data.isEmpty) {
+    if (weather.windSpeed == null && data.isEmpty && weather.windGrid.isEmpty) {
       return _EmptyPlaceholder(message: '暂无风速数据');
     }
 
+    // Grid available → full-screen map with bottom info sheet
+    if (weather.windGrid.isNotEmpty) {
+      return _WindMapView(weather: weather, hourly: data);
+    }
+
+    // No grid yet → single-point particle canvas while grid loads
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Animated wind particle flow — the main visual
           _WindFlowCard(
             windSpeed: weather.windSpeed ?? 0,
             windDir: weather.windDirection ?? 0,
@@ -599,6 +605,244 @@ class _WindTab extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Wind map view — full-screen regional map + slide-up info panel
+// ---------------------------------------------------------------------------
+
+class _WindMapView extends StatefulWidget {
+  final WeatherState weather;
+  final List<HourlyForecast> hourly;
+  const _WindMapView({required this.weather, required this.hourly});
+
+  @override
+  State<_WindMapView> createState() => _WindMapViewState();
+}
+
+class _WindMapViewState extends State<_WindMapView> {
+  bool _panelOpen = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = widget.weather;
+    // Try to get vessel lat/lon from grid centre (or pass from state in future)
+    final lat = w.windGrid.isNotEmpty
+        ? w.windGrid.map((p) => p.lat).reduce((a, b) => a + b) / w.windGrid.length
+        : null;
+    final lon = w.windGrid.isNotEmpty
+        ? w.windGrid.map((p) => p.lon).reduce((a, b) => a + b) / w.windGrid.length
+        : null;
+
+    return Stack(
+      children: [
+        // ── Map (full screen) ──────────────────────────────────────────────
+        Positioned.fill(
+          child: WindMapWidget(
+            windGrid: w.windGrid,
+            centerLat: lat ?? 0,
+            centerLon: lon ?? 0,
+            vesselLat: lat,
+            vesselLon: lon,
+          ),
+        ),
+
+        // ── Current conditions pill (top-left) ────────────────────────────
+        Positioned(
+          top: 12,
+          left: 12,
+          child: _WindInfoPill(weather: w),
+        ),
+
+        // ── Pull-up handle ─────────────────────────────────────────────────
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: GestureDetector(
+            onTap: () => setState(() => _panelOpen = !_panelOpen),
+            onVerticalDragEnd: (d) {
+              if (d.primaryVelocity != null) {
+                setState(() => _panelOpen = d.primaryVelocity! < 0);
+              }
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeOutCubic,
+              height: _panelOpen ? 280 : 48,
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.72),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border(
+                  top: BorderSide(color: Colors.white.withOpacity(0.12)),
+                ),
+              ),
+              child: Column(
+                children: [
+                  // Drag handle
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.30),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  if (_panelOpen) ...[
+                    // Pressure sparkline
+                    if (widget.hourly.any((h) => h.pressure != null)) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                        child: Row(
+                          children: [
+                            const Text('气压趋势',
+                                style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
+                            if (w.pressureTrend != null) ...[
+                              const Spacer(),
+                              Text(
+                                _pressureTrendLabel(w.pressureTrend) ?? '',
+                                style: TextStyle(
+                                  color: (w.pressureTrend ?? 0) <= -6
+                                      ? AppColors.danger
+                                      : Colors.white54,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      SizedBox(
+                        height: 90,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                          child: _PressureSparkline(hourly: widget.hourly),
+                        ),
+                      ),
+                    ],
+                    // 24h bar chart
+                    if (widget.hourly.isNotEmpty) ...[
+                      const Divider(color: Colors.white12, height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          children: [
+                            const Text('未来24h风速 (kn)',
+                                style: TextStyle(color: Colors.white54, fontSize: 11)),
+                          ],
+                        ),
+                      ),
+                      SizedBox(
+                        height: 90,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                          child: _WindBarChart(data: widget.hourly.take(24).toList()),
+                        ),
+                      ),
+                    ],
+                  ] else
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _WindQuickStats(weather: w),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WindInfoPill extends StatelessWidget {
+  final WeatherState weather;
+  const _WindInfoPill({required this.weather});
+
+  @override
+  Widget build(BuildContext context) {
+    final ws = weather.windSpeed;
+    final dir = weather.windDirection;
+    final force = ws != null ? _OverviewTab._beaufortForce(ws) : null;
+    final color = ws != null ? _beaufortColor(ws) : Colors.white54;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.45),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: color.withOpacity(0.35)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.air_rounded, color: color, size: 16),
+              const SizedBox(width: 6),
+              Text(
+                ws != null
+                    ? '${ws.toStringAsFixed(0)} kn  B${force!}'
+                    : '--',
+                style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w700),
+              ),
+              if (dir != null) ...[
+                const SizedBox(width: 6),
+                Text(
+                  'FROM ${windDirectionLabel(dir)}',
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WindQuickStats extends StatelessWidget {
+  final WeatherState weather;
+  const _WindQuickStats({required this.weather});
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <({String label, String value, Color color})>[
+      if (weather.windSpeed != null)
+        (label: '风速', value: '${weather.windSpeed!.toStringAsFixed(1)} kn', color: _beaufortColor(weather.windSpeed!)),
+      if (weather.windGust != null)
+        (label: '阵风', value: '${weather.windGust!.toStringAsFixed(0)} kn', color: _beaufortColor(weather.windGust!)),
+      if (weather.pressure != null)
+        (label: '气压', value: '${weather.pressure!.round()} hPa', color: Colors.white70),
+      if (weather.pressureTrend != null)
+        (label: '气压趋势', value: _pressureTrendLabel(weather.pressureTrend) ?? '--',
+          color: (weather.pressureTrend ?? 0) <= -6 ? AppColors.danger : Colors.white54),
+      if (weather.waveHeight != null)
+        (label: '浪高', value: '${weather.waveHeight!.toStringAsFixed(1)} m', color: Colors.lightBlueAccent),
+    ];
+
+    return Row(
+      children: items.map((item) => Padding(
+        padding: const EdgeInsets.only(right: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(item.label, style: const TextStyle(color: Colors.white38, fontSize: 10)),
+            Text(item.value, style: TextStyle(color: item.color, fontSize: 13, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      )).toList(),
+    );
+  }
+}
+
 // Wind flow animation (Windy/PredictWind style)
 // ---------------------------------------------------------------------------
 
