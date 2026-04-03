@@ -1,6 +1,7 @@
+import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
-import '../../../core/theme/app_colors.dart';
 
 class AppTileData {
   final String id;
@@ -184,10 +185,15 @@ class _AppTileState extends State<AppTile>
   }
 }
 
-/// GlassContainer-based tile that stays animated even when the scroll is idle.
-/// On Android, liquid_glass shaders stop re-evaluating when the GPU pipeline
-/// idles. Wrapping in an AnimatedBuilder that ticks every frame forces Flutter
-/// to reschedule compositing so the shader always samples the live background.
+/// Glass tile using [BackdropFilter] + [CustomPaint] shimmer so the effect
+/// stays fully alive on Android even when the GPU pipeline is idle.
+///
+/// The old [GlassContainer] (GLSL shader) froze on Android when scroll stopped
+/// because Flutter's optimizer skips repaints when the widget tree is
+/// bit-for-bit identical across frames.  [BackdropFilter] always re-composites
+/// from the live background, and the [_LiquidShimmerPainter] outputs slightly
+/// different pixels every tick (via `shouldRepaint`) keeping the frame pipeline
+/// active.
 class _GlassTile extends StatefulWidget {
   final Color accent;
   final bool isStub;
@@ -210,10 +216,9 @@ class _GlassTileState extends State<_GlassTile>
   @override
   void initState() {
     super.initState();
-    // Drives a continuous tick so the liquid-glass shader is never frozen.
     _ticker = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 10),
+      duration: const Duration(seconds: 6),
     )..repeat();
   }
 
@@ -227,22 +232,120 @@ class _GlassTileState extends State<_GlassTile>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _ticker,
-      builder: (_, __) => GlassContainer(
-        settings: LiquidGlassSettings(
-          blur: widget.isStub ? 6 : 10,
-          thickness: widget.isStub ? 0.3 : 0.45,
-          refractiveIndex: 1.25,
-          glassColor: widget.isStub
-              ? Colors.white.withOpacity(0.06)
-              : widget.accent.withOpacity(0.10),
-          lightIntensity: widget.isStub ? 0.2 : 0.55,
-          chromaticAberration: widget.isStub ? 0.0 : 0.006,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: widget.child,
-        ),
-      ),
+      builder: (_, __) {
+        final t = _ticker.value;
+        final accent = widget.accent;
+        final isStub = widget.isStub;
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            fit: StackFit.passthrough,
+            children: [
+              // ① Blur — always reads live pixels; never frozen on Android.
+              Positioned.fill(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(
+                    sigmaX: isStub ? 6 : 10,
+                    sigmaY: isStub ? 6 : 10,
+                    tileMode: TileMode.mirror,
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+              // ② Glass tint + border
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: isStub
+                        ? Colors.white.withOpacity(0.06)
+                        : accent.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.14),
+                      width: 0.8,
+                    ),
+                  ),
+                ),
+              ),
+              // ③ Animated shimmer — changes every frame so Flutter never
+              //    skips compositing this subtree.
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _LiquidShimmerPainter(
+                    t: t,
+                    accent: accent,
+                    isStub: isStub,
+                  ),
+                ),
+              ),
+              // ④ Tile content
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: widget.child,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
+}
+
+/// Draws a top-edge specular highlight and a slow-moving accent shimmer.
+/// Because [t] changes every frame, [shouldRepaint] always returns true,
+/// ensuring the layer is re-drawn each vsync tick.
+class _LiquidShimmerPainter extends CustomPainter {
+  final double t;
+  final Color accent;
+  final bool isStub;
+
+  const _LiquidShimmerPainter({
+    required this.t,
+    required this.accent,
+    required this.isStub,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final rrect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 0, w, h),
+      const Radius.circular(20),
+    );
+
+    // Top-edge specular highlight — pulses gently.
+    final highlightAlpha = isStub
+        ? 0.07
+        : 0.16 + math.sin(t * 2 * math.pi) * 0.05;
+    final highlightPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Colors.white.withOpacity(highlightAlpha),
+          Colors.white.withOpacity(0.0),
+        ],
+        stops: const [0.0, 0.45],
+      ).createShader(Rect.fromLTWH(0, 0, w, h));
+    canvas.drawRRect(rrect, highlightPaint);
+
+    if (!isStub) {
+      // Slow-drifting accent shimmer band.
+      final shimmerCy = -0.6 + math.sin(t * 2 * math.pi) * 0.25;
+      final shimmerPaint = Paint()
+        ..shader = RadialGradient(
+          center: Alignment(0.0, shimmerCy),
+          radius: 0.75,
+          colors: [
+            accent.withOpacity(0.13),
+            accent.withOpacity(0.0),
+          ],
+        ).createShader(Rect.fromLTWH(0, 0, w, h));
+      canvas.drawRRect(rrect, shimmerPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_LiquidShimmerPainter old) => old.t != t;
 }
