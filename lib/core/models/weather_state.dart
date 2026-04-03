@@ -623,17 +623,50 @@ class SkyParticlePainter extends CustomPainter {
 class WindGridPoint {
   final double lat;
   final double lon;
-  final double? windSpeed;  // knots
-  final int? windDir;       // degrees true
-  final double? pressure;   // hPa
+  final double? windSpeed;   // knots
+  final int? windDir;        // degrees true
+  final double? pressure;    // hPa
+  final double? precipitation; // mm/h
   const WindGridPoint({
     required this.lat,
     required this.lon,
     this.windSpeed,
     this.windDir,
     this.pressure,
+    this.precipitation,
   });
 }
+
+class WaveGridPoint {
+  final double lat;
+  final double lon;
+  final double? waveHeight;  // m
+  final int? waveDir;        // degrees true
+  final double? wavePeriod;  // s
+  const WaveGridPoint({
+    required this.lat,
+    required this.lon,
+    this.waveHeight,
+    this.waveDir,
+    this.wavePeriod,
+  });
+}
+
+// Represents one time-step snapshot of the map grid.
+class MapGridSnapshot {
+  final DateTime time;
+  final List<WindGridPoint> windPoints;
+  final List<WaveGridPoint> wavePoints;
+
+  const MapGridSnapshot({
+    required this.time,
+    this.windPoints = const [],
+    this.wavePoints = const [],
+  });
+}
+
+enum WindLayer { wind, waves, pressure, rain }
+enum ForecastModel { gfs, ecmwf, icon }
 
 // ---------------------------------------------------------------------------
 // Tidal data model
@@ -729,7 +762,10 @@ class WeatherState {
   final List<HourlyForecast> hourly;
   final List<DailyForecast> daily;
   final List<TideEntry> tides;
-  final List<WindGridPoint> windGrid; // regional grid for map view
+  final List<WindGridPoint> windGrid;    // current-time wind grid
+  final List<WaveGridPoint> waveGrid;    // current-time wave grid
+  /// Forecast timeline: list ordered by time (0h, 3h, 6h, 12h, 24h, 48h).
+  final List<MapGridSnapshot> forecastTimeline;
 
   const WeatherState({
     this.temperature,
@@ -758,6 +794,8 @@ class WeatherState {
     this.daily = const [],
     this.tides = const [],
     this.windGrid = const [],
+    this.waveGrid = const [],
+    this.forecastTimeline = const [],
   });
 
   const WeatherState.loading() : this(isLoading: true);
@@ -803,6 +841,8 @@ class WeatherState {
     List<DailyForecast>? daily,
     List<TideEntry>? tides,
     List<WindGridPoint>? windGrid,
+    List<WaveGridPoint>? waveGrid,
+    List<MapGridSnapshot>? forecastTimeline,
   }) =>
       WeatherState(
         temperature: temperature ?? this.temperature,
@@ -831,5 +871,7 @@ class WeatherState {
         daily: daily ?? this.daily,
         tides: tides ?? this.tides,
         windGrid: windGrid ?? this.windGrid,
+        waveGrid: waveGrid ?? this.waveGrid,
+        forecastTimeline: forecastTimeline ?? this.forecastTimeline,
       );
 }

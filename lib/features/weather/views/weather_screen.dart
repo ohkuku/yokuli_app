@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart' hide TextDirection;
+import 'package:latlong2/latlong.dart';
 
 import '../../../core/models/weather_state.dart';
 import '../../../core/providers/settings_provider.dart';
@@ -606,7 +608,7 @@ class _WindTab extends StatelessWidget {
 
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// Wind map view — full-screen regional map + slide-up info panel
+// Wind map view — full-screen Windy-style map with layers + timeline + route
 // ---------------------------------------------------------------------------
 
 class _WindMapView extends ConsumerStatefulWidget {
@@ -618,150 +620,814 @@ class _WindMapView extends ConsumerStatefulWidget {
   ConsumerState<_WindMapView> createState() => _WindMapViewState();
 }
 
-class _WindMapViewState extends ConsumerState<_WindMapView> {
-  bool _panelOpen = false;
+class _WindMapViewState extends ConsumerState<_WindMapView>
+    with SingleTickerProviderStateMixin {
+  // ── Display state ──────────────────────────────────────────────────────────
+  bool _panelOpen  = false;
+  WindLayer     _layer    = WindLayer.wind;
+  ForecastModel _model    = ForecastModel.gfs;
+  int           _timeStep = 0; // index 0..5 into forecastTimeline
+
+  // ── Playback ───────────────────────────────────────────────────────────────
+  bool   _playing = false;
+  Timer? _playTimer;
+
+  // ── Route planning ─────────────────────────────────────────────────────────
+  bool            _routeMode   = false;
+  final List<LatLng> _routePoints = [];
+
+  // ── Timeline load state ────────────────────────────────────────────────────
+  bool _timelineLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-load timeline if grid is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadTimeline());
+  }
+
+  @override
+  void dispose() {
+    _playTimer?.cancel();
+    super.dispose();
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
 
   void _onGridNeeded(double lat, double lon, double step, int n) {
     ref.read(weatherProvider.notifier).refetchWindGrid(
       lat: lat, lon: lon, step: step, n: n,
     );
+    if (_layer == WindLayer.waves) {
+      ref.read(weatherProvider.notifier).refetchWaveGrid(
+        lat: lat, lon: lon, step: step, n: n,
+      );
+    }
   }
+
+  void _maybeLoadTimeline() {
+    if (_timelineLoading) return;
+    final w = widget.weather;
+    if (w.windGrid.isEmpty || w.forecastTimeline.isNotEmpty) return;
+    final lat = _centerLat(w);
+    final lon = _centerLon(w);
+    if (lat == null || lon == null) return;
+    setState(() => _timelineLoading = true);
+    ref.read(weatherProvider.notifier).fetchForecastTimeline(
+      lat: lat, lon: lon,
+    ).then((_) {
+      if (mounted) setState(() => _timelineLoading = false);
+    }).catchError((_) {
+      if (mounted) setState(() => _timelineLoading = false);
+    });
+  }
+
+  void _togglePlay() {
+    if (_playing) {
+      _playTimer?.cancel();
+      setState(() => _playing = false);
+      return;
+    }
+    setState(() => _playing = true);
+    _playTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (!mounted) { _playTimer?.cancel(); return; }
+      final maxStep = math.max(0,
+          widget.weather.forecastTimeline.length - 1);
+      setState(() {
+        _timeStep = (_timeStep + 1) % (maxStep + 1);
+        if (_timeStep == 0) {
+          _playing = false;
+          _playTimer?.cancel();
+        }
+      });
+    });
+  }
+
+  static double? _centerLat(WeatherState w) => w.windGrid.isNotEmpty
+      ? w.windGrid.map((p) => p.lat).reduce((a, b) => a + b) / w.windGrid.length
+      : null;
+
+  static double? _centerLon(WeatherState w) => w.windGrid.isNotEmpty
+      ? w.windGrid.map((p) => p.lon).reduce((a, b) => a + b) / w.windGrid.length
+      : null;
+
+  void _onMapTap(LatLng latLng) {
+    if (_routeMode) {
+      setState(() => _routePoints.add(latLng));
+      return;
+    }
+    // Tap-to-forecast
+    _showPointForecast(latLng);
+  }
+
+  void _showPointForecast(LatLng latLng) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _TapForecastSheet(
+        lat: latLng.latitude,
+        lon: latLng.longitude,
+      ),
+    );
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
+  static const _timeLabels = ['现在', '+3h', '+6h', '+12h', '+24h', '+48h'];
 
   @override
   Widget build(BuildContext context) {
-    final w = widget.weather;
-    // Use vessel position from grid centre
-    final lat = w.windGrid.isNotEmpty
-        ? w.windGrid.map((p) => p.lat).reduce((a, b) => a + b) / w.windGrid.length
-        : null;
-    final lon = w.windGrid.isNotEmpty
-        ? w.windGrid.map((p) => p.lon).reduce((a, b) => a + b) / w.windGrid.length
-        : null;
+    final w   = widget.weather;
+    final lat = _centerLat(w);
+    final lon = _centerLon(w);
 
     return Stack(
       children: [
-        // ── Map (full screen) ──────────────────────────────────────────────
+        // ── Full-screen map ────────────────────────────────────────────────
         Positioned.fill(
           child: WindMapWidget(
             windGrid: w.windGrid,
+            waveGrid: w.waveGrid,
+            forecastTimeline: w.forecastTimeline,
+            activeLayer: _layer,
+            model: _model,
+            timeStepIndex: _timeStep,
             centerLat: lat ?? 0,
             centerLon: lon ?? 0,
             vesselLat: lat,
             vesselLon: lon,
             onGridNeeded: _onGridNeeded,
+            onMapTap: _onMapTap,
           ),
         ),
 
-        // ── Current conditions pill (top-left) ────────────────────────────
+        // ── Route waypoint count overlay ───────────────────────────────────
+        if (_routeMode)
+          Positioned(
+            top: 80, left: 0, right: 0,
+            child: IgnorePointer(
+              child: Center(child: _RouteOverlay(points: _routePoints)),
+            ),
+          ),
+
+        // ── Top-left: conditions pill ──────────────────────────────────────
         Positioned(
           top: 12,
           left: 12,
           child: _WindInfoPill(weather: w),
         ),
 
-        // ── Pull-up handle ─────────────────────────────────────────────────
+        // ── Top-right: model chip + route button ───────────────────────────
+        Positioned(
+          top: 12,
+          right: 12,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _glassChip(
+                onTap: _showModelPicker,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cloud_download_outlined,
+                        size: 12, color: Colors.white70),
+                    const SizedBox(width: 4),
+                    Text(_modelLabel(_model),
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 12,
+                            fontWeight: FontWeight.w600)),
+                    const Icon(Icons.expand_more_rounded,
+                        size: 14, color: Colors.white54),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              _glassChip(
+                active: _routeMode,
+                onTap: () {
+                  setState(() {
+                    _routeMode = !_routeMode;
+                    if (!_routeMode) _routePoints.clear();
+                  });
+                },
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.route_rounded,
+                        size: 12,
+                        color: _routeMode ? AppColors.cyan : Colors.white70),
+                    const SizedBox(width: 4),
+                    Text(_routeMode ? '清除路线' : '规划路线',
+                        style: TextStyle(
+                            color: _routeMode ? AppColors.cyan : Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // ── Right side: layer selector ────────────────────────────────────
+        Positioned(
+          right: 12,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _LayerButton(
+                  icon: Icons.air_rounded,
+                  label: '风',
+                  active: _layer == WindLayer.wind,
+                  onTap: () => setState(() => _layer = WindLayer.wind),
+                ),
+                const SizedBox(height: 8),
+                _LayerButton(
+                  icon: Icons.waves_rounded,
+                  label: '浪',
+                  active: _layer == WindLayer.waves,
+                  onTap: () {
+                    setState(() => _layer = WindLayer.waves);
+                    if (w.waveGrid.isEmpty && lat != null) {
+                      ref.read(weatherProvider.notifier).refetchWaveGrid(
+                        lat: lat, lon: lon!,
+                      );
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+                _LayerButton(
+                  icon: Icons.speed_rounded,
+                  label: '气压',
+                  active: _layer == WindLayer.pressure,
+                  onTap: () => setState(() => _layer = WindLayer.pressure),
+                ),
+                const SizedBox(height: 8),
+                _LayerButton(
+                  icon: Icons.water_drop_rounded,
+                  label: '降雨',
+                  active: _layer == WindLayer.rain,
+                  onTap: () => setState(() => _layer = WindLayer.rain),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // ── Bottom: timeline + info panel ─────────────────────────────────
         Positioned(
           bottom: 0,
           left: 0,
           right: 0,
-          child: GestureDetector(
-            onTap: () => setState(() => _panelOpen = !_panelOpen),
-            onVerticalDragEnd: (d) {
-              if (d.primaryVelocity != null) {
-                setState(() => _panelOpen = d.primaryVelocity! < 0);
-              }
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 280),
-              curve: Curves.easeOutCubic,
-              height: _panelOpen ? 280 : 48,
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.72),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                border: Border(
-                  top: BorderSide(color: Colors.white.withOpacity(0.12)),
-                ),
-              ),
-              child: Column(
-                children: [
-                  // Drag handle
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Container(
-                      width: 36,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.30),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  if (_panelOpen) ...[
-                    // Pressure sparkline
-                    if (widget.hourly.any((h) => h.pressure != null)) ...[
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                        child: Row(
-                          children: [
-                            const Text('气压趋势',
-                                style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
-                            if (w.pressureTrend != null) ...[
-                              const Spacer(),
-                              Text(
-                                _pressureTrendLabel(w.pressureTrend) ?? '',
-                                style: TextStyle(
-                                  color: (w.pressureTrend ?? 0) <= -6.0
-                                      ? AppColors.danger
-                                      : Colors.white54,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      SizedBox(
-                        height: 90,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                          child: _PressureSparkline(hourly: widget.hourly),
-                        ),
-                      ),
-                    ],
-                    // 24h bar chart
-                    if (widget.hourly.isNotEmpty) ...[
-                      const Divider(color: Colors.white12, height: 16),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Row(
-                          children: [
-                            const Text('未来24h风速 (kn)',
-                                style: TextStyle(color: Colors.white54, fontSize: 11)),
-                          ],
-                        ),
-                      ),
-                      SizedBox(
-                        height: 90,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                          child: _WindBarChart(data: widget.hourly.take(24).toList()),
-                        ),
-                      ),
-                    ],
-                  ] else
-                    Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: _WindQuickStats(weather: w),
-                      ),
-                    ),
-                ],
-              ),
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Timeline strip
+              _buildTimeline(w),
+              // Info panel
+              _buildInfoPanel(w),
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildTimeline(WeatherState w) {
+    final hasTimeline = w.forecastTimeline.isNotEmpty;
+    final maxStep = hasTimeline ? w.forecastTimeline.length - 1 : 5;
+
+    return Container(
+      color: Colors.black.withOpacity(0.55),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        children: [
+          // Play / pause
+          GestureDetector(
+            onTap: hasTimeline ? _togglePlay : _maybeLoadTimeline,
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _playing ? AppColors.cyan.withOpacity(0.25) : Colors.white12,
+                border: Border.all(
+                  color: _playing ? AppColors.cyan : Colors.white24,
+                ),
+              ),
+              child: _timelineLoading
+                  ? const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: CircularProgressIndicator(
+                          strokeWidth: 1.5,
+                          color: Colors.white54))
+                  : Icon(
+                      _playing
+                          ? Icons.pause_rounded
+                          : (hasTimeline ? Icons.play_arrow_rounded : Icons.download_rounded),
+                      color: _playing ? AppColors.cyan : Colors.white70,
+                      size: 18,
+                    ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Step labels
+          Expanded(
+            child: Row(
+              children: List.generate(
+                _timeLabels.length,
+                (i) {
+                  final active = i == _timeStep;
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _timeStep = i),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        decoration: BoxDecoration(
+                          color: active
+                              ? AppColors.cyan.withOpacity(0.20)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(6),
+                          border: active
+                              ? Border.all(color: AppColors.cyan.withOpacity(0.5))
+                              : null,
+                        ),
+                        child: Text(
+                          _timeLabels[i],
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: active ? AppColors.cyan : Colors.white38,
+                            fontSize: 10,
+                            fontWeight: active
+                                ? FontWeight.w700
+                                : FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoPanel(WeatherState w) {
+    return GestureDetector(
+      onTap: () => setState(() => _panelOpen = !_panelOpen),
+      onVerticalDragEnd: (d) {
+        if (d.primaryVelocity != null) {
+          setState(() => _panelOpen = d.primaryVelocity! < 0);
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+        height: _panelOpen ? 260 : 48,
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.78),
+          borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(16)),
+          border: Border(
+              top: BorderSide(color: Colors.white.withOpacity(0.12))),
+        ),
+        child: Column(
+          children: [
+            // Drag handle
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.30),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            if (_panelOpen) ...[
+              if (widget.hourly.any((h) => h.pressure != null)) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: Row(children: [
+                    const Text('气压趋势',
+                        style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600)),
+                    if (w.pressureTrend != null) ...[
+                      const Spacer(),
+                      Text(
+                        _pressureTrendLabel(w.pressureTrend) ?? '',
+                        style: TextStyle(
+                          color: (w.pressureTrend ?? 0) <= -6.0
+                              ? AppColors.danger
+                              : Colors.white54,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ]),
+                ),
+                SizedBox(
+                  height: 80,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                    child: _PressureSparkline(hourly: widget.hourly),
+                  ),
+                ),
+              ],
+              if (widget.hourly.isNotEmpty) ...[
+                const Divider(color: Colors.white12, height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(children: [
+                    const Text('未来24h风速 (kn)',
+                        style: TextStyle(
+                            color: Colors.white54, fontSize: 11)),
+                    const Spacer(),
+                    // Model selector inline
+                    GestureDetector(
+                      onTap: _showModelPicker,
+                      child: Text(
+                        '数据: ${_modelLabel(_model)}',
+                        style: const TextStyle(
+                            color: Colors.white30, fontSize: 10),
+                      ),
+                    ),
+                  ]),
+                ),
+                SizedBox(
+                  height: 80,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                    child: _WindBarChart(
+                        data: widget.hourly.take(24).toList()),
+                  ),
+                ),
+              ],
+            ] else
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _WindQuickStats(weather: w),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showModelPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1F2E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('预报模型',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(height: 16),
+            for (final m in ForecastModel.values)
+              ListTile(
+                leading: Icon(
+                  m == _model
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_off_rounded,
+                  color: m == _model ? AppColors.cyan : Colors.white38,
+                ),
+                title: Text(_modelLabel(m),
+                    style: const TextStyle(color: Colors.white)),
+                subtitle: Text(_modelDesc(m),
+                    style: const TextStyle(
+                        color: Colors.white38, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() => _model = m);
+                  // Trigger refetch with new model (future: pass model param)
+                  final w = widget.weather;
+                  final lat = _centerLat(w);
+                  final lon = _centerLon(w);
+                  if (lat != null) {
+                    ref.read(weatherProvider.notifier).refetchWindGrid(
+                      lat: lat, lon: lon!,
+                    );
+                  }
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _modelLabel(ForecastModel m) => switch (m) {
+    ForecastModel.gfs   => 'GFS',
+    ForecastModel.ecmwf => 'ECMWF',
+    ForecastModel.icon  => 'ICON',
+  };
+
+  static String _modelDesc(ForecastModel m) => switch (m) {
+    ForecastModel.gfs   => 'NOAA全球预报，6h分辨率',
+    ForecastModel.ecmwf => '欧洲中期天气预报，精度更高',
+    ForecastModel.icon  => 'DWD德国天气局，高分辨率',
+  };
+
+  Widget _glassChip({
+    required Widget child,
+    required VoidCallback onTap,
+    bool active = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: active
+                  ? AppColors.cyan.withOpacity(0.20)
+                  : Colors.black.withOpacity(0.50),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: active
+                    ? AppColors.cyan.withOpacity(0.60)
+                    : Colors.white.withOpacity(0.14),
+              ),
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Layer selector button ──────────────────────────────────────────────────
+
+class _LayerButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _LayerButton({
+    required this.icon,
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: active
+              ? AppColors.cyan.withOpacity(0.25)
+              : Colors.black.withOpacity(0.55),
+          border: Border.all(
+            color: active
+                ? AppColors.cyan.withOpacity(0.80)
+                : Colors.white.withOpacity(0.18),
+            width: active ? 1.5 : 1.0,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                size: 16,
+                color: active ? AppColors.cyan : Colors.white54),
+            Text(label,
+                style: TextStyle(
+                    color: active ? AppColors.cyan : Colors.white38,
+                    fontSize: 8,
+                    fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Route overlay (drawn outside the FlutterMap) ──────────────────────────
+
+class _RouteOverlay extends StatelessWidget {
+  final List<LatLng> points;
+  const _RouteOverlay({required this.points});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.70),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.cyan.withOpacity(0.5)),
+        ),
+        child: Text(
+          '${points.length} 个航点  点击地图继续添加',
+          style: const TextStyle(
+              color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Tap-to-forecast bottom sheet ──────────────────────────────────────────
+
+class _TapForecastSheet extends ConsumerStatefulWidget {
+  final double lat, lon;
+  const _TapForecastSheet({required this.lat, required this.lon});
+
+  @override
+  ConsumerState<_TapForecastSheet> createState() => _TapForecastSheetState();
+}
+
+class _TapForecastSheetState extends ConsumerState<_TapForecastSheet> {
+  List<HourlyForecast>? _data;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await ref
+          .read(weatherProvider.notifier)
+          .fetchPointForecast(lat: widget.lat, lon: widget.lon);
+      if (mounted) setState(() { _data = data; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lat = widget.lat.toStringAsFixed(3);
+    final lon = widget.lon.toStringAsFixed(3);
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.55,
+      decoration: const BoxDecoration(
+        color: Color(0xFF0E1524),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          // Handle
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: Row(
+              children: [
+                const Icon(Icons.place_rounded,
+                    color: AppColors.cyan, size: 16),
+                const SizedBox(width: 6),
+                Text('$lat, $lon',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700)),
+                const Spacer(),
+                const Text('48h预报',
+                    style: TextStyle(
+                        color: Colors.white38, fontSize: 12)),
+              ],
+            ),
+          ),
+          const Divider(color: Colors.white12, height: 1),
+          if (_loading)
+            const Expanded(
+              child: Center(
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: AppColors.cyan),
+              ),
+            )
+          else if (_error != null || _data == null || _data!.isEmpty)
+            const Expanded(
+              child: Center(
+                child: Text('无法获取预报数据',
+                    style: TextStyle(color: Colors.white38)),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: math.min(48, _data!.length),
+                separatorBuilder: (_, __) =>
+                    const Divider(color: Colors.white10, height: 1),
+                itemBuilder: (_, i) {
+                  final h = _data![i];
+                  final time = '${h.time.hour.toString().padLeft(2, '0')}:00';
+                  final date = '${h.time.month}/${h.time.day}';
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 8),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 50,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(time,
+                                  style: const TextStyle(
+                                      color: Colors.white70, fontSize: 12)),
+                              Text(date,
+                                  style: const TextStyle(
+                                      color: Colors.white30, fontSize: 10)),
+                            ],
+                          ),
+                        ),
+                        if (h.windSpeed != null) ...[
+                          Icon(Icons.air_rounded,
+                              size: 14,
+                              color: _beaufortColor(h.windSpeed!)),
+                          const SizedBox(width: 4),
+                          SizedBox(
+                            width: 60,
+                            child: Text(
+                              '${h.windSpeed!.toStringAsFixed(0)} kn '
+                              '${h.windDir != null ? windDirectionLabel(h.windDir!) : ""}',
+                              style: TextStyle(
+                                  color: _beaufortColor(h.windSpeed!),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                        if (h.waveHeight != null) ...[
+                          const Icon(Icons.waves_rounded,
+                              size: 14, color: Colors.lightBlueAccent),
+                          const SizedBox(width: 4),
+                          SizedBox(
+                            width: 48,
+                            child: Text(
+                              '${h.waveHeight!.toStringAsFixed(1)} m',
+                              style: const TextStyle(
+                                  color: Colors.lightBlueAccent,
+                                  fontSize: 12),
+                            ),
+                          ),
+                        ],
+                        const Spacer(),
+                        if (h.pressure != null)
+                          Text(
+                            '${(h.pressure! / 10).toStringAsFixed(1)} kPa',
+                            style: const TextStyle(
+                                color: Colors.white30, fontSize: 11),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

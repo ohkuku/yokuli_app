@@ -699,6 +699,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
           'wind.speed.at-10m',
           'wind.direction.at-10m',
           'air.pressure.at-sea-level',
+          'precipitation.rate',
         ],
         'time': {'from': from, 'interval': '1h', 'repeat': 1},
       }),
@@ -713,25 +714,18 @@ class WeatherNotifier extends Notifier<WeatherState> {
     final body = jsonDecode(resp.body) as Map<String, dynamic>;
     final vars = body['variables'] as Map<String, dynamic>? ?? {};
 
-    // Debug: print data structure on first call so we can verify format
-    // ignore: avoid_print
-    final sampleVar = vars.values.firstOrNull as Map<String, dynamic>?;
-    if (sampleVar != null) {
-      final d = sampleVar['data'];
-      // ignore: avoid_print
-      print('[WindGrid] data type=${d.runtimeType}  len=${d is List ? (d as List).length : "?"}  first=${d is List && (d as List).isNotEmpty ? d[0].runtimeType : "?"}');
-    }
-
-    final speeds = _extractGridVals(vars, 'wind.speed.at-10m', points.length);
-    final dirs   = _extractGridVals(vars, 'wind.direction.at-10m', points.length);
+    final speeds  = _extractGridVals(vars, 'wind.speed.at-10m', points.length);
+    final dirs    = _extractGridVals(vars, 'wind.direction.at-10m', points.length);
     final presses = _extractGridVals(vars, 'air.pressure.at-sea-level', points.length);
+    final precips = _extractGridVals(vars, 'precipitation.rate', points.length);
 
     return List.generate(points.length, (i) => WindGridPoint(
       lat: (points[i]['lat'] as num).toDouble(),
       lon: (points[i]['lon'] as num).toDouble(),
-      windSpeed: speeds[i] != null ? speeds[i]! * 1.944 : null, // m/s → kn
+      windSpeed: speeds[i] != null ? speeds[i]! * 1.944 : null,
       windDir: dirs[i]?.toInt(),
       pressure: presses[i],
+      precipitation: precips[i],
     ));
   }
 
@@ -757,6 +751,157 @@ class WeatherNotifier extends Notifier<WeatherState> {
       }
       return raw is num ? raw.toDouble() : null;
     });
+  }
+
+  // --------------------------------------------------------------------------
+  // Wave grid fetch
+  // --------------------------------------------------------------------------
+
+  Future<void> refetchWaveGrid({
+    required double lat,
+    required double lon,
+    double step = _gridStep,
+    int n = _gridN,
+  }) async {
+    final apiKey = ref.read(settingsProvider).metServiceApiKey;
+    if (apiKey.isEmpty) return;
+    final grid = await _fetchWaveGrid(
+      lat: lat, lon: lon, apiKey: apiKey,
+      from: _isoHour(DateTime.now().toUtc()), step: step, n: n,
+    ).catchError((_) => <WaveGridPoint>[]);
+    if (grid.isNotEmpty) {
+      state = state.copyWith(waveGrid: grid);
+    }
+  }
+
+  Future<List<WaveGridPoint>> _fetchWaveGrid({
+    required double lat,
+    required double lon,
+    required String apiKey,
+    required String from,
+    double step = _gridStep,
+    int n = _gridN,
+  }) async {
+    final half = n ~/ 2;
+    final points = <Map<String, dynamic>>[];
+    for (int r = 0; r < n; r++) {
+      for (int c = 0; c < n; c++) {
+        points.add({'lat': lat + (r - half) * step, 'lon': lon + (c - half) * step});
+      }
+    }
+    final resp = await http.post(
+      Uri.parse('https://forecast-v2.metoceanapi.com/point/time'),
+      headers: {'x-api-key': apiKey, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'points': points,
+        'variables': ['wave.height', 'wave.direction.peak', 'wave.period.peak'],
+        'time': {'from': from, 'interval': '1h', 'repeat': 1},
+      }),
+    ).timeout(const Duration(seconds: 20));
+    if (resp.statusCode != 200) return [];
+    final vars = (jsonDecode(resp.body) as Map<String, dynamic>)['variables']
+        as Map<String, dynamic>? ?? {};
+    final heights = _extractGridVals(vars, 'wave.height', points.length);
+    final dirs    = _extractGridVals(vars, 'wave.direction.peak', points.length);
+    final periods = _extractGridVals(vars, 'wave.period.peak', points.length);
+    return List.generate(points.length, (i) => WaveGridPoint(
+      lat: (points[i]['lat'] as num).toDouble(),
+      lon: (points[i]['lon'] as num).toDouble(),
+      waveHeight: heights[i],
+      waveDir: dirs[i]?.toInt(),
+      wavePeriod: periods[i],
+    ));
+  }
+
+  // --------------------------------------------------------------------------
+  // Forecast timeline — fetch 6 time steps for playback
+  // --------------------------------------------------------------------------
+
+  /// Fetches wind+wave grids at offsets [0, 3, 6, 12, 24, 48] hours and
+  /// stores them as [WeatherState.forecastTimeline].
+  Future<void> fetchForecastTimeline({
+    required double lat,
+    required double lon,
+    double step = _gridStep,
+    int n = _gridN,
+  }) async {
+    final apiKey = ref.read(settingsProvider).metServiceApiKey;
+    if (apiKey.isEmpty) return;
+
+    const offsets = [0, 3, 6, 12, 24, 48];
+    final now = DateTime.now().toUtc();
+
+    final snapshots = await Future.wait(offsets.map((h) async {
+      final t = now.add(Duration(hours: h));
+      final from = _isoHour(t);
+      final wind = await _fetchWindGrid(
+        lat: lat, lon: lon, apiKey: apiKey, from: from, step: step, n: n,
+      ).catchError((_) => <WindGridPoint>[]);
+      final wave = await _fetchWaveGrid(
+        lat: lat, lon: lon, apiKey: apiKey, from: from, step: step, n: n,
+      ).catchError((_) => <WaveGridPoint>[]);
+      return MapGridSnapshot(time: t, windPoints: wind, wavePoints: wave);
+    }));
+
+    state = state.copyWith(forecastTimeline: snapshots);
+  }
+
+  // --------------------------------------------------------------------------
+  // Point forecast — fetch single-point 48h forecast for tap-on-map
+  // --------------------------------------------------------------------------
+
+  /// Returns 48 hourly forecast entries for a single lat/lon.
+  Future<List<HourlyForecast>> fetchPointForecast({
+    required double lat,
+    required double lon,
+  }) async {
+    final apiKey = ref.read(settingsProvider).metServiceApiKey;
+    if (apiKey.isEmpty) return [];
+    final from = _isoHour(DateTime.now().toUtc());
+    final resp = await http.post(
+      Uri.parse('https://forecast-v2.metoceanapi.com/point/time'),
+      headers: {'x-api-key': apiKey, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'points': [{'lat': lat, 'lon': lon}],
+        'variables': [
+          'wind.speed.at-10m',
+          'wind.direction.at-10m',
+          'air.pressure.at-sea-level',
+          'wave.height',
+          'precipitation.rate',
+        ],
+        'time': {'from': from, 'interval': '1h', 'repeat': 48},
+      }),
+    ).timeout(const Duration(seconds: 20));
+    if (resp.statusCode != 200) return [];
+    final vars = (jsonDecode(resp.body) as Map<String, dynamic>)['variables']
+        as Map<String, dynamic>? ?? {};
+    // Single-point: data[timeIdx] format
+    List<double?> _ptVals(String name) {
+      final v = vars[name] as Map<String, dynamic>?;
+      if (v == null) return List.filled(48, null);
+      final data = v['data'] as List? ?? [];
+      return List.generate(48, (i) {
+        if (i >= data.length) return null;
+        final entry = data[i];
+        final raw = entry is List ? (entry.isEmpty ? null : entry[0]) : entry;
+        return raw is num ? raw.toDouble() : null;
+      });
+    }
+    final spds = _ptVals('wind.speed.at-10m');
+    final dirs = _ptVals('wind.direction.at-10m');
+    final press = _ptVals('air.pressure.at-sea-level');
+    final waveH = _ptVals('wave.height');
+    final precip = _ptVals('precipitation.rate');
+    final now = DateTime.now().toUtc();
+    return List.generate(48, (i) => HourlyForecast(
+      time: now.add(Duration(hours: i)),
+      windSpeed: spds[i] != null ? spds[i]! * 1.944 : null,
+      windDir: dirs[i]?.toInt(),
+      pressure: press[i],
+      waveHeight: waveH[i],
+      precip: precip[i],
+    ));
   }
 
   // --------------------------------------------------------------------------
