@@ -7,6 +7,9 @@ import 'package:latlong2/latlong.dart';
 
 import '../../../core/models/weather_state.dart';
 
+// Callback type: (centerLat, centerLon, stepDeg, gridN)
+typedef WindGridRefetch = void Function(double lat, double lon, double step, int n);
+
 // ---------------------------------------------------------------------------
 // Public entry-point
 // ---------------------------------------------------------------------------
@@ -16,12 +19,17 @@ import '../../../core/models/weather_state.dart';
 /// Shows animated wind particles flowing across the geographic area covered by
 /// [windGrid].  A vessel marker is drawn at [vesselLat]/[vesselLon] when
 /// provided.  Supports full multi-touch zoom/pan via [FlutterMap].
-class WindMapWidget extends StatelessWidget {
+///
+/// [onGridNeeded] is called whenever the visible viewport extends beyond the
+/// current grid boundaries (or after a significant zoom/pan), supplying the
+/// new centre, step, and point count so the caller can trigger a re-fetch.
+class WindMapWidget extends StatefulWidget {
   final List<WindGridPoint> windGrid;
   final double centerLat;
   final double centerLon;
   final double? vesselLat;
   final double? vesselLon;
+  final WindGridRefetch? onGridNeeded;
 
   const WindMapWidget({
     super.key,
@@ -30,16 +38,68 @@ class WindMapWidget extends StatelessWidget {
     required this.centerLon,
     this.vesselLat,
     this.vesselLon,
+    this.onGridNeeded,
   });
+
+  @override
+  State<WindMapWidget> createState() => _WindMapWidgetState();
+}
+
+class _WindMapWidgetState extends State<WindMapWidget> {
+  final _mapController = MapController();
+  // Track the last viewport for which we fetched so we don't spam the API.
+  double? _lastFetchLat, _lastFetchLon, _lastFetchStep;
+
+  static const _gridN = 9; // always request 9×9 = 81 pts for better coverage
+
+  void _onMapEvent(MapEvent event) {
+    // Trigger refetch after any move/zoom ends (scroll wheel zoom also fires MoveEnd)
+    if (event is! MapEventMoveEnd) return;
+    _checkAndRefetch();
+  }
+
+  void _checkAndRefetch() {
+    if (widget.onGridNeeded == null) return;
+    final camera = _mapController.camera;
+    // Compute the visible lat/lon span from the camera bounds
+    final bounds  = camera.visibleBounds;
+    final spanLat = bounds.north - bounds.south;
+    final spanLon = bounds.east  - bounds.west;
+    final visSpan = math.max(spanLat, spanLon);
+
+    // Choose step so we get ~9 columns/rows across the visible span
+    final step = (visSpan / _gridN).clamp(0.25, 5.0);
+    final newLat = camera.center.latitude;
+    final newLon = camera.center.longitude;
+
+    // Only re-fetch if centre moved >1 step or step changed >20%
+    final latDiff  = (_lastFetchLat  == null) ? double.infinity : (newLat - _lastFetchLat!).abs();
+    final lonDiff  = (_lastFetchLon  == null) ? double.infinity : (newLon - _lastFetchLon!).abs();
+    final stepDiff = (_lastFetchStep == null) ? double.infinity : (step - _lastFetchStep!).abs() / step;
+    if (latDiff < step * 0.5 && lonDiff < step * 0.5 && stepDiff < 0.2) return;
+
+    _lastFetchLat  = newLat;
+    _lastFetchLon  = newLon;
+    _lastFetchStep = step;
+    widget.onGridNeeded!(newLat, newLon, step, _gridN);
+  }
+
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return FlutterMap(
+      mapController: _mapController,
       options: MapOptions(
-        initialCenter: LatLng(centerLat, centerLon),
+        initialCenter: LatLng(widget.centerLat, widget.centerLon),
         initialZoom: 7.0,
         minZoom: 4.0,
         maxZoom: 12.0,
+        onMapEvent: _onMapEvent,
       ),
       children: [
         // Dark-matter base tiles (CartoDB) — high contrast for coloured particles
@@ -51,10 +111,10 @@ class WindMapWidget extends StatelessWidget {
           userAgentPackageName: 'com.yokuli.app',
         ),
         // Animated wind particles
-        _WindParticleLayer(windGrid: windGrid),
+        _WindParticleLayer(windGrid: widget.windGrid),
         // Wind arrows at each grid point
         MarkerLayer(
-          markers: windGrid
+          markers: widget.windGrid
               .where((p) => p.windSpeed != null && p.windDir != null)
               .map((p) => Marker(
                     point: LatLng(p.lat, p.lon),
@@ -72,11 +132,11 @@ class WindMapWidget extends StatelessWidget {
               .toList(),
         ),
         // Vessel position
-        if (vesselLat != null && vesselLon != null)
+        if (widget.vesselLat != null && widget.vesselLon != null)
           MarkerLayer(
             markers: [
               Marker(
-                point: LatLng(vesselLat!, vesselLon!),
+                point: LatLng(widget.vesselLat!, widget.vesselLon!),
                 width: 28,
                 height: 28,
                 child: Container(

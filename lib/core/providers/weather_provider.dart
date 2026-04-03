@@ -494,7 +494,9 @@ class WeatherNotifier extends Notifier<WeatherState> {
       final curPress   = press.elementAtOrNull(0);
       final curHum     = hum.elementAtOrNull(0);
       final curPrecip  = precip.elementAtOrNull(0);
-      final curCloud   = cloudFrac.elementAtOrNull(0);
+      // MetOcean cloud.cover may return 0-100 or 0-1; normalise to 0-1 fraction
+      final rawCloud   = cloudFrac.elementAtOrNull(0);
+      final curCloud   = rawCloud != null ? (rawCloud > 1.0 ? rawCloud / 100.0 : rawCloud) : null;
 
       // Derived: dew point (°C) — Magnus approximation ±1 °C
       final curDewPt = (curTemp != null && curHum != null)
@@ -642,6 +644,30 @@ class WeatherNotifier extends Notifier<WeatherState> {
   // Makes a single MetOcean multi-point request for current conditions.
   // --------------------------------------------------------------------------
 
+  /// Public: re-fetch wind grid centred at [lat]/[lon] with given [step]°
+  /// spacing and [n]×[n] points.  Called by the wind map when the viewport
+  /// changes (zoom out / pan to new area).
+  Future<void> refetchWindGrid({
+    required double lat,
+    required double lon,
+    double step = _gridStep,
+    int n = _gridN,
+  }) async {
+    final apiKey = ref.read(settingsProvider).metServiceApiKey;
+    if (apiKey.isEmpty) return;
+    final grid = await _fetchWindGrid(
+      lat: lat,
+      lon: lon,
+      apiKey: apiKey,
+      from: _isoHour(DateTime.now().toUtc()),
+      step: step,
+      n: n,
+    ).catchError((_) => <WindGridPoint>[]);
+    if (grid.isNotEmpty) {
+      state = state.copyWith(windGrid: grid);
+    }
+  }
+
   static const _gridN = 7;
   static const _gridStep = 0.5;
 
@@ -650,14 +676,16 @@ class WeatherNotifier extends Notifier<WeatherState> {
     required double lon,
     required String apiKey,
     required String from,
+    double step = _gridStep,
+    int n = _gridN,
   }) async {
-    final half = _gridN ~/ 2;
+    final half = n ~/ 2;
     final points = <Map<String, dynamic>>[];
-    for (int r = 0; r < _gridN; r++) {
-      for (int c = 0; c < _gridN; c++) {
+    for (int r = 0; r < n; r++) {
+      for (int c = 0; c < n; c++) {
         points.add({
-          'lat': lat + (r - half) * _gridStep,
-          'lon': lon + (c - half) * _gridStep,
+          'lat': lat + (r - half) * step,
+          'lon': lon + (c - half) * step,
         });
       }
     }
