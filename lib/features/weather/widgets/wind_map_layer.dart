@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -59,13 +58,11 @@ class WindMapWidget extends StatefulWidget {
   });
 
   @override
-  State<WindMapWidget> createState() => _WindMapWidgetState();
+  State<WindMapWidget> createState() => WindMapWidgetState();
 }
 
-class _WindMapWidgetState extends State<WindMapWidget> {
+class WindMapWidgetState extends State<WindMapWidget> {
   final _mapController = MapController();
-  double? _lastFetchLat, _lastFetchLon, _lastFetchStep;
-  Timer? _refetchDebounce;
 
   static const _gridN = 5;
 
@@ -85,36 +82,23 @@ class _WindMapWidgetState extends State<WindMapWidget> {
     return widget.forecastTimeline[idx].wavePoints;
   }
 
-  void _onMapEvent(MapEvent event) {
-    if (event is! MapEventMoveEnd) return;
-    // Debounce: wait 600ms after the last move before firing
-    _refetchDebounce?.cancel();
-    _refetchDebounce = Timer(const Duration(milliseconds: 600), _checkAndRefetch);
-  }
-
-  void _checkAndRefetch() {
+  /// Called by the parent's refresh button — fetches grid for current viewport.
+  void refreshCurrentViewport() {
     if (widget.onGridNeeded == null) return;
     final camera = _mapController.camera;
     final bounds  = camera.visibleBounds;
     final visSpan = math.max(bounds.north - bounds.south, bounds.east - bounds.west);
     final step    = (visSpan / _gridN).clamp(0.25, 5.0);
-    final newLat  = camera.center.latitude;
-    final newLon  = camera.center.longitude;
-
-    final latDiff  = (_lastFetchLat  == null) ? double.infinity : (newLat - _lastFetchLat!).abs();
-    final lonDiff  = (_lastFetchLon  == null) ? double.infinity : (newLon - _lastFetchLon!).abs();
-    final stepDiff = (_lastFetchStep == null) ? double.infinity : (step - _lastFetchStep!).abs() / step;
-    if (latDiff < step * 0.5 && lonDiff < step * 0.5 && stepDiff < 0.2) return;
-
-    _lastFetchLat  = newLat;
-    _lastFetchLon  = newLon;
-    _lastFetchStep = step;
-    widget.onGridNeeded!(newLat, newLon, step, _gridN);
+    widget.onGridNeeded!(
+      camera.center.latitude,
+      camera.center.longitude,
+      step,
+      _gridN,
+    );
   }
 
   @override
   void dispose() {
-    _refetchDebounce?.cancel();
     _mapController.dispose();
     super.dispose();
   }
@@ -135,7 +119,6 @@ class _WindMapWidgetState extends State<WindMapWidget> {
         interactionOptions: const InteractionOptions(
           flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
         ),
-        onMapEvent: _onMapEvent,
         onTap: widget.onMapTap != null
             ? (tapPos, latLng) => widget.onMapTap!(latLng)
             : null,

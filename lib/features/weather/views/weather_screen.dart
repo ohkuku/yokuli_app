@@ -628,6 +628,9 @@ class _WindMapViewState extends ConsumerState<_WindMapView>
   ForecastModel _model    = ForecastModel.gfs;
   int           _timeStep = 0; // index 0..5 into forecastTimeline
 
+  // Key to call refreshCurrentViewport() on the map widget
+  final _mapKey = GlobalKey<WindMapWidgetState>();
+
   // ── Playback ───────────────────────────────────────────────────────────────
   bool   _playing = false;
   Timer? _playTimer;
@@ -749,6 +752,7 @@ class _WindMapViewState extends ConsumerState<_WindMapView>
         // ── Full-screen map ────────────────────────────────────────────────
         Positioned.fill(
           child: WindMapWidget(
+            key: _mapKey,
             windGrid: w.windGrid,
             waveGrid: w.waveGrid,
             forecastTimeline: w.forecastTimeline,
@@ -812,6 +816,22 @@ class _WindMapViewState extends ConsumerState<_WindMapView>
                             fontWeight: FontWeight.w600)),
                     const Icon(Icons.expand_more_rounded,
                         size: 14, color: Colors.white54),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Manual data refresh button
+              _glassChip(
+                onTap: () => _mapKey.currentState?.refreshCurrentViewport(),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.refresh_rounded, size: 12, color: Colors.white70),
+                    SizedBox(width: 4),
+                    Text('刷新数据',
+                        style: TextStyle(
+                            color: Colors.white, fontSize: 12,
+                            fontWeight: FontWeight.w600)),
                   ],
                 ),
               ),

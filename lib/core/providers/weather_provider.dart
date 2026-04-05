@@ -153,18 +153,8 @@ class WeatherNotifier extends Notifier<WeatherState> {
         locationLabel: geoLabel ?? result.locationLabel,
       );
 
-      // Fire-and-forget: fetch regional grid for wind map (doesn't block UI)
-      _fetchWindGrid(
-        lat: pos.latitude,
-        lon: pos.longitude,
-        apiKey: settings.metServiceApiKey,
-        from: _isoHour(DateTime.now().toUtc()),
-      ).then((grid) {
-        if (grid.isNotEmpty) {
-          state = state.copyWith(windGrid: grid);
-        }
-      // ignore: avoid_catches_without_on_clauses
-      }).catchError((_) {});
+      // Wind/wave grids are fetched on-demand from the map screen
+      // (user presses the refresh button) to avoid burning API units.
 
       // Broadcast fresh weather to all LAN peers — saves API quota on other
       // devices and ensures fleet-wide weather consistency.
