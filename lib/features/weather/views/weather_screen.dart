@@ -642,8 +642,7 @@ class _WindMapViewState extends ConsumerState<_WindMapView>
   @override
   void initState() {
     super.initState();
-    // Pre-load timeline if grid is ready
-    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadTimeline());
+    // Timeline loads on-demand when user presses the play button
   }
 
   @override
@@ -655,11 +654,14 @@ class _WindMapViewState extends ConsumerState<_WindMapView>
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   void _onGridNeeded(double lat, double lon, double step, int n) {
-    ref.read(weatherProvider.notifier).refetchWindGrid(
-      lat: lat, lon: lon, step: step, n: n,
-    );
+    // Only fetch data for the active layer — never fire two requests at once
     if (_layer == WindLayer.waves) {
       ref.read(weatherProvider.notifier).refetchWaveGrid(
+        lat: lat, lon: lon, step: step, n: n,
+      );
+    } else {
+      // wind / pressure / rain all use the wind grid
+      ref.read(weatherProvider.notifier).refetchWindGrid(
         lat: lat, lon: lon, step: step, n: n,
       );
     }

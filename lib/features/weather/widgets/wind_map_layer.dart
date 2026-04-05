@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -64,6 +65,7 @@ class WindMapWidget extends StatefulWidget {
 class _WindMapWidgetState extends State<WindMapWidget> {
   final _mapController = MapController();
   double? _lastFetchLat, _lastFetchLon, _lastFetchStep;
+  Timer? _refetchDebounce;
 
   static const _gridN = 9;
 
@@ -85,7 +87,9 @@ class _WindMapWidgetState extends State<WindMapWidget> {
 
   void _onMapEvent(MapEvent event) {
     if (event is! MapEventMoveEnd) return;
-    _checkAndRefetch();
+    // Debounce: wait 600ms after the last move before firing
+    _refetchDebounce?.cancel();
+    _refetchDebounce = Timer(const Duration(milliseconds: 600), _checkAndRefetch);
   }
 
   void _checkAndRefetch() {
@@ -110,6 +114,7 @@ class _WindMapWidgetState extends State<WindMapWidget> {
 
   @override
   void dispose() {
+    _refetchDebounce?.cancel();
     _mapController.dispose();
     super.dispose();
   }

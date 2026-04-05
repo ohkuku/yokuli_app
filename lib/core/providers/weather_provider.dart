@@ -652,24 +652,32 @@ class WeatherNotifier extends Notifier<WeatherState> {
   /// Public: re-fetch wind grid centred at [lat]/[lon] with given [step]°
   /// spacing and [n]×[n] points.  Called by the wind map when the viewport
   /// changes (zoom out / pan to new area).
+  bool _windFetching = false;
+
   Future<void> refetchWindGrid({
     required double lat,
     required double lon,
     double step = _gridStep,
     int n = _gridN,
   }) async {
+    if (_windFetching) return; // already in-flight, skip
     final apiKey = ref.read(settingsProvider).metServiceApiKey;
     if (apiKey.isEmpty) return;
-    final grid = await _fetchWindGrid(
-      lat: lat,
-      lon: lon,
-      apiKey: apiKey,
-      from: _isoHour(DateTime.now().toUtc()),
-      step: step,
-      n: n,
-    ).catchError((_) => <WindGridPoint>[]);
-    if (grid.isNotEmpty) {
-      state = state.copyWith(windGrid: grid);
+    _windFetching = true;
+    try {
+      final grid = await _fetchWindGrid(
+        lat: lat,
+        lon: lon,
+        apiKey: apiKey,
+        from: _isoHour(DateTime.now().toUtc()),
+        step: step,
+        n: n,
+      ).catchError((_) => <WindGridPoint>[]);
+      if (grid.isNotEmpty) {
+        state = state.copyWith(windGrid: grid);
+      }
+    } finally {
+      _windFetching = false;
     }
   }
 
@@ -762,20 +770,28 @@ class WeatherNotifier extends Notifier<WeatherState> {
   // Wave grid fetch
   // --------------------------------------------------------------------------
 
+  bool _waveFetching = false;
+
   Future<void> refetchWaveGrid({
     required double lat,
     required double lon,
     double step = _gridStep,
     int n = _gridN,
   }) async {
+    if (_waveFetching) return; // already in-flight, skip
     final apiKey = ref.read(settingsProvider).metServiceApiKey;
     if (apiKey.isEmpty) return;
-    final grid = await _fetchWaveGrid(
-      lat: lat, lon: lon, apiKey: apiKey,
-      from: _isoHour(DateTime.now().toUtc()), step: step, n: n,
-    ).catchError((_) => <WaveGridPoint>[]);
-    if (grid.isNotEmpty) {
-      state = state.copyWith(waveGrid: grid);
+    _waveFetching = true;
+    try {
+      final grid = await _fetchWaveGrid(
+        lat: lat, lon: lon, apiKey: apiKey,
+        from: _isoHour(DateTime.now().toUtc()), step: step, n: n,
+      ).catchError((_) => <WaveGridPoint>[]);
+      if (grid.isNotEmpty) {
+        state = state.copyWith(waveGrid: grid);
+      }
+    } finally {
+      _waveFetching = false;
     }
   }
 
