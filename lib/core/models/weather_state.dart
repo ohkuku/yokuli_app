@@ -667,6 +667,7 @@ class MapGridSnapshot {
 
 enum WindLayer { wind, waves, pressure, rain }
 enum ForecastModel { gfs, ecmwf, icon }
+enum TimelineRange { day1, day3, day5, day7 }
 
 // ---------------------------------------------------------------------------
 // Tidal data model

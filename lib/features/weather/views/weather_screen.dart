@@ -624,9 +624,10 @@ class _WindMapViewState extends ConsumerState<_WindMapView>
     with SingleTickerProviderStateMixin {
   // ── Display state ──────────────────────────────────────────────────────────
   bool _panelOpen  = false;
-  WindLayer     _layer    = WindLayer.wind;
-  ForecastModel _model    = ForecastModel.gfs;
-  int           _timeStep = 0; // index 0..5 into forecastTimeline
+  WindLayer     _layer         = WindLayer.wind;
+  ForecastModel _model         = ForecastModel.gfs;
+  TimelineRange _timelineRange = TimelineRange.day1;
+  int           _timeStep      = 0; // index into forecastTimeline
 
   // Key to call refreshCurrentViewport() on the map widget
   final _mapKey = GlobalKey<WindMapWidgetState>();
@@ -670,22 +671,29 @@ class _WindMapViewState extends ConsumerState<_WindMapView>
     }
   }
 
-  void _maybeLoadTimeline() {
+  void _maybeLoadTimeline({bool forceReload = false}) {
     if (_timelineLoading) return;
     final w = widget.weather;
-    if (w.windGrid.isEmpty || w.forecastTimeline.isNotEmpty) return;
+    if (!forceReload && w.forecastTimeline.isNotEmpty) return;
     final lat = _centerLat(w);
     final lon = _centerLon(w);
     if (lat == null || lon == null) return;
-    setState(() => _timelineLoading = true);
+    setState(() { _timelineLoading = true; _timeStep = 0; });
     ref.read(weatherProvider.notifier).fetchForecastTimeline(
-      lat: lat, lon: lon,
+      lat: lat, lon: lon, range: _timelineRange,
     ).then((_) {
       if (mounted) setState(() => _timelineLoading = false);
     }).catchError((_) {
       if (mounted) setState(() => _timelineLoading = false);
     });
   }
+
+  static const _rangeLabels = {
+    TimelineRange.day1: '1天',
+    TimelineRange.day3: '3天',
+    TimelineRange.day5: '5天',
+    TimelineRange.day7: '7天',
+  };
 
   void _togglePlay() {
     if (_playing) {
@@ -739,7 +747,13 @@ class _WindMapViewState extends ConsumerState<_WindMapView>
 
   // ── Build ──────────────────────────────────────────────────────────────────
 
-  static const _timeLabels = ['现在', '+3h', '+6h', '+12h', '+24h', '+48h'];
+  static const _timeLabelsMap = {
+    TimelineRange.day1: ['现在','+3h','+6h','+9h','+12h','+15h','+18h','+21h','+24h'],
+    TimelineRange.day3: ['现在','+6h','+12h','+18h','+1天','+1.5天','+2天','+2.5天','+3天'],
+    TimelineRange.day5: ['现在','+12h','+1天','+1.5天','+2天','+2.5天','+3天','+4天','+5天'],
+    TimelineRange.day7: ['现在','+12h','+1天','+2天','+3天','+4天','+5天','+6天','+7天'],
+  };
+  List<String> get _timeLabels => _timeLabelsMap[_timelineRange]!;
 
   @override
   Widget build(BuildContext context) {
@@ -968,6 +982,36 @@ class _WindMapViewState extends ConsumerState<_WindMapView>
             ),
           ),
           const SizedBox(width: 8),
+          // Range switcher: 1天 / 3天 / 5天 / 7天
+          ..._rangeLabels.entries.map((e) {
+            final active = e.key == _timelineRange;
+            return GestureDetector(
+              onTap: () {
+                if (_timelineRange == e.key) return;
+                setState(() { _timelineRange = e.key; _playing = false; });
+                _playTimer?.cancel();
+                _maybeLoadTimeline(forceReload: true);
+              },
+              child: Container(
+                margin: const EdgeInsets.only(right: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: active ? AppColors.cyan.withOpacity(0.2) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: active ? AppColors.cyan.withOpacity(0.6) : Colors.white24,
+                  ),
+                ),
+                child: Text(e.value,
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: active ? AppColors.cyan : Colors.white54,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+                    )),
+              ),
+            );
+          }),
+          const SizedBox(width: 4),
           // Step labels
           Expanded(
             child: Row(
