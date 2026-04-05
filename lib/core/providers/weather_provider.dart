@@ -36,13 +36,14 @@ class WeatherNotifier extends Notifier<WeatherState> {
       vesselProvider.select((v) => v.position),
       (prev, next) {
         if (next != null && (next.latitude != 0.0 || next.longitude != 0.0)) {
-          if (state.condition == null && !state.isLoading) _fetch();
+          // Use refreshIfStale so this doesn't race with initState fetch
+          refreshIfStale();
         }
       },
     );
 
-    // Fetch once on startup (in case SK is already connected)
-    Future.delayed(const Duration(seconds: 5), _fetch);
+    // Fetch once on startup — driven by WeatherScreen.initState via refreshIfStale()
+    // (no delayed timer here to avoid concurrent fetches)
     return const WeatherState.empty();
   }
 
@@ -99,6 +100,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
   }
 
   Future<void> _fetch() async {
+    if (state.isLoading) return; // already in-flight — drop concurrent calls
     state = state.copyWith(isLoading: true, error: null);
 
     try {

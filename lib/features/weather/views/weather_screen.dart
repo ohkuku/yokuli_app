@@ -35,7 +35,8 @@ class _WeatherScreenState extends ConsumerState<WeatherScreen>
     _tabController = TabController(length: 5, vsync: this);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(weatherProvider.notifier).refresh();
+      // refreshIfStale: fetches if no data yet (fetchedAt == null) or data > 30min old
+      ref.read(weatherProvider.notifier).refreshIfStale();
     });
   }
 
