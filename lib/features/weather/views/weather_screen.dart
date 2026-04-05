@@ -377,7 +377,7 @@ class _OverviewTab extends StatelessWidget {
                   icon: Icons.speed_rounded,
                   label: '气压',
                   value: weather.pressure != null
-                      ? '${(weather.pressure! / 10).toStringAsFixed(1)} kPa'
+                      ? '${weather.pressure!.round()} hPa'
                       : '--',
                   sub: _pressureTrendLabel(weather.pressureTrend),
                   subColor: (weather.pressureTrend != null && weather.pressureTrend! <= -6.0)
@@ -552,7 +552,7 @@ class _WindTab extends StatelessWidget {
                   Row(
                     children: [
                       const Text(
-                        '气压趋势 (kPa)',
+                        '气压趋势 (hPa)',
                         style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
                       ),
                       if (weather.pressureTrend != null) ...[
@@ -1416,7 +1416,7 @@ class _TapForecastSheetState extends ConsumerState<_TapForecastSheet> {
                         const Spacer(),
                         if (h.pressure != null)
                           Text(
-                            '${(h.pressure! / 10).toStringAsFixed(1)} kPa',
+                            '${h.pressure!.round()} hPa',
                             style: const TextStyle(
                                 color: Colors.white30, fontSize: 11),
                           ),
@@ -1492,7 +1492,7 @@ class _WindQuickStats extends StatelessWidget {
       if (weather.windGust != null)
         (label: '阵风', value: '${weather.windGust!.toStringAsFixed(0)} kn', color: _beaufortColor(weather.windGust!)),
       if (weather.pressure != null)
-        (label: '气压', value: '${(weather.pressure! / 10).toStringAsFixed(1)} kPa', color: Colors.white70),
+        (label: '气压', value: '${weather.pressure!.round()} hPa', color: Colors.white70),
       if (weather.pressureTrend != null)
         (label: '气压趋势', value: _pressureTrendLabel(weather.pressureTrend) ?? '--',
           color: (weather.pressureTrend ?? 0) <= -6 ? AppColors.danger : Colors.white54),
@@ -1927,7 +1927,7 @@ class _PressureSparklinePainter extends CustomPainter {
       Paint()..color = const Color(0xFF64D2FF),
     );
     tp.text = TextSpan(
-      text: '${(curP / 10).toStringAsFixed(1)} kPa',
+      text: '${curP.round()} hPa',
       style: const TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w600),
     );
     tp.layout();
@@ -1956,22 +1956,20 @@ class _BeaufortChip extends StatelessWidget {
   }
 }
 
-/// Returns a human-readable pressure trend label for the Overview card.
-/// [trend] is the expected hPa change over 3 hours (positive = rising);
-/// displayed as kPa (÷10).
+/// Returns a human-readable pressure trend label.
+/// [trend] is hPa/3h (positive = rising).
 String? _pressureTrendLabel(double? trend) {
   if (trend == null) return null;
-  final kpa = trend / 10.0;
-  final abs = kpa.abs();
-  // IMO gale warning threshold: ≥ 0.6 kPa/3h (= 6 hPa/3h)
-  if (kpa <= -0.6) return '↓↓ ${kpa.toStringAsFixed(2)} kPa/3h  急降！';
-  if (kpa <= -0.3) return '↓ ${kpa.toStringAsFixed(2)} kPa/3h  下降';
-  if (kpa >= 0.6)  return '↑↑ +${kpa.toStringAsFixed(2)} kPa/3h  急升';
-  if (kpa >= 0.3)  return '↑ +${kpa.toStringAsFixed(2)} kPa/3h  上升';
-  if (abs < 0.1)   return '→ 稳定';
-  return kpa > 0
-      ? '↑ +${kpa.toStringAsFixed(2)} kPa/3h'
-      : '↓ ${kpa.toStringAsFixed(2)} kPa/3h';
+  final abs = trend.abs();
+  // IMO gale warning threshold: ≥ 6 hPa/3h
+  if (trend <= -6) return '↓↓ ${trend.toStringAsFixed(1)} hPa/3h  急降！';
+  if (trend <= -3) return '↓ ${trend.toStringAsFixed(1)} hPa/3h  下降';
+  if (trend >= 6)  return '↑↑ +${trend.toStringAsFixed(1)} hPa/3h  急升';
+  if (trend >= 3)  return '↑ +${trend.toStringAsFixed(1)} hPa/3h  上升';
+  if (abs < 1)     return '→ 稳定';
+  return trend > 0
+      ? '↑ +${trend.toStringAsFixed(1)} hPa/3h'
+      : '↓ ${trend.toStringAsFixed(1)} hPa/3h';
 }
 
 Color _beaufortColor(double kn) {
