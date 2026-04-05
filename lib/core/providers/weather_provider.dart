@@ -822,8 +822,8 @@ class WeatherNotifier extends Notifier<WeatherState> {
   // Forecast timeline — fetch 6 time steps for playback
   // --------------------------------------------------------------------------
 
-  /// Fetches wind+wave grids at offsets [0, 3, 6, 12, 24, 48] hours and
-  /// stores them as [WeatherState.forecastTimeline].
+  /// Fetches wind+wave grids at offsets [0, 3, 6, 12, 24, 48] hours
+  /// **sequentially** with a short pause between requests to avoid 429.
   Future<void> fetchForecastTimeline({
     required double lat,
     required double lon,
@@ -835,18 +835,19 @@ class WeatherNotifier extends Notifier<WeatherState> {
 
     const offsets = [0, 3, 6, 12, 24, 48];
     final now = DateTime.now().toUtc();
+    final snapshots = <MapGridSnapshot>[];
 
-    final snapshots = await Future.wait(offsets.map((h) async {
-      final t = now.add(Duration(hours: h));
+    for (final h in offsets) {
+      final t    = now.add(Duration(hours: h));
       final from = _isoHour(t);
+      // Fetch wind only — wave adds another request per step; fetch on demand.
       final wind = await _fetchWindGrid(
         lat: lat, lon: lon, apiKey: apiKey, from: from, step: step, n: n,
       ).catchError((_) => <WindGridPoint>[]);
-      final wave = await _fetchWaveGrid(
-        lat: lat, lon: lon, apiKey: apiKey, from: from, step: step, n: n,
-      ).catchError((_) => <WaveGridPoint>[]);
-      return MapGridSnapshot(time: t, windPoints: wind, wavePoints: wave);
-    }));
+      snapshots.add(MapGridSnapshot(time: t, windPoints: wind));
+      // 300 ms gap to stay well under rate limits
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
 
     state = state.copyWith(forecastTimeline: snapshots);
   }
