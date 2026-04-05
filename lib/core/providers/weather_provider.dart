@@ -25,33 +25,36 @@ final weatherProvider = NotifierProvider<WeatherNotifier, WeatherState>(
 // ---------------------------------------------------------------------------
 
 class WeatherNotifier extends Notifier<WeatherState> {
-  static const _refreshInterval = Duration(hours: 1);
-  Timer? _timer;
+  // Minimum age before a foreground-resume triggers a re-fetch.
+  static const _staleAfter = Duration(minutes: 30);
 
   @override
   WeatherState build() {
-    ref.onDispose(() {
-      _timer?.cancel();
-    });
-
     // When vessel position arrives from Signal K, trigger a fetch
     // (runs once and only when position transitions from null → non-null)
     ref.listen(
       vesselProvider.select((v) => v.position),
       (prev, next) {
         if (next != null && (next.latitude != 0.0 || next.longitude != 0.0)) {
-          // Only auto-fetch if we don't have weather data yet
-          if (state.condition == null && !state.isLoading) {
-            _fetch();
-          }
+          if (state.condition == null && !state.isLoading) _fetch();
         }
       },
     );
 
-    // Also try on startup after a short delay (in case SK is already connected)
+    // Fetch once on startup (in case SK is already connected)
     Future.delayed(const Duration(seconds: 5), _fetch);
-    _timer = Timer.periodic(_refreshInterval, (_) => _fetch());
     return const WeatherState.empty();
+  }
+
+  /// Call this when the app returns to foreground.
+  /// Only re-fetches if data is older than [_staleAfter].
+  void refreshIfStale() {
+    if (state.isLoading) return;
+    final fetched = state.fetchedAt;
+    if (fetched == null ||
+        DateTime.now().difference(fetched) > _staleAfter) {
+      _fetch();
+    }
   }
 
   Future<void> refresh() => _fetch();
