@@ -415,7 +415,7 @@ class _HeatPoint {
 class _HeatmapLayer extends StatelessWidget {
   final List<_HeatPoint> points;
   final double minVal, maxVal;
-  final Color Function(double t) colorAt; // t in [0,1]
+  final Color Function(double t) colorAt;
 
   const _HeatmapLayer({
     required this.points,
@@ -427,13 +427,15 @@ class _HeatmapLayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final camera = MapCamera.of(context);
-    return CustomPaint(
-      painter: _HeatmapPainter(
-        camera: camera,
-        points: points,
-        minVal: minVal,
-        maxVal: maxVal,
-        colorAt: colorAt,
+    return SizedBox.expand(
+      child: CustomPaint(
+        painter: _HeatmapPainter(
+          camera: camera,
+          points: points,
+          minVal: minVal,
+          maxVal: maxVal,
+          colorAt: colorAt,
+        ),
       ),
     );
   }
@@ -456,38 +458,43 @@ class _HeatmapPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (points.isEmpty) return;
-    // Estimate on-screen radius from grid spacing
-    // Use the distance between the first two points
-    double radius = 30;
+
+    // Compute on-screen grid spacing from adjacent points so blobs overlap.
+    // We want radius ≥ half-spacing so there are no gaps between cells.
+    double radius = 40;
     if (points.length >= 2) {
       final p0 = camera.latLngToScreenPoint(LatLng(points[0].lat, points[0].lon));
       final p1 = camera.latLngToScreenPoint(LatLng(points[1].lat, points[1].lon));
-      final dx = p1.x - p0.x;
-      final dy = p1.y - p0.y;
-      radius = math.sqrt(dx * dx + dy * dy) * 0.65;
+      final dx = (p1.x - p0.x).abs();
+      final dy = (p1.y - p0.y).abs();
+      final spacing = math.max(dx, dy); // use the longer axis
+      radius = spacing * 0.75; // 75% of spacing → smooth overlap
     }
+    radius = radius.clamp(20.0, 200.0);
+
+    canvas.clipRect(Rect.fromLTWH(0, 0, size.width, size.height));
 
     for (final p in points) {
       final sp = camera.latLngToScreenPoint(LatLng(p.lat, p.lon));
       final t  = ((p.value - minVal) / (maxVal - minVal)).clamp(0.0, 1.0);
       final c  = colorAt(t);
+      final cx = sp.x.toDouble();
+      final cy = sp.y.toDouble();
       canvas.drawCircle(
-        Offset(sp.x.toDouble(), sp.y.toDouble()),
+        Offset(cx, cy),
         radius,
         Paint()
           ..shader = RadialGradient(
-            colors: [c.withOpacity(0.50), c.withOpacity(0.0)],
-          ).createShader(Rect.fromCircle(
-            center: Offset(sp.x.toDouble(), sp.y.toDouble()),
-            radius: radius,
-          )),
+            colors: [c.withOpacity(0.60), c.withOpacity(0.0)],
+            stops: const [0.4, 1.0],
+          ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: radius)),
       );
     }
   }
 
   @override
-  bool shouldRepaint(_HeatmapPainter old) =>
-      old.points != points || old.camera != old.camera;
+  // Camera doesn't implement ==, so always repaint when camera or data changes.
+  bool shouldRepaint(_HeatmapPainter old) => true;
 }
 
 // ---------------------------------------------------------------------------
@@ -501,8 +508,10 @@ class _IsobarLayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final camera = MapCamera.of(context);
-    return CustomPaint(
-      painter: _IsobarPainter(camera: camera, windGrid: windGrid),
+    return SizedBox.expand(
+      child: CustomPaint(
+        painter: _IsobarPainter(camera: camera, windGrid: windGrid),
+      ),
     );
   }
 }
@@ -516,111 +525,134 @@ class _IsobarPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (windGrid.isEmpty) return;
-    // Find grid dimensions (assume square grid)
     final n = math.sqrt(windGrid.length.toDouble()).round();
     if (n < 2) return;
 
-    // Build 2D pressure array [row][col]
-    final grid = List.generate(n, (r) => List.generate(n, (c) {
-      final idx = r * n + c;
-      return idx < windGrid.length ? windGrid[idx].pressure : null;
-    }));
+    // Check we actually have pressure data before drawing
+    final hasPressure = windGrid.any((p) => p.pressure != null);
+    if (!hasPressure) return;
 
-    // Isobar levels (hPa)
-    const levels = [980, 985, 990, 995, 1000, 1005, 1010, 1015, 1020, 1025, 1030];
+    canvas.clipRect(Rect.fromLTWH(0, 0, size.width, size.height));
 
-    for (final level in levels) {
-      final paint = Paint()
-        ..color = _isobarColor(level.toDouble()).withOpacity(0.70)
-        ..strokeWidth = level % 10 == 0 ? 1.2 : 0.7
-        ..style = PaintingStyle.stroke;
-
-      // March through the grid edges
-      for (int r = 0; r < n - 1; r++) {
-        for (int c = 0; c < n - 1; c++) {
-          final p00 = grid[r][c];
-          final p10 = grid[r + 1][c];
-          final p01 = grid[r][c + 1];
-
-          if (p00 == null || p10 == null || p01 == null) continue;
-
-          // Check if isoline crosses the two triangles of this cell
-          _drawIsoSegment(canvas, paint, camera, level.toDouble(),
-              windGrid[r * n + c], windGrid[(r + 1) * n + c],
-              windGrid[r * n + c + 1]);
-          if (r < n - 2 || c < n - 2) {
-            final p11 = grid[r + 1][c + 1];
-            if (p11 != null) {
-              _drawIsoSegment(canvas, paint, camera, level.toDouble(),
-                  windGrid[(r + 1) * n + c], windGrid[(r + 1) * n + c + 1],
-                  windGrid[r * n + c + 1]);
-            }
-          }
-        }
-      }
-    }
-
-    // Draw pressure labels at each grid point
-    final tp = TextPainter(
-      textDirection: TextDirection.ltr,
-      textAlign: TextAlign.center,
-    );
+    // Background pressure-colored heatmap so you can see field even between lines
     for (final pt in windGrid) {
       if (pt.pressure == null) continue;
       final sp = camera.latLngToScreenPoint(LatLng(pt.lat, pt.lon));
-      tp.text = TextSpan(
-        text: pt.pressure!.round().toString(),
-        style: TextStyle(
-          color: _isobarColor(pt.pressure!).withOpacity(0.8),
-          fontSize: 9,
-          fontWeight: FontWeight.w600,
-        ),
+      final t  = ((pt.pressure! - 980) / 50).clamp(0.0, 1.0);
+      final c  = _isobarColor(pt.pressure!);
+      canvas.drawCircle(
+        Offset(sp.x.toDouble(), sp.y.toDouble()),
+        _cellRadius(camera, windGrid),
+        Paint()
+          ..shader = RadialGradient(
+            colors: [c.withOpacity(0.25), c.withOpacity(0.0)],
+            stops: const [0.3, 1.0],
+          ).createShader(Rect.fromCircle(
+            center: Offset(sp.x.toDouble(), sp.y.toDouble()),
+            radius: _cellRadius(camera, windGrid),
+          )),
       );
-      tp.layout();
-      tp.paint(canvas,
-          Offset(sp.x - tp.width / 2, sp.y - tp.height / 2));
+    }
+
+    // Isobar contour lines at every 4 hPa
+    final pressures = windGrid.map((p) => p.pressure ?? 0).toList();
+    final pMin = (pressures.reduce(math.min) / 4).floor() * 4.0;
+    final pMax = (pressures.reduce(math.max) / 4).ceil() * 4.0;
+
+    for (double level = pMin; level <= pMax; level += 4) {
+      final isMajor = level % 8 == 0;
+      final paint = Paint()
+        ..color = _isobarColor(level).withOpacity(isMajor ? 0.90 : 0.55)
+        ..strokeWidth = isMajor ? 1.8 : 0.9
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
+
+      for (int r = 0; r < n - 1; r++) {
+        for (int c = 0; c < n - 1; c++) {
+          // Full square cell: draw both diagonal triangles
+          final i00 = r * n + c;
+          final i10 = (r + 1) * n + c;
+          final i01 = r * n + (c + 1);
+          final i11 = (r + 1) * n + (c + 1);
+          if (i11 >= windGrid.length) continue;
+          _drawIsoSegment(canvas, paint, camera, level,
+              windGrid[i00], windGrid[i10], windGrid[i01]);
+          _drawIsoSegment(canvas, paint, camera, level,
+              windGrid[i10], windGrid[i11], windGrid[i01]);
+        }
+      }
+
+      // Label major isobars once in the middle of the grid
+      if (isMajor) {
+        final mid = windGrid[windGrid.length ~/ 2];
+        if ((mid.pressure ?? 0) - level < 4) {
+          _drawIsoLabel(canvas, camera, mid.lat, mid.lon, '${level.round()} hPa',
+              _isobarColor(level));
+        }
+      }
     }
   }
 
-  void _drawIsoSegment(
-      Canvas canvas, Paint paint, MapCamera camera, double level,
+  double _cellRadius(MapCamera camera, List<WindGridPoint> grid) {
+    if (grid.length < 2) return 40;
+    final p0 = camera.latLngToScreenPoint(LatLng(grid[0].lat, grid[0].lon));
+    final p1 = camera.latLngToScreenPoint(LatLng(grid[1].lat, grid[1].lon));
+    final dx = (p1.x - p0.x).abs();
+    final dy = (p1.y - p0.y).abs();
+    return math.max(dx, dy).clamp(20.0, 200.0) * 0.75;
+  }
+
+  void _drawIsoLabel(Canvas canvas, MapCamera camera, double lat, double lon,
+      String text, Color color) {
+    final sp = camera.latLngToScreenPoint(LatLng(lat, lon));
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+            color: color.withOpacity(0.85),
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            shadows: const [Shadow(color: Colors.black, blurRadius: 4)]),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset(sp.x - tp.width / 2, sp.y - tp.height / 2));
+  }
+
+  void _drawIsoSegment(Canvas canvas, Paint paint, MapCamera camera, double level,
       WindGridPoint a, WindGridPoint b, WindGridPoint c) {
     if (a.pressure == null || b.pressure == null || c.pressure == null) return;
-    final va = a.pressure!;
-    final vb = b.pressure!;
-    final vc = c.pressure!;
-
-    // Collect crossing points on each edge
+    final va = a.pressure!, vb = b.pressure!, vc = c.pressure!;
     final crossings = <Offset>[];
+
     void addCross(WindGridPoint p1, WindGridPoint p2, double v1, double v2) {
       if ((v1 < level) != (v2 < level)) {
         final t = (level - v1) / (v2 - v1);
-        final lat = p1.lat + (p2.lat - p1.lat) * t;
-        final lon = p1.lon + (p2.lon - p1.lon) * t;
-        final sp = camera.latLngToScreenPoint(LatLng(lat, lon));
+        final sp = camera.latLngToScreenPoint(LatLng(
+          p1.lat + (p2.lat - p1.lat) * t,
+          p1.lon + (p2.lon - p1.lon) * t,
+        ));
         crossings.add(Offset(sp.x.toDouble(), sp.y.toDouble()));
       }
     }
+
     addCross(a, b, va, vb);
     addCross(b, c, vb, vc);
     addCross(a, c, va, vc);
-
-    if (crossings.length == 2) {
-      canvas.drawLine(crossings[0], crossings[1], paint);
-    }
+    if (crossings.length == 2) canvas.drawLine(crossings[0], crossings[1], paint);
   }
 
   Color _isobarColor(double hpa) {
-    if (hpa < 990) return const Color(0xFF5E81F4);  // deep low — blue
-    if (hpa < 1005) return const Color(0xFF30D5C8); // low — teal
-    if (hpa < 1015) return const Color(0xFF30D158); // neutral — green
-    if (hpa < 1025) return const Color(0xFFFFD60A); // high — yellow
-    return const Color(0xFFFF9F0A);                 // very high — orange
+    if (hpa < 990)  return const Color(0xFF5E81F4); // deep low
+    if (hpa < 1000) return const Color(0xFF00C8FF); // low
+    if (hpa < 1010) return const Color(0xFF30D158); // below normal
+    if (hpa < 1020) return const Color(0xFFFFD60A); // normal-high
+    if (hpa < 1025) return const Color(0xFFFF9F0A); // high
+    return const Color(0xFFFF453A);                 // very high
   }
 
   @override
-  bool shouldRepaint(_IsobarPainter old) =>
-      old.windGrid != windGrid || old.camera != old.camera;
+  bool shouldRepaint(_IsobarPainter old) => true; // always: camera changes on zoom/pan
 }
 
 // ---------------------------------------------------------------------------
@@ -652,21 +684,104 @@ class _Particle {
 // ---------------------------------------------------------------------------
 
 Color _bftColor(double kn) {
-  if (kn >= 34) return const Color(0xFFFF453A);
-  if (kn >= 22) return const Color(0xFFFF9F0A);
-  if (kn >= 11) return const Color(0xFFFFD60A);
-  return const Color(0xFF30D158);
+  if (kn >= 34) return const Color(0xFFFF453A); // gale force 8+
+  if (kn >= 22) return const Color(0xFFFF9F0A); // near-gale 7
+  if (kn >= 11) return const Color(0xFFFFD60A); // moderate 4-6
+  return const Color(0xFF30D158);               // light 0-3
 }
 
+/// Wave height colour — green=calm, yellow=moderate, orange=rough, red=very rough
+/// maxVal = 6m
 Color _waveColor(double t) {
-  if (t > 0.85) return const Color(0xFFFF453A);
-  if (t > 0.60) return const Color(0xFFFF9F0A);
-  if (t > 0.35) return const Color(0xFFFFD60A);
-  return const Color(0xFF30D5C8);
+  if (t > 0.75) return const Color(0xFFFF453A); // >4.5m — very rough/high
+  if (t > 0.50) return const Color(0xFFFF9F0A); // 3–4.5m — rough
+  if (t > 0.25) return const Color(0xFFFFD60A); // 1.5–3m — moderate
+  return const Color(0xFF30D158);               // <1.5m — calm/slight
 }
 
+/// Rain colour — light blue=drizzle, blue=moderate, deep blue/purple=heavy
 Color _rainColor(double t) {
-  if (t > 0.7) return const Color(0xFF5E81F4);
-  if (t > 0.4) return const Color(0xFF30ADF4);
-  return const Color(0xFF90EAF9);
+  if (t > 0.70) return const Color(0xFF5E4FE4); // >7 mm/h — heavy
+  if (t > 0.40) return const Color(0xFF3080F4); // 4–7 mm/h — moderate
+  if (t > 0.10) return const Color(0xFF30C8F4); // 1–4 mm/h — light
+  return const Color(0xFF90EAF9).withOpacity(0.5); // trace
+}
+
+// ---------------------------------------------------------------------------
+// Legend widget — shown bottom-left of the map for non-wind layers
+// ---------------------------------------------------------------------------
+
+/// A compact horizontal colour legend bar for heatmap layers.
+class MapLayerLegend extends StatelessWidget {
+  final String title;
+  final List<(Color, String)> entries;
+
+  const MapLayerLegend({super.key, required this.title, required this.entries});
+
+  const MapLayerLegend.wave({super.key})
+      : title = '浪高 (m)',
+        entries = const [
+          (Color(0xFF30D158), '<1.5m'),
+          (Color(0xFFFFD60A), '1.5–3m'),
+          (Color(0xFFFF9F0A), '3–4.5m'),
+          (Color(0xFFFF453A), '>4.5m'),
+        ];
+
+  const MapLayerLegend.rain({super.key})
+      : title = '降雨 (mm/h)',
+        entries = const [
+          (Color(0xFF90EAF9), '微量'),
+          (Color(0xFF30C8F4), '1–4'),
+          (Color(0xFF3080F4), '4–7'),
+          (Color(0xFF5E4FE4), '>7'),
+        ];
+
+  const MapLayerLegend.pressure({super.key})
+      : title = '气压 (hPa)',
+        entries = const [
+          (Color(0xFF5E81F4), '<990'),
+          (Color(0xFF30D158), '1000–1015'),
+          (Color(0xFFFFD60A), '1015–1025'),
+          (Color(0xFFFF453A), '>1025'),
+        ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.68),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(title,
+              style: const TextStyle(
+                  color: Colors.white60, fontSize: 9, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: entries.map((e) => Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 10, height: 10,
+                  decoration: BoxDecoration(
+                    color: e.$1,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 3),
+                Text(e.$2,
+                    style: const TextStyle(color: Colors.white70, fontSize: 9)),
+              ]),
+            )).toList(),
+          ),
+        ],
+      ),
+    );
+  }
 }

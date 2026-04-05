@@ -771,11 +771,22 @@ class _WindMapViewState extends ConsumerState<_WindMapView>
             ),
           ),
 
-        // ── Top-left: conditions pill ──────────────────────────────────────
+        // ── Top-left: conditions pill + layer legend ──────────────────────
         Positioned(
           top: 12,
           left: 12,
-          child: _WindInfoPill(weather: w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _WindInfoPill(weather: w),
+              if (_layer != WindLayer.wind) ...[
+                const SizedBox(height: 8),
+                if (_layer == WindLayer.waves) const MapLayerLegend.wave(),
+                if (_layer == WindLayer.rain)  const MapLayerLegend.rain(),
+                if (_layer == WindLayer.pressure) const MapLayerLegend.pressure(),
+              ],
+            ],
+          ),
         ),
 
         // ── Top-right: model chip + route button ───────────────────────────
