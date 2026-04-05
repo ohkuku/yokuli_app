@@ -126,6 +126,10 @@ class _WindMapWidgetState extends State<WindMapWidget> {
         initialZoom: 7.0,
         minZoom: 4.0,
         maxZoom: 12.0,
+        // Disable rotation — pinch zoom only changes scale, not heading
+        interactionOptions: const InteractionOptions(
+          flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+        ),
         onMapEvent: _onMapEvent,
         onTap: widget.onMapTap != null
             ? (tapPos, latLng) => widget.onMapTap!(latLng)

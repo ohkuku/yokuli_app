@@ -491,7 +491,9 @@ class WeatherNotifier extends Notifier<WeatherState> {
       final curTemp    = toC(tempK.elementAtOrNull(0));
       final curWaveH   = waveH.elementAtOrNull(0);
       final curWaveP   = waveP.elementAtOrNull(0);
-      final curPress   = press.elementAtOrNull(0);
+      final curPress   = press.elementAtOrNull(0) != null
+          ? press[0]! / 100.0   // Pa → hPa
+          : null;
       final curHum     = hum.elementAtOrNull(0);
       final curPrecip  = precip.elementAtOrNull(0);
       // MetOcean cloud.cover may return 0-100 or 0-1; normalise to 0-1 fraction
@@ -505,7 +507,8 @@ class WeatherNotifier extends Notifier<WeatherState> {
 
       // Pressure trend: compare forecast 3h ahead vs now
       // Negative = falling (gale risk if < −6 hPa/3h), positive = rising
-      final p3h         = press.elementAtOrNull(3);
+      final p3hRaw      = press.elementAtOrNull(3);
+      final p3h         = p3hRaw != null ? p3hRaw / 100.0 : null; // Pa → hPa
       final pressureTrend = (curPress != null && p3h != null)
           ? p3h - curPress
           : null;
@@ -524,7 +527,9 @@ class WeatherNotifier extends Notifier<WeatherState> {
           waveHeight: waveH.elementAtOrNull(i),
           wavePeriod: waveP.elementAtOrNull(i),
           precip: precip.elementAtOrNull(i),
-          pressure: press.elementAtOrNull(i),
+          pressure: press.elementAtOrNull(i) != null
+              ? press[i]! / 100.0   // Pa → hPa
+              : null,
         ));
       }
 
@@ -724,7 +729,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
       lon: (points[i]['lon'] as num).toDouble(),
       windSpeed: speeds[i] != null ? speeds[i]! * 1.944 : null,
       windDir: dirs[i]?.toInt(),
-      pressure: presses[i],
+      pressure: presses[i] != null ? presses[i]! / 100.0 : null, // Pa → hPa
       precipitation: precips[i],
     ));
   }
@@ -898,7 +903,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
       time: now.add(Duration(hours: i)),
       windSpeed: spds[i] != null ? spds[i]! * 1.944 : null,
       windDir: dirs[i]?.toInt(),
-      pressure: press[i],
+      pressure: press[i] != null ? press[i]! / 100.0 : null, // Pa → hPa
       waveHeight: waveH[i],
       precip: precip[i],
     ));
