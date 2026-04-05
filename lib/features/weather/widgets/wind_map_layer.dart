@@ -67,7 +67,7 @@ class _WindMapWidgetState extends State<WindMapWidget> {
   double? _lastFetchLat, _lastFetchLon, _lastFetchStep;
   Timer? _refetchDebounce;
 
-  static const _gridN = 9;
+  static const _gridN = 5;
 
   List<WindGridPoint> get _activeWindGrid {
     if (widget.timeStepIndex == 0 || widget.forecastTimeline.isEmpty) {

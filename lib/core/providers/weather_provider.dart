@@ -25,7 +25,7 @@ final weatherProvider = NotifierProvider<WeatherNotifier, WeatherState>(
 // ---------------------------------------------------------------------------
 
 class WeatherNotifier extends Notifier<WeatherState> {
-  static const _refreshInterval = Duration(minutes: 30);
+  static const _refreshInterval = Duration(hours: 1);
   Timer? _timer;
 
   @override
@@ -327,6 +327,10 @@ class WeatherNotifier extends Notifier<WeatherState> {
   // Internal: last MetService HTTP error for surfacing to the user.
   String? _lastMetServiceError;
 
+  // Cached gust variable name: null = not yet probed, '' = probed & none found.
+  String? _cachedGustVar;
+  static const _gustNotFound = ''; // sentinel: probed, none worked
+
   // ---------------------------------------------------------------------------
   // MetOcean Solutions / MetService NZ — POST /point/time
   // Docs:  https://forecast-docs.metoceanapi.com/swagger-ui/
@@ -411,7 +415,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
         body: jsonEncode({
           'points': [{'lat': lat, 'lon': lon}],
           'variables': _metoceanVars,
-          'time': {'from': from, 'interval': '1h', 'repeat': 168},
+          'time': {'from': from, 'interval': '1h', 'repeat': 48},
         }),
       ).timeout(const Duration(seconds: 25));
 
@@ -458,31 +462,55 @@ class WeatherNotifier extends Notifier<WeatherState> {
       final precip = _v('precipitation.rate');
       final cloudFrac = _v('cloud.cover');
 
-      // Try optional variables (gust) — one at a time, silently ignore 400.
+      // Try optional variables (gust) — probe once, then cache the result.
       List<double?> gustMs = [];
-      for (final candidate in _metoceanOptional) {
+      if (_cachedGustVar == null) {
+        // First time: probe candidates until one works
+        for (final candidate in _metoceanOptional) {
+          try {
+            final gr = await http.post(
+              Uri.parse('https://forecast-v2.metoceanapi.com/point/time'),
+              headers: {'x-api-key': apiKey, 'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'points': [{'lat': lat, 'lon': lon}],
+                'variables': [candidate],
+                'time': {'from': from, 'interval': '1h', 'repeat': 1},
+              }),
+            ).timeout(const Duration(seconds: 10));
+            if (gr.statusCode == 200) {
+              final gj = jsonDecode(gr.body) as Map<String, dynamic>;
+              final gv = (gj['variables'] as Map<String, dynamic>?)?[candidate];
+              if (gv != null) {
+                gustMs = _vFrom(gv);
+                _cachedGustVar = candidate; // remember for next time
+                // ignore: avoid_print
+                print('[MetOcean] gust variable found: $candidate');
+                break;
+              }
+            }
+          } catch (_) {}
+        }
+        _cachedGustVar ??= _gustNotFound; // none worked — don't probe again
+      } else if (_cachedGustVar != _gustNotFound) {
+        // Already know which variable works — fetch it directly (1 request)
         try {
           final gr = await http.post(
             Uri.parse('https://forecast-v2.metoceanapi.com/point/time'),
             headers: {'x-api-key': apiKey, 'Content-Type': 'application/json'},
             body: jsonEncode({
               'points': [{'lat': lat, 'lon': lon}],
-              'variables': [candidate],
-              'time': {'from': from, 'interval': '1h', 'repeat': 168},
+              'variables': [_cachedGustVar],
+              'time': {'from': from, 'interval': '1h', 'repeat': 48},
             }),
           ).timeout(const Duration(seconds: 10));
           if (gr.statusCode == 200) {
             final gj = jsonDecode(gr.body) as Map<String, dynamic>;
-            final gv = (gj['variables'] as Map<String, dynamic>?)?[candidate];
-            if (gv != null) {
-              gustMs = _vFrom(gv);
-              // ignore: avoid_print
-              print('[MetOcean] gust variable found: $candidate');
-              break;
-            }
+            final gv = (gj['variables'] as Map<String, dynamic>?)?[_cachedGustVar];
+            if (gv != null) gustMs = _vFrom(gv);
           }
         } catch (_) {}
       }
+      // _cachedGustVar == _gustNotFound → skip entirely, gustMs stays []
 
       // Current = index 0
       final curWindKn  = toKn(wsMs.elementAtOrNull(0));
@@ -681,7 +709,7 @@ class WeatherNotifier extends Notifier<WeatherState> {
     }
   }
 
-  static const _gridN = 7;
+  static const _gridN = 5;
   static const _gridStep = 0.5;
 
   Future<List<WindGridPoint>> _fetchWindGrid({
